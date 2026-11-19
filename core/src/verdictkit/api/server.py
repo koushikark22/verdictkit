@@ -5,7 +5,11 @@ refactored behind the frozen multi-stage contract before case routes are enabled
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import os
+import uuid
+from datetime import datetime, timezone
 import socket
 import stat
 import sys
@@ -16,6 +20,9 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from .draft_store import DraftNotFound, DraftStore
+from .intake_boundary import IntakeRejected, prepare_intake
 
 VERSION = "1.1.0"
 MAX_JSON = 256 * 1024
@@ -99,10 +106,88 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
                  "acceptsPastedText": tid == "reel.mechanical.v1"}
                 for tid in registry.type_ids()]
 
-    # Do not invent drafts, frozen hashes, SSE records or replay reports. These
+    # Draft persistence is opt-in and requires a stable key supplied to the
+    # custodian. Never invent a process-local encryption key: that would make
+    # persisted claims undecryptable following a restart.
+    draft_dir = os.environ.get("VK_DRAFT_DIR")
+    vault_key = os.environ.get("VK_VAULT_KEY")
+    draft_store = None
+    if draft_dir and vault_key:
+        try:
+            key = base64.b64decode(vault_key, validate=True)
+            draft_store = DraftStore(draft_dir, key)
+        except (binascii.Error, ValueError, OSError) as exc:
+            raise RuntimeError("invalid draft custody configuration") from exc
+
+    def _draft_response(case_id: str, raw: dict[str, object], expires_at: int) -> dict[str, object]:
+        """Construct only the contract's pre-verdict, non-outcome projection."""
+        plugin = registry.get(raw["claim_type"])
+        params = raw["params"]
+        if not isinstance(params, dict):
+            raise RuntimeError("corrupted draft parameter structure")
+        outcomes = raw["outcomes"]
+        if not isinstance(outcomes, dict):
+            raise RuntimeError("corrupted draft outcome structure")
+        ledger = [
+            {"name": name, "value": value if isinstance(value, str) else str(value),
+             "state": "SPECIFIED", "sourceSpan": None, "basis": "USER_FORM",
+             "critical": False}
+            for name, value in sorted(params.items())
+            if value is not None
+        ]
+        return {
+            "contractVersion": VERSION,
+            "caseId": case_id,
+            "claimType": raw["claim_type"],
+            "state": "DRAFT",
+            "dataMode": "LIVE_EVIDENCE",
+            "parameterLedger": ledger,
+            "outcomeFields": [
+                {"name": name, "captured": name in outcomes and outcomes[name] is not None}
+                for name in sorted(plugin.outcome_fields)
+            ],
+            "blockers": [],
+            "expiresAt": datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat(),
+        }
+
+    @app.post('/api/v1/cases', status_code=201)
+    async def create_case(request: Request) -> Any:
+        if draft_store is None:
+            return error(LOCKED, "Encrypted draft custody not configured", 503)
+        try:
+            payload = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            return error("SCHEMA_INVALID", "Invalid JSON request body", 422)
+        try:
+            prepared = prepare_intake(payload, registry)
+        except IntakeRejected as exc:
+            return error(exc.code, str(exc), 422, exc.field)
+        case_id = "case_" + uuid.uuid4().hex
+        draft_store.create(case_id, prepared)
+        metadata = draft_store.get_metadata(case_id)
+        return _draft_response(case_id, dict(prepared.raw_claim), metadata["expiresAt"])
+
+    @app.get('/api/v1/cases/{case_id}')
+    def get_case(case_id: str) -> Any:
+        if draft_store is None:
+            return error(LOCKED, "Encrypted draft custody not configured", 503)
+        try:
+            metadata = draft_store.get_metadata(case_id)
+        except (DraftNotFound, ValueError):
+            return error("NOT_FOUND", "Case unavailable", 404)
+        return {
+            "caseId": case_id,
+            "claimType": metadata["claimType"],
+            "state": "DRAFT",
+            "dataMode": metadata["dataMode"],
+            "isolationMode": isolation,
+            "specHash": None,
+            "latestRunId": None,
+        }
+
+    # Do not invent frozen hashes, SSE records or replay reports. These
     # operations stay closed until the real custodian state machine is integrated.
-    @app.api_route('/api/v1/cases', methods=['POST'])
-    @app.api_route('/api/v1/cases/{case_id}', methods=['GET', 'PATCH'])
+    @app.api_route('/api/v1/cases/{case_id}', methods=['PATCH'])
     @app.api_route('/api/v1/cases/{case_id}/freeze', methods=['POST'])
     @app.api_route('/api/v1/cases/{case_id}/evidence', methods=['GET', 'POST'])
     @app.api_route('/api/v1/cases/{case_id}/runs', methods=['POST'])
