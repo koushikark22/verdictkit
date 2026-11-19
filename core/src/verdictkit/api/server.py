@@ -39,22 +39,8 @@ def error(code: str, message: str, status: int, field: str | None = None) -> JSO
 
 
 def _isolation(judge_mode: bool) -> str:
-    if not judge_mode:
-        # Preserve the existing non-judge development classification.
-        from .__main__ import _isolation_check
-        return _isolation_check()
-    from verdictkit.examiner.identity import (
-        ExaminerIdentityError, resolve_examiner_uid, verify_examiner_socket,
-    )
-    path = os.environ.get("VK_EXAMINER_SOCKET", "")
-    try:
-        expected_uid = resolve_examiner_uid()
-        verify_examiner_socket(path, expected_uid=expected_uid)
-    except ExaminerIdentityError as exc:
-        raise RuntimeError(
-            "judge mode requires an authenticated, distinct Linux examiner peer"
-        ) from exc
-    return "ENFORCED"
+    from .check_startup import startup_checks
+    return startup_checks(force_judge=judge_mode)[1]
 
 
 class SafetyMiddleware(BaseHTTPMiddleware):
@@ -99,8 +85,8 @@ class SafetyMiddleware(BaseHTTPMiddleware):
 
 def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
     # The environment gate cannot be bypassed by the factory's default value.
-    judge_mode = judge_mode or os.environ.get("VK_JUDGE_MODE", "0").lower() in ("1", "true", "yes")
-    isolation = _isolation(judge_mode)
+    from .check_startup import startup_checks
+    judge_mode, isolation = startup_checks(force_judge=judge_mode)
     if registry is None:
         from verdictkit.cli import _load_registry
         registry = _load_registry()
