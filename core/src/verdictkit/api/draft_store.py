@@ -10,10 +10,8 @@ import json
 import os
 import re
 import sqlite3
-import tempfile
 import time
 from pathlib import Path
-from typing import Mapping
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -38,9 +36,12 @@ class DraftStore:
         if ttl_seconds <= 0 or ttl_seconds > _TTL_SECONDS:
             raise ValueError("draft TTL must be between 1 and 86400 seconds")
         self.directory = Path(directory)
-        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        # Check before any chmod: chmod on a symlink may change its target.
         if self.directory.is_symlink():
             raise ValueError("draft storage cannot be a symlink")
+        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self.directory.is_symlink() or not self.directory.is_dir():
+            raise ValueError("draft storage must be a real directory")
         self.directory.chmod(0o700)
         self._db = self.directory / "drafts.sqlite3"
         self._cipher = AESGCM(key)
