@@ -44,7 +44,7 @@ jobs:
           docker run --rm --network none -v "$PWD/gate:/out" verdictkit:p0-ci gate-isolation /out/isolation.xml
       - name: Docker receipt and replay
         run: |
-          docker run --rm --network none -v "$PWD/gate:/out" -v "$PWD/core/examples/stub_claimtype:/in:ro" verdictkit:p0-ci gate-case /in/claim.json /out/stub.vkb
+          docker run --rm --network none -v "$PWD/gate:/out" -v "$PWD/examples/stub_claimtype:/in:ro" verdictkit:p0-ci gate-case /in/claim.json /out/stub.vkb
           docker run --rm --network none -v "$PWD/gate:/out:ro" verdictkit:p0-ci verdictkit replay /out/stub.vkb
       - name: Archive authentic test artifacts
         if: always()
