@@ -39,15 +39,22 @@ def error(code: str, message: str, status: int, field: str | None = None) -> JSO
 
 
 def _isolation(judge_mode: bool) -> str:
-    from .__main__ import _isolation_check
-    result = _isolation_check()
-    if judge_mode:
-        # Env alone must never be accepted as proof of distinct OS identities.
-        path = os.environ.get("VK_EXAMINER_SOCKET")
-        if (sys.platform == "win32" or not path or not os.path.exists(path)
-                or not stat.S_ISSOCK(os.stat(path).st_mode) or result != "ENFORCED"):
-            raise RuntimeError("judge mode requires a live UNIX examiner socket and ENFORCED isolation")
-    return result
+    if not judge_mode:
+        # Preserve the existing non-judge development classification.
+        from .__main__ import _isolation_check
+        return _isolation_check()
+    from verdictkit.examiner.identity import (
+        ExaminerIdentityError, resolve_examiner_uid, verify_examiner_socket,
+    )
+    path = os.environ.get("VK_EXAMINER_SOCKET", "")
+    try:
+        expected_uid = resolve_examiner_uid()
+        verify_examiner_socket(path, expected_uid=expected_uid)
+    except ExaminerIdentityError as exc:
+        raise RuntimeError(
+            "judge mode requires an authenticated, distinct Linux examiner peer"
+        ) from exc
+    return "ENFORCED"
 
 
 class SafetyMiddleware(BaseHTTPMiddleware):
