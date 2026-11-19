@@ -28,9 +28,11 @@ class Examiner(Protocol):
 class SocketExaminer:
     isolation = IsolationMode.ENFORCED
 
-    def __init__(self, socket_path: str, timeout_s: float = 60.0) -> None:
+    def __init__(self, socket_path: str, timeout_s: float = 60.0,
+                 expected_peer_uid: int | None = None) -> None:
         self._socket_path = socket_path
         self._timeout_s = timeout_s
+        self._expected_peer_uid = expected_peer_uid
 
     def examine(self, task: BlindedTask) -> Examination:
         import socket as _socket
@@ -43,6 +45,9 @@ class SocketExaminer:
         sock.settimeout(self._timeout_s)
         try:
             sock.connect(self._socket_path)
+            if self._expected_peer_uid is not None:
+                from .identity import verify_connected_peer
+                verify_connected_peer(sock, self._expected_peer_uid)
             sock.sendall(framed)
 
             # Read 4-byte length prefix
