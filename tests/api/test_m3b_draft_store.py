@@ -69,3 +69,17 @@ def test_read_metadata_after_new_process_object(tmp_path):
     DraftStore(tmp_path, b"k" * 32).create(CASE_ID, _prepared(), now=100)
     reopened = DraftStore(tmp_path, b"k" * 32)
     assert reopened.get_metadata(CASE_ID, now=100)["claimType"] == "quote.finance.v1"
+
+def test_symlink_draft_directory_does_not_change_target_permissions(tmp_path):
+    target = tmp_path / "target"
+    target.mkdir(mode=0o755)
+    target.chmod(0o755)
+    link = tmp_path / "link"
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable on this platform")
+    before = target.stat().st_mode & 0o777
+    with pytest.raises(ValueError, match="symlink"):
+        DraftStore(link, b"k" * 32)
+    assert target.stat().st_mode & 0o777 == before
