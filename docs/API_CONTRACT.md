@@ -149,3 +149,22 @@ response carries `isolationMode`; judge mode refuses to start unless `ENFORCED`.
 | `authenticity` | Did our deployment produce it? | always `NOT_ESTABLISHED` (bundles are unsigned in v1) |
 
 The UI and write-up must never present integrity or reproducibility as proof of origin.
+
+## 11. Implementation notes (server behaviour, 1.1.0)
+
+* `POST /cases/{caseId}/runs` executes the run to a terminal state before answering
+  `202 RunAccepted` (state `COMPLETED` or `INDETERMINATE`); a repeated call returns the
+  existing run. Infrastructure failure (examiner unreachable or unauthenticated, spec
+  substitution, commitment mismatch) yields run state `FAILED`, HTTP 500
+  `RUN_FAILED`, no bundle and no verdict.
+* The SSE stream replays the persisted `RunRecord` (`id = seq`, `event: progress`) and
+  ends at the terminal event; `Last-Event-ID` must be a non-negative integer.
+* `GET /cases/{caseId}/outcome` answers `425 TOO_EARLY` until a verdict is sealed, or a
+  `BLOCKED` `OutcomeResponse` when freeze or evidence was refused.
+* Case routes answer `503 CUSTODY_NOT_CONFIGURED` unless `VK_DRAFT_DIR` and a 32-byte
+  base64 `VK_VAULT_KEY` are configured. Only claim types in the `ClaimTypeId` enum are
+  exposed over HTTP.
+* `POST /replays` never refetches; malformed, oversized (> 64 MiB uncompressed) or
+  integrity-failing bundles are reported `UNVERIFIABLE` and are not re-executed. At most
+  two replays run concurrently (`429` otherwise).
+* In judge mode every case, frozen or not, is purged 24 h after intake.

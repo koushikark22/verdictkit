@@ -509,6 +509,8 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             deadline = time.monotonic() + 120
             while True:
                 run = draft_store.get_run(run_id=run_id)  # only persisted events are sent
+                if run is None:  # purged (TTL) while streaming
+                    return
                 for event in run["events"][sent:]:
                     yield f"id: {event['seq']}\nevent: progress\ndata: {json.dumps(event, sort_keys=True)}\n\n"
                     sent = event["seq"] + 1
