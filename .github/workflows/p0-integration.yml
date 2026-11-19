@@ -42,6 +42,8 @@ jobs:
         run: |
           mkdir -p gate
           docker run --rm --network none -v "$PWD/gate:/out" verdictkit:p0-ci gate-isolation /out/isolation.xml
+      - name: Positive enforced judge startup
+        run: docker run --rm --network none verdictkit:p0-ci gate-startup
       - name: Docker receipt and replay
         run: |
           docker run --rm --network none -v "$PWD/gate:/out" -v "$PWD/examples/stub_claimtype:/in:ro" verdictkit:p0-ci gate-case /in/claim.json /out/stub.vkb
