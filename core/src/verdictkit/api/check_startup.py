@@ -71,5 +71,5 @@ def startup_checks(force_judge: bool = False) -> tuple[bool, str]:
     judge_mode = parse_judge_mode() or force_judge
     mode = isolation_mode()
     if judge_mode and mode != "ENFORCED":
-        raise IsolationNotEnforcedError("judge mode requires verified examiner isolation")
+        raise IsolationNotEnforcedError("judge mode requires authenticated examiner isolation")
     return judge_mode, mode
