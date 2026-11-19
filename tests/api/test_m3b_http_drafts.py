@@ -1,6 +1,8 @@
 """HTTP draft intake must remain redacted, persistent and fail closed."""
 import base64
 import os
+
+import pytest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -25,6 +27,9 @@ class DemoType:
 
     def assumption_specs(self, _declared):
         return ()
+
+    def tolerances(self, _params, _outcomes):
+        return {"monthly_payment": "0.01"}
 
 
 def _registry():
@@ -54,13 +59,21 @@ def test_http_create_and_get_are_redacted_and_durable(tmp_path):
             assert "25000.00" in response.text
             case_id = body["caseId"]
             assert client.get(f"/api/v1/cases/{case_id}").status_code == 200
-            assert client.post(f"/api/v1/cases/{case_id}/freeze").status_code == 503
+            frozen = client.post(f"/api/v1/cases/{case_id}/freeze")
+            assert frozen.status_code == 200, frozen.text
+            assert frozen.json()["state"] == "FROZEN"
+            assert frozen.json()["commitment"]["alg"] == "sha256/vk-commit-v1"
+            assert frozen.json()["ledgerSeq"] == 2
+            assert "OUTCOME_SECRET_125" not in frozen.text
+            assert client.post(f"/api/v1/cases/{case_id}/freeze").status_code == 409
             assert client.patch(f"/api/v1/cases/{case_id}", json={}).status_code == 503
         # Simulate API restart: stable encryption key and database persist.
         with TestClient(create_app(_registry())) as restarted:
             status = restarted.get(f"/api/v1/cases/{case_id}")
             assert status.status_code == 200
             assert status.json()["isolationMode"] == "UNENFORCED"
+            assert status.json()["state"] == "FROZEN"
+            assert status.json()["specHash"] == frozen.json()["specHash"]
             assert "OUTCOME_SECRET_125" not in status.text
 
 
@@ -99,3 +112,27 @@ def test_env_judge_mode_rejects_unenforced_factory(tmp_path):
         import pytest
         with pytest.raises(RuntimeError, match="judge mode"):
             create_app(_registry())
+
+def test_freeze_persistence_survives_restart_and_expiry(tmp_path):
+    from verdictkit.api.draft_store import DraftStore
+    from verdictkit.api.freeze_boundary import prepare_freeze
+    case_id = "case_" + "e" * 32
+    key = b"z" * 32
+    store = DraftStore(tmp_path, key, ttl_seconds=10)
+    from verdictkit.api.intake_boundary import prepare_intake
+    prepared = prepare_intake(_payload("CONFIDENTIAL_OUTCOME"), _registry())
+    store.create(case_id, prepared, now=100)
+    freeze = prepare_freeze(DemoType(), store.load_private(case_id, now=100),
+                            case_id=case_id, clock=lambda: "2026-01-01T00:00:00Z")
+    store.freeze(case_id, freeze, frozen_at="2026-01-01T00:00:00Z", now=100)
+    before = store.get_freeze(case_id)
+    reopened = DraftStore(tmp_path, key, ttl_seconds=10)
+    assert reopened.get_freeze(case_id) == before
+    assert reopened.get_metadata(case_id, now=200)["state"] == "FROZEN"
+    assert reopened.purge_expired(now=200) == 0
+    with pytest.raises(Exception):
+        reopened.freeze(case_id, freeze, frozen_at="2026-01-01T00:01:00Z", now=200)
+    assert reopened.get_freeze(case_id) == before
+    db = (tmp_path / "drafts.sqlite3").read_bytes()
+    assert b"CONFIDENTIAL_OUTCOME" not in db
+    assert freeze.salt.hex().encode() not in db
