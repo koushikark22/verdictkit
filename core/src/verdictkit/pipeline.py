@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 import os
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Mapping
 
@@ -21,7 +21,7 @@ from .custody.vault import Vault
 from .evidence.broker import EvidenceBroker
 from .evidence.store import EvidenceStore
 from .examiner.client import Examiner
-from .model import Commitment, DataMode, EvidenceItem, FrozenClaim, IsolationMode, Verdict
+from .model import Commitment, DataMode, EvidenceItem, FrozenClaim, IsolationMode, LicenseClass, Verdict
 from .plugin import Examination, Registry
 
 
@@ -39,6 +39,8 @@ class CaseFile:
     verdict: Verdict
     diagnostics: Mapping[str, object] | None
     ledger: Ledger
+    # Bytes of evidence whose licence permits embedding (Req 9.2), keyed by sha256.
+    evidence_blobs: Mapping[str, bytes] = field(default_factory=dict)
 
 
 def run_case(
@@ -141,7 +143,12 @@ def run_case(
     # 7. Bundle written will be recorded by write_bundle
     # (not recorded here — the caller decides)
 
+    embeddable = {LicenseClass.REDISTRIBUTABLE, LicenseClass.DOCUMENT, LicenseClass.USER_SUPPLIED}
+    blobs = {item.sha256: store.get(item.sha256)
+             for item in evidence_items if item.license_class in embeddable}
+
     return CaseFile(
+        evidence_blobs=blobs,
         case_id=case_id,
         isolation=examiner.isolation,
         data_mode=data_mode,

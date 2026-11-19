@@ -77,7 +77,7 @@ def test_http_create_and_get_are_redacted_and_durable(tmp_path):
             assert evidence.json() == {"contractVersion": "1.1.0", "caseId": case_id, "evidence": []}
             assert client.get(f"/api/v1/cases/{case_id}/evidence").json()["evidence"] == []
             assert client.post(f"/api/v1/cases/{case_id}/evidence").status_code == 409
-            assert client.patch(f"/api/v1/cases/{case_id}", json={}).status_code == 503
+            assert client.patch(f"/api/v1/cases/{case_id}", json={}).status_code == 409
         # Simulate API restart: stable encryption key and database persist.
         with TestClient(create_app(_registry())) as restarted:
             status = restarted.get(f"/api/v1/cases/{case_id}")

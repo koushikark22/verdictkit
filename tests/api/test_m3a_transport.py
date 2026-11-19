@@ -26,7 +26,7 @@ def test_workflow_rejects_without_fabricating_case():
     with TestClient(create_app(Registry(), judge_mode=False)) as c:
         r=c.post('/api/v1/cases',json={'claimType':'quote.finance.v1','dataMode':'LIVE_EVIDENCE','form':{'params':{},'outcomes':{}}})
         assert r.status_code == 503
-        assert r.json()['error']['code'] == 'HTTP_WORKFLOW_NOT_YET_IMPLEMENTED'
+        assert r.json()['error']['code'] == 'CUSTODY_NOT_CONFIGURED'
         assert 'caseId' not in str(r.json())
 
 
@@ -52,4 +52,4 @@ def test_json_errors_and_missing_routes_are_contract_versioned():
         denied = client.post("/api/v1/cases", json={})
         assert denied.status_code == 503
         assert denied.json()["contractVersion"] == VERSION
-        assert denied.json()["error"]["code"] == "HTTP_WORKFLOW_NOT_YET_IMPLEMENTED"
+        assert denied.json()["error"]["code"] == "CUSTODY_NOT_CONFIGURED"

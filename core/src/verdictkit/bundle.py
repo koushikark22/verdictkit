@@ -54,6 +54,8 @@ class ReplayReport:
     ledger_ok: bool
     commitment_ok: bool
     notes: tuple[str, ...]
+    manifest_ok: bool = True
+    spec_hash_ok: bool = True
 
 
 def _make_zip_info(name: str) -> zipfile.ZipInfo:
@@ -142,16 +144,18 @@ def write_bundle(case: CaseFile, path: Path, *, clock: Callable[[], str]) -> Pat
         })
     files["evidence/index.json"] = canonical_bytes(evidence_index)
 
-    # Evidence blobs (REDISTRIBUTABLE, DOCUMENT, USER_SUPPLIED only)
+    # Evidence blobs (REDISTRIBUTABLE, DOCUMENT, USER_SUPPLIED only; Req 9.2).
+    # REFETCH_ONLY evidence is sealed by URI + SHA-256 only and never embedded.
     embeddable = {LicenseClass.REDISTRIBUTABLE, LicenseClass.DOCUMENT, LicenseClass.USER_SUPPLIED}
     for item in case.evidence:
-        if item.license_class in embeddable:
-            blob_name = f"evidence/blobs/{item.sha256}"
-            # Try to get the blob from the workdir evidence store
-            # (CaseFile doesn't carry blob bytes; store reads from workdir)
-            # For now we don't embed blobs (requires passing workdir/store into this fn)
-            # This is a valid limitation: blobs are embedded by the pipeline when present
-            pass
+        if item.license_class not in embeddable:
+            continue
+        blob = case.evidence_blobs.get(item.sha256)
+        if blob is None:
+            raise ValueError(f"embeddable evidence bytes missing for {item.sha256}")
+        if sha256_hex(blob) != item.sha256:
+            raise ValueError(f"evidence bytes do not match recorded hash {item.sha256}")
+        files[f"evidence/blobs/{item.sha256}"] = blob
 
     # Examination result
     exam_dict = {
@@ -258,6 +262,159 @@ def write_bundle(case: CaseFile, path: Path, *, clock: Callable[[], str]) -> Pat
     return path
 
 
+# Limits applied before any bundle content is parsed (malformed-input / DoS resistance).
+MAX_BUNDLE_ENTRIES = 4096
+MAX_BUNDLE_UNCOMPRESSED = 64 * 1024 * 1024
+MAX_ENTRY_UNCOMPRESSED = 16 * 1024 * 1024
+_REQUIRED_ENTRIES = (
+    "manifest.json", "claim/frozen.json", "claim/commitment.json", "claim/reveal.json",
+    "evidence/index.json", "examination/result.json", "verdict/verdict.json",
+    "ledger/ledger.jsonl",
+)
+
+
+class BundleFormatError(ValueError):
+    """The file is not a structurally valid, size-bounded VerdictKit bundle."""
+
+
+def _check_zip_safety(zf: zipfile.ZipFile) -> set[str]:
+    infos = zf.infolist()
+    if len(infos) > MAX_BUNDLE_ENTRIES:
+        raise BundleFormatError("too many bundle entries")
+    total = 0
+    names: set[str] = set()
+    for info in infos:
+        name = info.filename
+        if (name.startswith("/") or "\\" in name or ".." in name.split("/")
+                or name in names or info.is_dir()):
+            raise BundleFormatError("unsafe or duplicate bundle entry name")
+        if info.file_size > MAX_ENTRY_UNCOMPRESSED:
+            raise BundleFormatError("bundle entry too large")
+        total += info.file_size
+        if total > MAX_BUNDLE_UNCOMPRESSED:
+            raise BundleFormatError("bundle too large when uncompressed")
+        names.add(name)
+    missing = [n for n in _REQUIRED_ENTRIES if n not in names]
+    if missing:
+        raise BundleFormatError("bundle is missing required entries")
+    return names
+
+
+def _read_bounded(zf: zipfile.ZipFile, name: str) -> bytes:
+    with zf.open(name) as fh:
+        data = fh.read(MAX_ENTRY_UNCOMPRESSED + 1)
+    if len(data) > MAX_ENTRY_UNCOMPRESSED:
+        raise BundleFormatError("bundle entry too large")
+    return data
+
+
+def _spec_hash_of(frozen_dict: dict) -> str:
+    from .custody.intake import _assumptions_to_hash_form
+    assumptions = tuple(_assumption_from_dict(a) for a in frozen_dict.get("assumptions", []))
+    return sha256_hex(canonical_bytes({
+        "claim_type": frozen_dict["claim_type"],
+        "schema_version": frozen_dict["schema_version"],
+        "params": frozen_dict["params"],
+        "assumptions": _assumptions_to_hash_form(assumptions),
+        "tolerances": frozen_dict.get("tolerances", {}),
+    }))
+
+
+@dataclass(frozen=True, slots=True)
+class IntegrityResult:
+    manifest_ok: bool
+    ledger_ok: bool
+    commitment_ok: bool
+    spec_hash_ok: bool
+    notes: tuple[str, ...]
+
+    @property
+    def ok(self) -> bool:
+        return self.manifest_ok and self.ledger_ok and self.commitment_ok and self.spec_hash_ok
+
+
+def _integrity(zf: zipfile.ZipFile, names: set[str]) -> tuple[IntegrityResult, dict]:
+    """Internal-consistency checks only (no re-execution). Returns the parsed parts."""
+    from .custody.ledger import EntryKind, LedgerEntry
+
+    notes: list[str] = []
+    manifest = parse_canonical(_read_bounded(zf, "manifest.json"))
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), dict):
+        raise BundleFormatError("invalid manifest")
+
+    manifest_ok = True
+    listed = set(manifest["files"])
+    for fname, expected_hash in sorted(manifest["files"].items()):
+        if fname not in names:
+            notes.append(f"missing file in bundle: {fname}")
+            manifest_ok = False
+            continue
+        if sha256_hex(_read_bounded(zf, fname)) != expected_hash:
+            notes.append(f"hash mismatch: {fname}")
+            manifest_ok = False
+    unlisted = sorted(names - listed - {"manifest.json"})
+    if unlisted:
+        manifest_ok = False
+        notes.append("bundle contains files not listed in the manifest")
+
+    ledger_ok = False
+    try:
+        entries = []
+        for line in _read_bounded(zf, "ledger/ledger.jsonl").splitlines():
+            if not line.strip():
+                continue
+            e = parse_canonical(line)
+            entries.append(LedgerEntry(
+                seq=e["seq"], kind=EntryKind(e["kind"]), payload_hash=e["payload_hash"],
+                prev_hash=e["prev_hash"], entry_hash=e["entry_hash"],
+                recorded_at=e["recorded_at"],
+            ))
+        check = Ledger.from_entries(entries, lambda: "2000-01-01T00:00:00Z").verify()
+        kinds = [e.kind for e in entries]
+        ledger_ok = check.ok and EntryKind.VERDICT_SEALED in kinds
+        if not check.ok:
+            notes.append(f"ledger chain invalid at seq {check.first_invalid_seq}")
+        elif EntryKind.VERDICT_SEALED not in kinds:
+            notes.append("ledger has no sealed verdict")
+    except Exception:
+        notes.append("ledger could not be parsed")
+
+    frozen_dict = parse_canonical(_read_bounded(zf, "claim/frozen.json"))
+    reveal = parse_canonical(_read_bounded(zf, "claim/reveal.json"))
+    commitment_dict = parse_canonical(_read_bounded(zf, "claim/commitment.json"))
+    if not all(isinstance(x, dict) for x in (frozen_dict, reveal, commitment_dict)):
+        raise BundleFormatError("invalid claim records")
+
+    try:
+        spec_hash_ok = _spec_hash_of(frozen_dict) == frozen_dict.get("spec_hash")
+    except Exception:
+        spec_hash_ok = False
+    if not spec_hash_ok:
+        notes.append("spec hash does not match frozen claim")
+
+    try:
+        salt = bytes.fromhex(reveal["salt"])
+        commitment = Commitment(alg=commitment_dict["alg"], digest=commitment_dict["digest"])
+        commitment_ok = len(salt) == 32 and verify_commitment(commitment, reveal["outcomes"], salt)
+    except Exception:
+        commitment_ok = False
+    if not commitment_ok:
+        notes.append("commitment verification failed")
+
+    return (IntegrityResult(manifest_ok, ledger_ok, commitment_ok, spec_hash_ok, tuple(notes)),
+            {"manifest": manifest, "frozen": frozen_dict, "reveal": reveal})
+
+
+def verify_bundle_integrity(path: Path) -> tuple[IntegrityResult, dict]:
+    """Integrity of a bundle since it was written (no re-execution, no network)."""
+    try:
+        with zipfile.ZipFile(Path(path), "r") as zf:
+            names = _check_zip_safety(zf)
+            return _integrity(zf, names)
+    except (zipfile.BadZipFile, BundleFormatError, KeyError, ValueError, OSError):
+        return IntegrityResult(False, False, False, False, ("bundle is malformed",)), {}
+
+
 def replay_bundle(
     path: Path,
     *,
@@ -265,161 +422,129 @@ def replay_bundle(
     workdir: Path,
     allow_refetch: bool = False,
     evidence_cache: Path | None = None,
+    examiner=None,
 ) -> ReplayReport:
     """Re-run examination + comparison from the bundle's frozen claim, evidence and
-    revealed outcomes. No network unless ``allow_refetch``. Verifies the ledger chain and
-    the commitment against the revealed outcomes before comparing verdict hashes."""
+    revealed outcomes. No network unless ``allow_refetch``. Verifies the ledger chain, the
+    spec hash and the commitment against the revealed outcomes before comparing verdict
+    hashes. Malformed or oversized bundles yield ``UNVERIFIABLE``, never an exception.
+
+    ``examiner`` defaults to an in-process examiner; services pass their configured
+    (isolated) examiner so untrusted bundles are evaluated under the same boundary."""
     path = Path(path)
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
 
-    notes: list[str] = []
-
-    with zipfile.ZipFile(path, "r") as zf:
-        names = set(zf.namelist())
-
-        def read_json(name: str) -> object:
-            return parse_canonical(zf.read(name))
-
-        # Read manifest
-        manifest = read_json("manifest.json")
-        original_verdict_hash = manifest.get("verdict_hash", "")
-
-        # Verify manifest hashes
-        manifest_ok = True
-        for fname, expected_hash in manifest.get("files", {}).items():
-            if fname == "manifest.json":
-                continue
-            if fname not in names:
-                notes.append(f"missing file in bundle: {fname}")
-                manifest_ok = False
-                continue
-            actual_hash = sha256_hex(zf.read(fname))
-            if actual_hash != expected_hash:
-                notes.append(f"hash mismatch: {fname}")
-                manifest_ok = False
-
-        # Read ledger
-        ledger_ok = False
-        try:
-            from .custody.ledger import EntryKind, Ledger, LedgerEntry
-            ledger_lines = zf.read("ledger/ledger.jsonl").splitlines()
-            entries = []
-            for line in ledger_lines:
-                if not line.strip():
-                    continue
-                e = parse_canonical(line)
-                entries.append(LedgerEntry(
-                    seq=e["seq"],
-                    kind=EntryKind(e["kind"]),
-                    payload_hash=e["payload_hash"],
-                    prev_hash=e["prev_hash"],
-                    entry_hash=e["entry_hash"],
-                    recorded_at=e["recorded_at"],
-                ))
-            def fixed_clock():
-                return "2000-01-01T00:00:00Z"
-            ledger = Ledger.from_entries(entries, fixed_clock)
-            ledger_check = ledger.verify()
-            ledger_ok = ledger_check.ok
-            if not ledger_ok:
-                notes.append(f"ledger chain invalid at seq {ledger_check.first_invalid_seq}")
-        except Exception as exc:
-            notes.append(f"ledger verification error: {exc}")
-
-        # Read frozen claim
-        frozen_dict = read_json("claim/frozen.json")
-        from .model import FrozenClaim
-        from .custody.intake import blind as _blind
-
-        assumptions = tuple(_assumption_from_dict(a) for a in frozen_dict.get("assumptions", []))
-        frozen = FrozenClaim(
-            claim_type=frozen_dict["claim_type"],
-            schema_version=frozen_dict["schema_version"],
-            params=frozen_dict["params"],
-            assumptions=assumptions,
-            tolerances=frozen_dict.get("tolerances", {}),
-            spec_hash=frozen_dict["spec_hash"],
+    def unverifiable(note: str, *, original: str = "", ledger_ok: bool = False,
+                     commitment_ok: bool = False, manifest_ok: bool = False,
+                     spec_hash_ok: bool = False, prior: tuple[str, ...] = ()) -> ReplayReport:
+        return ReplayReport(
+            status=ReplayStatus.UNVERIFIABLE, original_verdict_hash=original,
+            replayed_verdict_hash=None, env_match=False, ledger_ok=ledger_ok,
+            commitment_ok=commitment_ok, notes=prior + (note,),
+            manifest_ok=manifest_ok, spec_hash_ok=spec_hash_ok,
         )
 
-        # Read reveal
-        reveal_dict = read_json("claim/reveal.json")
-        salt = bytes.fromhex(reveal_dict["salt"])
+    try:
+        zf = zipfile.ZipFile(path, "r")
+    except (zipfile.BadZipFile, OSError):
+        return unverifiable("bundle is not a readable zip archive")
+
+    with zf:
+        try:
+            names = _check_zip_safety(zf)
+            integrity, parts = _integrity(zf, names)
+        except (BundleFormatError, KeyError, ValueError, TypeError):
+            return unverifiable("bundle is malformed")
+
+        manifest = parts["manifest"]
+        original_verdict_hash = manifest.get("verdict_hash", "")
+        if not isinstance(original_verdict_hash, str):
+            original_verdict_hash = ""
+        notes = list(integrity.notes)
+        common = dict(original=original_verdict_hash, ledger_ok=integrity.ledger_ok,
+                      commitment_ok=integrity.commitment_ok,
+                      manifest_ok=integrity.manifest_ok, spec_hash_ok=integrity.spec_hash_ok)
+        if not integrity.ok:
+            # Never re-execute content that failed integrity checks.
+            return unverifiable("integrity checks failed; not re-executed",
+                                prior=tuple(notes), **common)
+
+        frozen_dict = parts["frozen"]
+        reveal_dict = parts["reveal"]
         outcomes = reveal_dict["outcomes"]
 
-        # Read commitment
-        commitment_dict = read_json("claim/commitment.json")
-        from .model import Commitment
-        commitment = Commitment(alg=commitment_dict["alg"], digest=commitment_dict["digest"])
-
-        # Verify commitment
-        commitment_ok = verify_commitment(commitment, outcomes, salt)
-        if not commitment_ok:
-            notes.append("commitment verification failed")
-
-        # Re-run examination
         try:
-            claim_type = registry.get(frozen.claim_type)
+            from .model import FrozenClaim, LicenseClass, SourceClass
+            from .evidence.store import EvidenceMeta, EvidenceStore
 
-            # Build evidence from index
-            from .evidence.store import EvidenceStore, EvidenceMeta
+            claim_type = registry.get(frozen_dict["claim_type"])
+            assumptions = tuple(_assumption_from_dict(a) for a in frozen_dict.get("assumptions", []))
+            frozen = FrozenClaim(
+                claim_type=frozen_dict["claim_type"],
+                schema_version=frozen_dict["schema_version"],
+                params=frozen_dict["params"],
+                assumptions=assumptions,
+                tolerances=frozen_dict.get("tolerances", {}),
+                spec_hash=frozen_dict["spec_hash"],
+            )
             replay_ev_dir = workdir / "evidence"
             ev_store = EvidenceStore(replay_ev_dir)
-            evidence_index = read_json("evidence/index.json")
+            evidence_index = parse_canonical(_read_bounded(zf, "evidence/index.json"))
+            if not isinstance(evidence_index, list):
+                raise BundleFormatError("invalid evidence index")
             evidence_items = []
             for ei in evidence_index:
-                from .model import SourceClass, LicenseClass
                 item = EvidenceItem(
-                    source_id=ei["source_id"],
-                    source_class=SourceClass(ei["source_class"]),
-                    uri=ei["uri"],
-                    retrieved_at=ei["retrieved_at"],
-                    sha256=ei["sha256"],
-                    media_type=ei["media_type"],
-                    license_class=LicenseClass(ei["license_class"]),
+                    source_id=ei["source_id"], source_class=SourceClass(ei["source_class"]),
+                    uri=ei["uri"], retrieved_at=ei["retrieved_at"], sha256=ei["sha256"],
+                    media_type=ei["media_type"], license_class=LicenseClass(ei["license_class"]),
                 )
-                # Try to restore blob if embedded
                 blob_name = f"evidence/blobs/{item.sha256}"
                 if blob_name in names:
-                    blob_data = zf.read(blob_name)
-                    meta = EvidenceMeta(
-                        source_id=item.source_id,
-                        source_class=item.source_class,
-                        uri=item.uri,
-                        retrieved_at=item.retrieved_at,
-                        media_type=item.media_type,
-                        license_class=item.license_class,
-                    )
-                    ev_store.put(blob_data, meta)
+                    blob = _read_bounded(zf, blob_name)
+                    if sha256_hex(blob) != item.sha256:
+                        raise BundleFormatError("embedded evidence hash mismatch")
+                    ev_store.put(blob, EvidenceMeta(
+                        source_id=item.source_id, source_class=item.source_class,
+                        uri=item.uri, retrieved_at=item.retrieved_at,
+                        media_type=item.media_type, license_class=item.license_class,
+                    ))
+                elif evidence_cache is not None and (Path(evidence_cache) / item.sha256).is_file():
+                    cached = (Path(evidence_cache) / item.sha256).read_bytes()
+                    if sha256_hex(cached) != item.sha256:
+                        return unverifiable("cached evidence fails its hash", prior=tuple(notes), **common)
+                    ev_store.put(cached, EvidenceMeta(
+                        source_id=item.source_id, source_class=item.source_class,
+                        uri=item.uri, retrieved_at=item.retrieved_at,
+                        media_type=item.media_type, license_class=item.license_class,
+                    ))
+                else:
+                    # Offline replay cannot reproduce without the sealed bytes (Req 9.3, 9.4).
+                    reason = ("required evidence absent; refetch is not implemented for this source"
+                              if allow_refetch else "required evidence absent (offline replay)")
+                    return unverifiable(reason, prior=tuple(notes), **common)
                 evidence_items.append(item)
 
-            # Re-examine
-            from .examiner.client import InProcessExaminer
-            from .sweep import expand_grid
-            examiner = InProcessExaminer(registry, evidence_root=str(replay_ev_dir))
-            blinded = _blind(frozen, case_id="replay-case", evidence_refs=[e.sha256 for e in evidence_items])
+            if examiner is None:
+                from .examiner.client import InProcessExaminer
+                examiner = InProcessExaminer(registry, evidence_root=str(replay_ev_dir))
+            blinded = blind(frozen, case_id="replay-case",
+                            evidence_refs=[e.sha256 for e in evidence_items])
             examination = examiner.examine(blinded)
+            if examination.spec_hash != frozen.spec_hash:
+                return unverifiable("examiner returned a different specification",
+                                    prior=tuple(notes), **common)
 
-            # Re-build findings and verdict hash
             from .evidence.policy import apply_policy
-            from .model import validate_finding, headline_status, compute_verdict_hash, Status
-            from .plugin import examination_payload
+            from .model import compute_verdict_hash, headline_status, validate_finding
 
             evidence_map = {item.sha256: item for item in evidence_items}
             policy = claim_type.evidence_policy()
-            raw_findings = claim_type.findings(frozen, examination, outcomes, evidence_items)
-            validated_findings = []
-            for f in raw_findings:
-                f = apply_policy(f, evidence_map, policy)
-                f = validate_finding(f)
-                validated_findings.append(f)
-
-            findings_tuple = tuple(validated_findings)
-            if findings_tuple:
-                replay_headline = headline_status(findings_tuple)
-            else:
-                replay_headline = Status.INDETERMINATE
-
+            findings_tuple = tuple(
+                validate_finding(apply_policy(f, evidence_map, policy))
+                for f in claim_type.findings(frozen, examination, outcomes, evidence_items)
+            )
             replayed_verdict_hash = compute_verdict_hash(
                 spec_hash=frozen.spec_hash,
                 evidence_hashes=[item.sha256 for item in evidence_items],
@@ -427,22 +552,14 @@ def replay_bundle(
                 outcomes=outcomes,
                 findings=findings_tuple,
             )
+        except Exception as exc:  # untrusted input: report, never raise
+            return unverifiable(f"replay examination failed ({type(exc).__name__})",
+                                prior=tuple(notes), **common)
 
-        except Exception as exc:
-            notes.append(f"replay examination failed: {exc}")
-            return ReplayReport(
-                status=ReplayStatus.UNVERIFIABLE,
-                original_verdict_hash=original_verdict_hash,
-                replayed_verdict_hash=None,
-                env_match=False,
-                ledger_ok=ledger_ok,
-                commitment_ok=commitment_ok,
-                notes=tuple(notes),
-            )
-
-    # Compare fingerprints
     current_fp = fingerprint()
     bundle_fp = manifest.get("env_fingerprint", {})
+    if not isinstance(bundle_fp, dict):
+        bundle_fp = {}
     env_match = (
         bundle_fp.get("engine_version") == current_fp.engine_version
         and bundle_fp.get("python_version") == current_fp.python_version
@@ -450,10 +567,7 @@ def replay_bundle(
     )
 
     if replayed_verdict_hash == original_verdict_hash:
-        if env_match:
-            status = ReplayStatus.REPRODUCED
-        else:
-            status = ReplayStatus.REPRODUCED_ACROSS_ENV
+        status = ReplayStatus.REPRODUCED if env_match else ReplayStatus.REPRODUCED_ACROSS_ENV
     else:
         status = ReplayStatus.DIVERGED
 
@@ -462,7 +576,48 @@ def replay_bundle(
         original_verdict_hash=original_verdict_hash,
         replayed_verdict_hash=replayed_verdict_hash,
         env_match=env_match,
-        ledger_ok=ledger_ok,
-        commitment_ok=commitment_ok,
+        ledger_ok=integrity.ledger_ok,
+        commitment_ok=integrity.commitment_ok,
         notes=tuple(notes),
+        manifest_ok=integrity.manifest_ok,
+        spec_hash_ok=integrity.spec_hash_ok,
     )
+
+
+_SHA256_RE = __import__("re").compile(r"^[0-9a-f]{64}$")
+
+
+def integrity_dict(result: "IntegrityResult | ReplayReport") -> dict:
+    checks = [
+        {"check": "MANIFEST_HASHES", "ok": result.manifest_ok},
+        {"check": "LEDGER_CHAIN", "ok": result.ledger_ok},
+        {"check": "COMMITMENT", "ok": result.commitment_ok},
+        {"check": "SPEC_HASH", "ok": result.spec_hash_ok},
+    ]
+    ok = all(c["ok"] for c in checks)
+    return {"status": "VERIFIED" if ok else "FAILED", "checks": checks}
+
+
+AUTHENTICITY = {"status": "NOT_ESTABLISHED", "note": "Bundles are unsigned in v1."}
+
+
+def replay_report_dict(report: ReplayReport) -> dict:
+    """The contract ReplayReport body (without contractVersion): integrity,
+    reproducibility and authenticity reported separately (correction 10)."""
+    notes = list(report.notes)
+    original = report.original_verdict_hash
+    if not _SHA256_RE.match(original or ""):
+        # The schema requires a hash; an all-zero value is a documented sentinel.
+        original = "0" * 64
+        notes.append("original verdict hash unavailable; all-zero sentinel reported")
+    return {
+        "integrity": integrity_dict(report),
+        "reproducibility": {
+            "status": report.status.value,
+            "originalVerdictHash": original,
+            "replayedVerdictHash": report.replayed_verdict_hash,
+            "envMatch": report.env_match if report.replayed_verdict_hash is not None else None,
+        },
+        "authenticity": dict(AUTHENTICITY),
+        "notes": notes,
+    }
