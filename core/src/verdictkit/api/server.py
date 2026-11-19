@@ -87,6 +87,8 @@ class SafetyMiddleware(BaseHTTPMiddleware):
 
 
 def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
+    # The environment gate cannot be bypassed by the factory's default value.
+    judge_mode = judge_mode or os.environ.get("VK_JUDGE_MODE", "0").lower() in ("1", "true", "yes")
     isolation = _isolation(judge_mode)
     if registry is None:
         from verdictkit.cli import _load_registry
