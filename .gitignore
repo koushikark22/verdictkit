@@ -34,3 +34,4 @@ credentials/
 # Local tooling
 .vscode/
 .idea/
+!examples/stub_claimtype/golden.vkb

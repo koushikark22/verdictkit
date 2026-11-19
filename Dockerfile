@@ -1,11 +1,9 @@
 # VerdictKit container — two OS users, enforced vault isolation.
 # Core requirement 4; architecture doc §1, §4.
 #
-# Build digest pin: use `docker build --pull` to refresh; pin with:
-#   FROM python:3.12-slim@sha256:<digest>
-# We reference by tag here so the gate can build offline from a pulled cache;
-# the gate transcript records `docker image inspect` output for provenance.
-FROM python:3.12-slim
+# Pinned by digest (core task 15.1): the tag documents the version, the digest
+# fixes the exact multi-platform index. Update both together.
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 # ── System packages ──────────────────────────────────────────────────────────
 # util-linux: setpriv (uid/capability drop without execve overhead)
@@ -28,7 +26,7 @@ RUN groupadd --system --gid 902 vk-ipc && \
 
 # ── uv ───────────────────────────────────────────────────────────────────────
 # Install uv into /usr/local/bin so both users can call `uv run`.
-COPY --from=ghcr.io/astral-sh/uv:0.5.4 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.5.4@sha256:5436c72d52c9c0d011010ce68f4c399702b3b0764adcf282fe0e546f20ebaef6 /uv /uvx /usr/local/bin/
 
 # ── Source tree ──────────────────────────────────────────────────────────────
 WORKDIR /app
