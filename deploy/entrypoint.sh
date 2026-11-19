@@ -67,6 +67,7 @@ as_custodian() {
             PYTHONHASHSEED=0 \
             PYTHONDONTWRITEBYTECODE=1 \
             VK_ISOLATION=enforced \
+            VK_JUDGE_MODE="${VK_JUDGE_MODE:-0}" \
             VK_VAULT_DIR="$VAULT_DIR" \
             VK_EVIDENCE_DIR="$EVIDENCE_DIR" \
             VK_EXAMINER_SOCKET="$SOCKET_PATH" \
