@@ -7,10 +7,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from verdictkit.api.server import create_app
 from verdictkit.plugin import Registry
-
-
+from verdictkit.api.server import create_app
+\n
 class DemoType:
     type_id = "quote.finance.v1"
     schema_version = 1
@@ -30,6 +29,13 @@ class DemoType:
 
     def tolerances(self, _params, _outcomes):
         return {"monthly_payment": "0.01"}
+
+    def evidence_requests(self, _params):
+        return ()
+
+    def evidence_policy(self):
+        from verdictkit.plugin import EvidencePolicySpec
+        return EvidencePolicySpec(frozenset())
 
 
 def _registry():
@@ -66,13 +72,18 @@ def test_http_create_and_get_are_redacted_and_durable(tmp_path):
             assert frozen.json()["ledgerSeq"] == 2
             assert "OUTCOME_SECRET_125" not in frozen.text
             assert client.post(f"/api/v1/cases/{case_id}/freeze").status_code == 409
+            evidence = client.post(f"/api/v1/cases/{case_id}/evidence")
+            assert evidence.status_code == 200, evidence.text
+            assert evidence.json() == {"caseId": case_id, "evidence": []}
+            assert client.get(f"/api/v1/cases/{case_id}/evidence").json()["evidence"] == []
+            assert client.post(f"/api/v1/cases/{case_id}/evidence").status_code == 409
             assert client.patch(f"/api/v1/cases/{case_id}", json={}).status_code == 503
         # Simulate API restart: stable encryption key and database persist.
         with TestClient(create_app(_registry())) as restarted:
             status = restarted.get(f"/api/v1/cases/{case_id}")
             assert status.status_code == 200
             assert status.json()["isolationMode"] == "UNENFORCED"
-            assert status.json()["state"] == "FROZEN"
+            assert status.json()["state"] == "EVIDENCE_ACQUIRED"
             assert status.json()["specHash"] == frozen.json()["specHash"]
             assert "OUTCOME_SECRET_125" not in status.text
 
@@ -136,3 +147,26 @@ def test_freeze_persistence_survives_restart_and_expiry(tmp_path):
     db = (tmp_path / "drafts.sqlite3").read_bytes()
     assert b"CONFIDENTIAL_OUTCOME" not in db
     assert freeze.salt.hex().encode() not in db
+
+def test_reel_without_source_stays_blocked_without_creating_evidence(tmp_path):
+    class Reel(DemoType):
+        type_id = "reel.mechanical.v1"
+
+    reg = Registry()
+    reg.register(Reel())
+    env = {"VK_DRAFT_DIR": str(tmp_path),
+           "VK_VAULT_KEY": base64.b64encode(b"x" * 32).decode()}
+    with patch.dict(os.environ, env):
+        with TestClient(create_app(reg)) as client:
+            payload = _payload()
+            payload["claimType"] = "reel.mechanical.v1"
+            created = client.post("/api/v1/cases", json=payload)
+            assert created.status_code == 201
+            case_id = created.json()["caseId"]
+            assert client.post(f"/api/v1/cases/{case_id}/freeze").status_code == 200
+            response = client.post(f"/api/v1/cases/{case_id}/evidence")
+            assert response.status_code == 422
+            assert response.json()["executionStatus"] == "BLOCKED"
+            assert response.json()["blockers"][0]["code"] == "EVIDENCE_UNAVAILABLE"
+            assert client.get(f"/api/v1/cases/{case_id}").json()["state"] == "FROZEN"
+            assert client.get(f"/api/v1/cases/{case_id}/evidence").status_code == 404
