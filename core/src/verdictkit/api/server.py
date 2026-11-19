@@ -35,7 +35,7 @@ LOCKED = "HTTP_WORKFLOW_NOT_YET_IMPLEMENTED"
 
 
 def error(code: str, message: str, status: int, field: str | None = None) -> JSONResponse:
-    return JSONResponse(status_code=status, content={"error": {"code": code, "message": message, "field": field}})
+    return JSONResponse(status_code=status, content={"contractVersion": VERSION, "error": {"code": code, "message": message, "field": field}})
 
 
 def _isolation(judge_mode: bool) -> str:
@@ -99,11 +99,13 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
                 "judgeMode": judge_mode, "engineVersion": "0.1.0"}
 
     @app.get('/api/v1/claim-types')
-    def claim_types() -> list[dict[str, object]]:
-        return [{"claimType": tid, "schemaVersion": registry.get(tid).schema_version,
-                 "outcomeFields": sorted(registry.get(tid).outcome_fields),
-                 "acceptsPastedText": tid == "reel.mechanical.v1"}
-                for tid in registry.type_ids()]
+    def claim_types() -> dict[str, object]:
+        return {"contractVersion": VERSION, "claimTypes": [
+            {"claimType": tid, "schemaVersion": registry.get(tid).schema_version,
+             "outcomeFields": sorted(registry.get(tid).outcome_fields),
+             "acceptsPastedText": tid == "reel.mechanical.v1"}
+            for tid in registry.type_ids()
+        ]}
 
     # Draft persistence is opt-in and requires a stable key supplied to the
     # custodian. Never invent a process-local encryption key: that would make
@@ -175,6 +177,7 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
         except (DraftNotFound, ValueError):
             return error("NOT_FOUND", "Case unavailable", 404)
         return {
+            "contractVersion": VERSION,
             "caseId": case_id,
             "claimType": metadata["claimType"],
             "state": metadata["state"],
@@ -244,6 +247,7 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
                                   data_mode=DataMode(metadata["dataMode"]))
         if not gate.allowed:
             return JSONResponse(status_code=422, content={
+                "contractVersion": VERSION,
                 "caseId": case_id, "executionStatus": "BLOCKED",
                 "blockers": [gate.public_blocker()],
             })
@@ -254,14 +258,14 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             return error("NOT_FOUND", "Case unavailable", 404)
         except FreezeConflict:
             return error("STATE_CONFLICT", "Evidence already committed", 409)
-        return {"caseId": case_id, "evidence": []}
+        return {"contractVersion": VERSION, "caseId": case_id, "evidence": []}
 
     @app.get('/api/v1/cases/{case_id}/evidence')
     def list_case_evidence(case_id: str) -> Any:
         if draft_store is None:
             return error(LOCKED, "Encrypted draft custody not configured", 503)
         try:
-            return {"caseId": case_id, "evidence": draft_store.get_evidence(case_id)}
+            return {"contractVersion": VERSION, "caseId": case_id, "evidence": draft_store.get_evidence(case_id)}
         except (DraftNotFound, ValueError):
             return error("NOT_FOUND", "Evidence not acquired", 404)
 
