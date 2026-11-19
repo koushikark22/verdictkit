@@ -105,11 +105,13 @@ def test_full_lifecycle_contradicted_and_replayed(client):
     stages = [e["stage"] for e in events]
     assert stages == ["RUN_QUEUED", "TASK_BLINDED", "EXAMINATION_STARTED",
                       "EXAMINATION_PROGRESS", "EXAMINATION_COMMITTED", "OUTCOMES_REVEALED",
-                      "VERDICT_SEALED", "BUNDLE_WRITTEN", "RUN_COMPLETED"]
+                      "VERDICT_SEALED", "DIAGNOSTICS_APPENDED", "BUNDLE_WRITTEN",
+                      "RUN_COMPLETED"]
     assert [e["seq"] for e in events] == list(range(len(events)))
     ledger_seqs = {e["stage"]: e["ledgerSeq"] for e in events if e["ledgerSeq"] is not None}
     assert ledger_seqs == {"EXAMINATION_COMMITTED": 4, "OUTCOMES_REVEALED": 5,
-                           "VERDICT_SEALED": 6, "BUNDLE_WRITTEN": 7}
+                           "VERDICT_SEALED": 6, "DIAGNOSTICS_APPENDED": 7,
+                           "BUNDLE_WRITTEN": 8}
     for e in events:
         check("ProgressEvent", e)
         if e["stage"] in ledger_seqs:
@@ -145,6 +147,10 @@ def test_full_lifecycle_contradicted_and_replayed(client):
     assert body["keyRecords"][0]["recordKind"] == "WORKSHEET_LINE"
     assert body["isolationMode"] == "UNENFORCED"
     assert body["sensitivity"]["variantsExecuted"] == 1
+    diag = body["diagnostics"]
+    assert diag["computedAfterReveal"] is True and diag["affectsVerdict"] is False
+    assert diag["items"][0]["label"] == "diagnostic — computed after reveal"
+    assert diag["items"][0]["firstBrokenLine"] == "amount_financed"
 
     bundle = client.get(f"/api/v1/cases/{case_id}/bundle")
     assert bundle.status_code == 200

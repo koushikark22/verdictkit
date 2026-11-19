@@ -234,6 +234,16 @@ class FinanceClaimType(_BaseQuote):
     def validate_params(self, params: Mapping[str, object]) -> None:
         _finance_worksheet(params)
 
+    def diagnose(self, frozen: FrozenClaim, examination: Examination, outcomes: Mapping[str, object]) -> Mapping[str, object] | None:
+        """Post-reveal only (core req 10.4): local checks and payment packing.
+        Never changes a finding status; excluded from verdict_hash."""
+        from .diagnostics import finance_diagnostics
+        ws = _finance_worksheet(frozen.params)
+        stated = {k: _money(v, k) for k, v in outcomes.items() if k in self.arithmetic_fields}
+        if not stated:
+            return None
+        return finance_diagnostics(ws, stated)
+
     def examine(self, task: BlindedTask, evidence: EvidenceReader, points: Sequence[Mapping[str, str]]) -> Examination:
         ws = _finance_worksheet(task.params)
         calculated = chain(ws)
