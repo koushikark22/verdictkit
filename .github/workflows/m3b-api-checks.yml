@@ -31,4 +31,4 @@ jobs:
           python -m pip install --no-deps -e ./apps/reel-autopsy
       - name: Verify M3b intake and sealed draft store
         run: |
-          python -m pytest -q tests/api/test_m3b_intake_boundary.py tests/api/test_m3b_draft_store.py tests/api/test_m3b_http_drafts.py tests/api/test_m3a_transport.py tests/api/test_m3b_freeze_boundary.py
+          python -m pytest -q tests/api/test_m3b_intake_boundary.py tests/api/test_m3b_draft_store.py tests/api/test_m3b_http_drafts.py tests/api/test_m3a_transport.py tests/api/test_m3b_freeze_boundary.py tests/api/test_m3b_evidence_boundary.py
