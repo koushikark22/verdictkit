@@ -16,6 +16,13 @@
 #       - Run `verdictkit run` as vk-custodian (VK_ISOLATION=enforced).
 #       - Kill the worker when done.
 #
+#   gate-startup
+#       Verify judge-mode startup reports ENFORCED with a live examiner.
+#
+#   gate-http
+#       Judge-mode HTTP lifecycle (intake -> run -> outcome -> bundle -> replay)
+#       through the authenticated socket examiner; scripts/gate_http.py.
+#
 #   serve
 #       Start custodian (FastAPI) and examiner worker under their respective
 #       users.  Used for the production deployment.
@@ -239,6 +246,44 @@ cmd_gate_startup() {
 }
 
 # ---------------------------------------------------------------------------
+# subcommand: gate-http
+#   Judge-mode HTTP lifecycle through the authenticated socket examiner.
+# ---------------------------------------------------------------------------
+cmd_gate_http() {
+    setup_vault
+    mkdir -p /tmp/vk-custodian /tmp/vk-examiner
+    chown vk-custodian /tmp/vk-custodian
+    chown vk-examiner /tmp/vk-examiner
+    local draft_dir=/var/lib/vk/drafts
+    install -d -m 700 -o vk-custodian -g vk-custodian "$draft_dir"
+
+    rm -f "$SOCKET_PATH"
+    as_examiner bash -c "cd /app && python -I -m verdictkit.examiner.worker" &
+    local examiner_pid=$!
+    local retries=30
+    while [ "$retries" -gt 0 ] && [ ! -S "$SOCKET_PATH" ]; do
+        sleep 0.2
+        retries=$((retries - 1))
+    done
+    if [ ! -S "$SOCKET_PATH" ]; then
+        echo "examiner socket did not become ready" >&2
+        kill "$examiner_pid" 2>/dev/null || true
+        return 1
+    fi
+    chgrp vk-ipc "$SOCKET_PATH"
+    chmod 660 "$SOCKET_PATH"
+
+    local vault_key; vault_key="$(python3 -c 'import os,base64; print(base64.b64encode(os.urandom(32)).decode())')"
+    local VK_JUDGE_MODE=1
+    local rc=0
+    as_custodian env VK_VAULT_KEY="$vault_key" VK_DRAFT_DIR="$draft_dir" \
+        bash -c "cd /app && /app/.venv/bin/python scripts/gate_http.py" || rc=$?
+    kill "$examiner_pid" 2>/dev/null || true
+    wait "$examiner_pid" 2>/dev/null || true
+    return "$rc"
+}
+
+# ---------------------------------------------------------------------------
 # subcommand: serve
 # ---------------------------------------------------------------------------
 
@@ -266,9 +311,13 @@ cmd_serve() {
     chgrp vk-ipc "$SOCKET_PATH"
     chmod 660 "$SOCKET_PATH"
 
+    # Encrypted case custody (drafts, freezes, runs, bundles): custodian-only, 0700.
+    local draft_dir="${VK_DRAFT_DIR:-/var/lib/vk/drafts}"
+    install -d -m 700 -o vk-custodian -g vk-custodian "$draft_dir"
+
     echo "[serve] Starting API server as vk-custodian..."
     as_custodian \
-        env VK_VAULT_KEY="$vault_key" \
+        env VK_VAULT_KEY="$vault_key" VK_DRAFT_DIR="$draft_dir" \
         bash -c "cd /app && python -m verdictkit.api --host 0.0.0.0 --port '${PORT:-8000}'" \
         &
     local api_pid=$!
@@ -300,6 +349,10 @@ case "$SUBCOMMAND" in
         shift
         cmd_gate_startup "$@"
         ;;
+    gate-http)
+        shift
+        cmd_gate_http "$@"
+        ;;
     serve)
         shift
         cmd_serve "$@"
@@ -311,7 +364,7 @@ case "$SUBCOMMAND" in
         exec /app/.venv/bin/verdictkit "$@"
         ;;
     "")
-        echo "Usage: entrypoint.sh {gate-isolation|gate-case|serve|verdictkit ...}" >&2
+        echo "Usage: entrypoint.sh {gate-isolation|gate-case|gate-startup|gate-http|serve|verdictkit ...}" >&2
         exit 1
         ;;
     *)
