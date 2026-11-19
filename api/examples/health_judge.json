@@ -1,0 +1,7 @@
+{
+  "contractVersion": "1.1.0",
+  "status": "ok",
+  "isolationMode": "ENFORCED",
+  "judgeMode": true,
+  "engineVersion": "0.1.0"
+}

@@ -1,0 +1,55 @@
+{
+  "contractVersion": "1.1.0",
+  "caseId": "case_00000000000000000000000000000001",
+  "runId": "run_00000000000000000000000000000001",
+  "claimType": "reel.mechanical.v1",
+  "dataMode": "LIVE_EVIDENCE",
+  "demonstrationOnly": false,
+  "executionStatus": "INDETERMINATE",
+  "headline": {
+    "status": "INDETERMINATE",
+    "confidenceClass": null
+  },
+  "findings": [
+    {
+      "findingId": "total_return",
+      "status": "INDETERMINATE",
+      "confidenceClass": null,
+      "confidenceScope": null,
+      "statement": "Evidence has a gap; reproduction not attempted.",
+      "reason": "evidence_gap",
+      "numbers": {
+        "expected": null,
+        "observed": "340",
+        "difference": null,
+        "tolerance": "0.5"
+      },
+      "evidenceIds": [],
+      "assumptionDependencies": [],
+      "gridPointsEvaluated": 1,
+      "keyRecordIds": []
+    }
+  ],
+  "parameterLedger": [],
+  "evidence": [],
+  "keyRecords": [],
+  "diagnostics": null,
+  "blockers": [],
+  "specHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "verdictHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "isolationMode": "ENFORCED",
+  "bundleAvailable": true,
+  "demonstrationNotice": null,
+  "sensitivity": null,
+  "specimen": {
+    "specimenId": "SPC-0000ABCD",
+    "claimType": "reel.mechanical.v1",
+    "claimTypeLabel": "Trading strategy claim",
+    "source": "USER_SUBMITTED",
+    "fixtureId": null,
+    "title": "SMA_CROSS 10/30 \u00b7 BTC-USD \u00b7 1d",
+    "fields": [],
+    "frozenAt": "2026-11-22T12:00:00Z",
+    "specHashShort": "aaaaaaaaaaaa"
+  }
+}

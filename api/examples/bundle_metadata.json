@@ -1,0 +1,50 @@
+{
+  "contractVersion": "1.1.0",
+  "caseId": "case_00000000000000000000000000000001",
+  "bundleSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "sizeBytes": 4096,
+  "engineVersion": "0.1.0",
+  "envFingerprint": {
+    "engineVersion": "0.1.0",
+    "pythonVersion": "3.12.8",
+    "lockfileSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "imageDigest": "unknown"
+  },
+  "isolationMode": "ENFORCED",
+  "embeddedEvidence": [
+    "ev_1111111111111111"
+  ],
+  "refetchOnlyEvidence": [
+    {
+      "evidenceId": "ev_4444444444444444",
+      "uri": "https://example.invalid/candles",
+      "snapshotHash": "4444444444444444444444444444444444444444444444444444444444444444"
+    }
+  ],
+  "integrity": {
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "check": "MANIFEST_HASHES",
+        "ok": true,
+        "detail": null
+      },
+      {
+        "check": "LEDGER_CHAIN",
+        "ok": true,
+        "detail": null
+      }
+    ]
+  },
+  "reproducibility": {
+    "status": "NOT_RUN",
+    "originalVerdictHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "replayedVerdictHash": null,
+    "envMatch": null
+  },
+  "authenticity": {
+    "status": "NOT_ESTABLISHED",
+    "note": "Bundles are unsigned. Integrity checks prove internal consistency, not origin."
+  },
+  "replayCommand": "verdictkit replay case.vkb"
+}

@@ -1,0 +1,36 @@
+__pycache__/
+*.pyc
+.venv/
+.hypothesis/
+.pytest_cache/
+node_modules/
+dist/
+*.vkb
+!core/examples/**/*.vkb
+# NOTE: .kiro/ must never be ignored (submission requirement)
+
+# Local build and verification outputs
+artifacts/
+*.bak
+*.bak.*
+*.ipc.bak
+*.before-debug.bak
+*.log
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Secrets and local environment configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Local tooling
+.vscode/
+.idea/

@@ -1,0 +1,224 @@
+{
+  "contractVersion": "1.1.0",
+  "caseId": "case_00000000000000000000000000000001",
+  "runId": "run_00000000000000000000000000000001",
+  "claimType": "quote.finance.v1",
+  "dataMode": "LIVE_EVIDENCE",
+  "demonstrationOnly": false,
+  "executionStatus": "COMPLETED",
+  "headline": {
+    "status": "CONTRADICTED",
+    "confidenceClass": "DOCUMENT_INTERNAL"
+  },
+  "findings": [
+    {
+      "findingId": "amount_financed",
+      "status": "CONTRADICTED",
+      "confidenceClass": "DOCUMENT_INTERNAL",
+      "confidenceScope": "Given the frozen document values and the stated formula convention.",
+      "statement": "Stated amount financed differs from the itemised lines.",
+      "reason": null,
+      "numbers": {
+        "expected": "1000.00",
+        "observed": "1100.00",
+        "difference": "100.00",
+        "tolerance": "0.00"
+      },
+      "evidenceIds": [
+        "ev_1111111111111111"
+      ],
+      "assumptionDependencies": [],
+      "gridPointsEvaluated": 1,
+      "keyRecordIds": [
+        "kr_af"
+      ],
+      "pointOfFailure": true,
+      "propagated": false
+    },
+    {
+      "findingId": "monthly_payment",
+      "status": "CONTRADICTED",
+      "confidenceClass": "DOCUMENT_INTERNAL",
+      "confidenceScope": "Given the frozen document values and the stated formula convention.",
+      "statement": "Stated payment differs from the recomputed payment.",
+      "reason": null,
+      "numbers": {
+        "expected": "10.00",
+        "observed": "11.00",
+        "difference": "1.00",
+        "tolerance": "0.01"
+      },
+      "evidenceIds": [
+        "ev_1111111111111111"
+      ],
+      "assumptionDependencies": [],
+      "gridPointsEvaluated": 1,
+      "keyRecordIds": [],
+      "pointOfFailure": false,
+      "propagated": true
+    },
+    {
+      "findingId": "tax_rate",
+      "status": "SUPPORTED",
+      "confidenceClass": "EXTERNAL",
+      "confidenceScope": "Given the cited evidence snapshots and the declared assumption ranges.",
+      "statement": "Stated rate equals the official combined rate.",
+      "reason": null,
+      "numbers": {
+        "expected": "6.00",
+        "observed": "6.00",
+        "difference": "0.00",
+        "tolerance": "0.00"
+      },
+      "evidenceIds": [
+        "ev_2222222222222222"
+      ],
+      "assumptionDependencies": [],
+      "gridPointsEvaluated": 1,
+      "keyRecordIds": []
+    }
+  ],
+  "parameterLedger": [
+    {
+      "name": "selling_price",
+      "value": "900.00",
+      "state": "SPECIFIED",
+      "sourceSpan": null,
+      "basis": "USER_FORM",
+      "critical": true
+    },
+    {
+      "name": "doc_fee_taxable",
+      "value": null,
+      "state": "MISSING",
+      "sourceSpan": null,
+      "basis": "NONE",
+      "critical": false
+    }
+  ],
+  "evidence": [
+    {
+      "evidenceId": "ev_1111111111111111",
+      "providerId": "worksheet",
+      "origin": "CLAIMANT_DOCUMENT",
+      "retrievedAt": "2026-11-22T12:00:00Z",
+      "snapshotHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "independenceBasis": "CLAIMANT_DOCUMENT_SELF",
+      "rightsNote": "User-entered worksheet values; used only for document-internal findings.",
+      "licenseClass": "DOCUMENT",
+      "embeddedInBundle": true,
+      "uri": null
+    },
+    {
+      "evidenceId": "ev_2222222222222222",
+      "providerId": "state-rules-XX",
+      "origin": "GOVERNMENT_OFFICIAL",
+      "retrievedAt": "2026-11-22T12:00:00Z",
+      "snapshotHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "independenceBasis": "INDEPENDENT_OF_CLAIMANT",
+      "rightsNote": "Facts extracted from an official state page; page itself not redistributed.",
+      "licenseClass": "REDISTRIBUTABLE",
+      "embeddedInBundle": true,
+      "uri": "https://example.invalid/state-tax"
+    }
+  ],
+  "keyRecords": [
+    {
+      "recordId": "kr_af",
+      "findingId": "amount_financed",
+      "recordRole": "COUNTEREXAMPLE",
+      "recordKind": "WORKSHEET_LINE",
+      "payload": {
+        "line": "amount_financed"
+      },
+      "note": "First line that disagrees with the itemised inputs."
+    },
+    {
+      "recordId": "kr_l1",
+      "findingId": null,
+      "recordRole": "INTERNAL_TRACE",
+      "recordKind": "LEDGER_ENTRY",
+      "payload": {
+        "seq": 6,
+        "kind": "VERDICT_SEALED"
+      },
+      "note": "Ledger entry"
+    }
+  ],
+  "diagnostics": {
+    "computedAfterReveal": true,
+    "affectsVerdict": false,
+    "items": [
+      {
+        "kind": "payment_packing"
+      }
+    ]
+  },
+  "blockers": [],
+  "specHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "verdictHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "isolationMode": "ENFORCED",
+  "bundleAvailable": true,
+  "demonstrationNotice": null,
+  "specimen": {
+    "specimenId": "SPC-0000ABCD",
+    "claimType": "quote.finance.v1",
+    "claimTypeLabel": "Vehicle finance worksheet",
+    "source": "USER_SUBMITTED",
+    "fixtureId": null,
+    "title": "Finance worksheet \u00b7 60 months \u00b7 state XX",
+    "fields": [
+      {
+        "label": "Term",
+        "value": "60 months"
+      },
+      {
+        "label": "Jurisdiction",
+        "value": "XX"
+      }
+    ],
+    "frozenAt": "2026-11-22T12:00:00Z",
+    "specHashShort": "aaaaaaaaaaaa"
+  },
+  "sensitivity": {
+    "templateVersion": "quote.finance.v1/sweep-v1",
+    "gridCap": 1000,
+    "variantsExecuted": 2,
+    "axes": [
+      {
+        "name": "doc_fee_taxable",
+        "values": [
+          "false",
+          "true"
+        ],
+        "origin": "DEFAULT_POLICY"
+      }
+    ],
+    "results": [
+      {
+        "findingId": "amount_financed",
+        "aggregate": "NONE_PASS",
+        "passCount": 0,
+        "failCount": 2,
+        "cells": [
+          {
+            "variant": 0,
+            "point": {
+              "doc_fee_taxable": "false"
+            },
+            "passed": false,
+            "margin": "-100.00"
+          },
+          {
+            "variant": 1,
+            "point": {
+              "doc_fee_taxable": "true"
+            },
+            "passed": false,
+            "margin": "-100.00"
+          }
+        ]
+      }
+    ]
+  }
+}

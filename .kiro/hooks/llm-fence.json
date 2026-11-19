@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "llm-fence-on-agent-save",
+      "trigger": "PostFileSave",
+      "matcher": "\\.py$",
+      "action": {
+        "type": "command",
+        "command": "uv run pytest tests/contract/test_llm_fence.py -q"
+      },
+      "timeout": 60,
+      "enabled": true
+    }
+  ]
+}

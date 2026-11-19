@@ -1,0 +1,22 @@
+[project]
+name = "verdictkit-workspace"
+version = "0.1.0"
+description = "VerdictKit — The Claim Autopsy Engine (Kiroween 2026, Skeleton Crew)"
+requires-python = ">=3.12"
+dependencies = ["verdictkit", "reel-autopsy", "quote-autopsy"]
+
+[dependency-groups]
+dev = ["pytest>=8.3", "hypothesis>=6.120", "jsonschema>=4.23", "pyyaml>=6", "openapi-spec-validator>=0.7"]
+
+[tool.uv.workspace]
+members = ["core", "apps/reel-autopsy", "apps/quote-autopsy", "core/examples"]
+
+[tool.uv.sources]
+verdictkit = { workspace = true }
+reel-autopsy = { workspace = true }
+quote-autopsy = { workspace = true }
+
+[tool.pytest.ini_options]
+pythonpath = ["core/src", "apps/reel-autopsy/src", "apps/quote-autopsy/src", "tests"]
+testpaths = ["tests"]
+markers = ["isolation: requires the Linux container with VK_ISOLATION=enforced"]

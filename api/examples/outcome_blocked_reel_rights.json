@@ -1,0 +1,56 @@
+{
+  "contractVersion": "1.1.0",
+  "caseId": "case_00000000000000000000000000000001",
+  "runId": null,
+  "claimType": "reel.mechanical.v1",
+  "dataMode": "LIVE_EVIDENCE",
+  "demonstrationOnly": false,
+  "executionStatus": "BLOCKED",
+  "headline": {
+    "status": null,
+    "confidenceClass": null
+  },
+  "findings": [],
+  "parameterLedger": [
+    {
+      "name": "instrument",
+      "value": "BTC-USD",
+      "state": "SPECIFIED",
+      "sourceSpan": null,
+      "basis": "USER_CONFIRMED",
+      "critical": true
+    }
+  ],
+  "evidence": [],
+  "keyRecords": [],
+  "diagnostics": null,
+  "blockers": [
+    {
+      "code": "EVIDENCE_RIGHTS_UNVERIFIED",
+      "message": "No verified rights basis for the configured market-data source.",
+      "field": null
+    }
+  ],
+  "specHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "verdictHash": null,
+  "isolationMode": "ENFORCED",
+  "bundleAvailable": false,
+  "demonstrationNotice": null,
+  "sensitivity": null,
+  "specimen": {
+    "specimenId": "SPC-0000ABCD",
+    "claimType": "reel.mechanical.v1",
+    "claimTypeLabel": "Trading strategy claim",
+    "source": "USER_SUBMITTED",
+    "fixtureId": null,
+    "title": "SMA_CROSS 10/30 \u00b7 BTC-USD \u00b7 1d",
+    "fields": [
+      {
+        "label": "Timeframe",
+        "value": "1d"
+      }
+    ],
+    "frozenAt": "2026-11-22T12:00:00Z",
+    "specHashShort": "aaaaaaaaaaaa"
+  }
+}

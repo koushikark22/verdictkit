@@ -1,0 +1,27 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "reel-contract-tests-on-agent-save",
+      "trigger": "PostFileSave",
+      "matcher": "apps/reel-autopsy/src/.*\\.py$",
+      "action": {
+        "type": "command",
+        "command": "uv run pytest tests/contract/test_reel_contract.py -q -x"
+      },
+      "timeout": 180,
+      "enabled": true
+    },
+    {
+      "name": "quote-contract-tests-on-agent-save",
+      "trigger": "PostFileSave",
+      "matcher": "apps/quote-autopsy/src/.*\\.py$",
+      "action": {
+        "type": "command",
+        "command": "uv run pytest tests/contract/test_quote_contract.py -q -x"
+      },
+      "timeout": 180,
+      "enabled": true
+    }
+  ]
+}

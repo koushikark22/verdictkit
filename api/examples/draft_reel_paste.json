@@ -1,0 +1,59 @@
+{
+  "contractVersion": "1.1.0",
+  "caseId": "case_00000000000000000000000000000001",
+  "claimType": "reel.mechanical.v1",
+  "state": "DRAFT",
+  "dataMode": "LIVE_EVIDENCE",
+  "parameterLedger": [
+    {
+      "name": "template",
+      "value": "SMA_CROSS",
+      "state": "SPECIFIED",
+      "sourceSpan": {
+        "start": 0,
+        "end": 9
+      },
+      "basis": "CLAIMANT_TEXT",
+      "critical": true
+    },
+    {
+      "name": "timeframe",
+      "value": null,
+      "state": "MISSING",
+      "sourceSpan": null,
+      "basis": "NONE",
+      "critical": true
+    },
+    {
+      "name": "fee_bps_per_side",
+      "value": null,
+      "range": {
+        "kind": "SET",
+        "values": [
+          "0",
+          "10",
+          "25",
+          "50"
+        ]
+      },
+      "state": "ASSUMED",
+      "sourceSpan": null,
+      "basis": "DEFAULT_POLICY",
+      "critical": false
+    }
+  ],
+  "outcomeFields": [
+    {
+      "name": "total_return_pct",
+      "captured": true
+    }
+  ],
+  "blockers": [
+    {
+      "code": "MISSING_CRITICAL_PARAMETER",
+      "message": "timeframe is required",
+      "field": "timeframe"
+    }
+  ],
+  "expiresAt": "2026-11-23T12:00:00Z"
+}

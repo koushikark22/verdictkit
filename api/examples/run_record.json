@@ -1,0 +1,50 @@
+{
+  "contractVersion": "1.1.0",
+  "runId": "run_00000000000000000000000000000001",
+  "caseId": "case_00000000000000000000000000000001",
+  "state": "COMPLETED",
+  "isolationMode": "ENFORCED",
+  "startedAt": "2026-11-22T12:00:00Z",
+  "finishedAt": "2026-11-22T12:00:03Z",
+  "events": [
+    {
+      "runId": "run_00000000000000000000000000000001",
+      "seq": 0,
+      "stage": "RUN_QUEUED",
+      "at": "2026-11-22T12:00:00Z",
+      "ledgerSeq": null,
+      "ledgerKind": null,
+      "detail": {}
+    },
+    {
+      "runId": "run_00000000000000000000000000000001",
+      "seq": 1,
+      "stage": "EXAMINATION_PROGRESS",
+      "at": "2026-11-22T12:00:00Z",
+      "ledgerSeq": null,
+      "ledgerKind": null,
+      "detail": {
+        "pointsDone": 8,
+        "pointsTotal": 16
+      }
+    },
+    {
+      "runId": "run_00000000000000000000000000000001",
+      "seq": 2,
+      "stage": "EXAMINATION_COMMITTED",
+      "at": "2026-11-22T12:00:00Z",
+      "ledgerSeq": 4,
+      "ledgerKind": "EXAMINATION_COMMITTED",
+      "detail": {}
+    },
+    {
+      "runId": "run_00000000000000000000000000000001",
+      "seq": 3,
+      "stage": "VERDICT_SEALED",
+      "at": "2026-11-22T12:00:00Z",
+      "ledgerSeq": 6,
+      "ledgerKind": "VERDICT_SEALED",
+      "detail": {}
+    }
+  ]
+}

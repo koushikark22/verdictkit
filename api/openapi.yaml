@@ -1,0 +1,955 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: VerdictKit API
+  version: 1.1.0
+  description: >
+    Presentation/HTTP adapter over the frozen VerdictKit domain. See docs/API_CONTRACT.md.
+    All decimal values are strings. Judge mode requires no authentication.
+    Every JSON response carries contractVersion (also sent as header X-VerdictKit-Contract).
+servers:
+  - url: /api/v1
+tags:
+  - name: system
+  - name: case
+  - name: run
+  - name: bundle
+
+paths:
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server and isolation status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /claim-types:
+    get:
+      tags: [system]
+      operationId: listClaimTypes
+      responses:
+        "200":
+          description: Registered claim types.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ClaimTypeInfo" }
+
+  /cases:
+    post:
+      tags: [case]
+      operationId: createDraft
+      summary: Intake. Validates input and returns a draft with a parameter ledger. Nothing is frozen.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/IntakeRequest" }
+      responses:
+        "201":
+          description: Draft created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DraftCase" }
+        "422": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+
+  /cases/{caseId}:
+    parameters: [{ $ref: "#/components/parameters/CaseId" }]
+    get:
+      tags: [case]
+      operationId: getCase
+      responses:
+        "200":
+          description: Current case summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CaseSummary" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [case]
+      operationId: updateDraft
+      summary: Edit or confirm draft fields (only while state is DRAFT).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DraftUpdate" }
+      responses:
+        "200":
+          description: Updated draft.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DraftCase" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /cases/{caseId}/freeze:
+    parameters: [{ $ref: "#/components/parameters/CaseId" }]
+    post:
+      tags: [case]
+      operationId: freezeCase
+      summary: Freeze the claim, commit and seal outcomes. Irreversible.
+      responses:
+        "200":
+          description: Frozen.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FrozenCase" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422":
+          description: Blocked (e.g. missing critical parameter, grid too large).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BlockedResponse" }
+
+  /cases/{caseId}/evidence:
+    parameters: [{ $ref: "#/components/parameters/CaseId" }]
+    post:
+      tags: [case]
+      operationId: acquireEvidence
+      responses:
+        "200":
+          description: Evidence acquired (may be empty for document-internal claim types).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvidenceResult" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422":
+          description: Blocked (rights unverified, evidence unavailable, policy violation).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BlockedResponse" }
+    get:
+      tags: [case]
+      operationId: listEvidence
+      responses:
+        "200":
+          description: Evidence recorded for the case.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvidenceResult" }
+
+  /cases/{caseId}/runs:
+    parameters: [{ $ref: "#/components/parameters/CaseId" }]
+    post:
+      tags: [run]
+      operationId: executeCase
+      summary: Start blind examination → reveal → verdict → bundle. Idempotent per case.
+      responses:
+        "202":
+          description: Run accepted (or existing run returned).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunAccepted" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /cases/{caseId}/runs/{runId}:
+    parameters:
+      - { $ref: "#/components/parameters/CaseId" }
+      - { $ref: "#/components/parameters/RunId" }
+    get:
+      tags: [run]
+      operationId: getRun
+      responses:
+        "200":
+          description: Persisted run record including all progress events so far.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RunRecord" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /cases/{caseId}/runs/{runId}/events:
+    parameters:
+      - { $ref: "#/components/parameters/CaseId" }
+      - { $ref: "#/components/parameters/RunId" }
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema: { type: integer, minimum: 0 }
+    get:
+      tags: [run]
+      operationId: streamRunEvents
+      summary: >
+        Server-Sent Events. Each event is persisted to the run record before it is sent;
+        SSE id = ProgressEvent.seq. Reconnect with Last-Event-ID to resume.
+      responses:
+        "200":
+          description: "text/event-stream; each `data:` line is one ProgressEvent JSON object."
+          content:
+            text/event-stream:
+              schema: { $ref: "#/components/schemas/ProgressEvent" }
+
+  /cases/{caseId}/outcome:
+    parameters: [{ $ref: "#/components/parameters/CaseId" }]
+    get:
+      tags: [run]
+      operationId: getOutcome
+      summary: Verdict join — the single user-facing outcome object.
+      responses:
+        "200":
+          description: Outcome (COMPLETED, BLOCKED or INDETERMINATE).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OutcomeResponse" }
+        "404": { $ref: "#/components/responses/Error" }
+        "425": { $ref: "#/components/responses/Error" }
+
+  /cases/{caseId}/bundle:
+    parameters: [{ $ref: "#/components/parameters/CaseId" }]
+    get:
+      tags: [bundle]
+      operationId: exportBundle
+      responses:
+        "200":
+          description: The .vkb bundle (zip).
+          content:
+            application/zip:
+              schema: { type: string, contentMediaType: application/zip }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /cases/{caseId}/bundle/metadata:
+    parameters: [{ $ref: "#/components/parameters/CaseId" }]
+    get:
+      tags: [bundle]
+      operationId: getBundleMetadata
+      responses:
+        "200":
+          description: Integrity, replay and authenticity information, reported separately.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BundleMetadata" }
+
+  /replays:
+    post:
+      tags: [bundle]
+      operationId: replayUploadedBundle
+      summary: Replay an uploaded bundle server-side with no network access.
+      requestBody:
+        required: true
+        content:
+          application/zip:
+            schema: { type: string, contentMediaType: application/zip }
+      responses:
+        "200":
+          description: Replay report.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReplayReport" }
+        "413": { $ref: "#/components/responses/Error" }
+
+components:
+  parameters:
+    CaseId:
+      name: caseId
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/CaseId" }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/RunId" }
+
+  responses:
+    Error:
+      description: Error envelope.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  schemas:
+    # ---------- primitives ----------
+    ContractVersion: { const: "1.1.0" }
+    CaseId: { type: string, pattern: "^case_[0-9a-f]{32}$" }
+    RunId: { type: string, pattern: "^run_[0-9a-f]{32}$" }
+    Sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
+    DecimalString: { type: string, pattern: "^-?[0-9]+(\\.[0-9]+)?$" }
+    Timestamp: { type: string, format: date-time }
+    ClaimTypeId:
+      type: string
+      enum: [reel.mechanical.v1, quote.finance.v1, quote.lease.v1]
+    DataMode:
+      type: string
+      enum: [LIVE_EVIDENCE, SYNTHETIC_DEMO]
+      description: SYNTHETIC_DEMO runs never produce a confidence class.
+    IsolationMode: { type: string, enum: [ENFORCED, UNENFORCED] }
+    ExecutionStatus:
+      type: string
+      enum: [COMPLETED, BLOCKED, INDETERMINATE]
+    EpistemicStatus:
+      type: string
+      enum: [CONSISTENT, CONTRADICTED, SUPPORTED, REFUTED, CONDITIONAL, WITHIN_BOUND, IMPOSSIBLE, INDETERMINATE]
+    ConfidenceClass:
+      type: [string, "null"]
+      enum: [DOCUMENT_INTERNAL, EXTERNAL, MECHANICAL_BOUND, null]
+
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            field: { type: [string, "null"] }
+
+    Blocker:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - SCHEMA_INVALID
+            - MISSING_CRITICAL_PARAMETER
+            - GRID_TOO_LARGE
+            - PRIVACY_REJECTED
+            - EVIDENCE_RIGHTS_UNVERIFIED
+            - EVIDENCE_UNAVAILABLE
+            - EVIDENCE_GAP
+            - POLICY_VIOLATION
+            - ISOLATION_NOT_ENFORCED
+        message: { type: string }
+        field: { type: [string, "null"] }
+
+    BlockedResponse:
+      type: object
+      additionalProperties: false
+      required: [caseId, executionStatus, blockers]
+      properties:
+        caseId: { $ref: "#/components/schemas/CaseId" }
+        executionStatus: { const: BLOCKED }
+        blockers:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/Blocker" }
+
+    Health:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, status, isolationMode, judgeMode, engineVersion]
+      properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
+        status: { const: ok }
+        isolationMode: { $ref: "#/components/schemas/IsolationMode" }
+        judgeMode: { type: boolean }
+        engineVersion: { type: string }
+      allOf:
+        - if: { properties: { judgeMode: { const: true } } }
+          then: { properties: { isolationMode: { const: ENFORCED } } }
+
+    ClaimTypeInfo:
+      type: object
+      additionalProperties: false
+      required: [claimType, schemaVersion, outcomeFields, acceptsPastedText]
+      properties:
+        claimType: { $ref: "#/components/schemas/ClaimTypeId" }
+        schemaVersion: { type: integer, minimum: 1 }
+        outcomeFields: { type: array, items: { type: string } }
+        acceptsPastedText: { type: boolean }
+
+    # ---------- intake ----------
+    IntakeRequest:
+      type: object
+      additionalProperties: false
+      required: [claimType, dataMode]
+      properties:
+        claimType: { $ref: "#/components/schemas/ClaimTypeId" }
+        dataMode: { $ref: "#/components/schemas/DataMode" }
+        fixtureId:
+          type: [string, "null"]
+          pattern: "^fx_[a-z0-9_]{1,40}$"
+          description: SYNTHETIC_DEMO cases are created only from a bundled fixture claim.
+        form:
+          type: object
+          additionalProperties: false
+          required: [params, outcomes]
+          properties:
+            params: { type: object }
+            outcomes: { type: object }
+            assumptions: { type: object }
+        pastedText:
+          type: [string, "null"]
+          maxLength: 2000
+          description: >
+            Reel Autopsy only. Transient: parsed in the custodian, never persisted, logged,
+            frozen or bundled. URLs, @handles, emails and phone numbers are rejected
+            (PRIVACY_REJECTED).
+      allOf:
+        - if:
+            properties: { claimType: { enum: [quote.finance.v1, quote.lease.v1] } }
+          then:
+            properties: { pastedText: { type: "null" } }
+        # No user-supplied claim can run on synthetic data (it would look like proof).
+        - if: { properties: { dataMode: { const: SYNTHETIC_DEMO } } }
+          then:
+            required: [fixtureId]
+            properties:
+              fixtureId: { type: string }
+              pastedText: { type: "null" }
+              form: false
+        - if: { properties: { dataMode: { const: LIVE_EVIDENCE } } }
+          then:
+            required: [form]
+            properties: { fixtureId: { type: "null" } }
+
+    DraftUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        params: { type: object }
+        outcomes: { type: object }
+        assumptions: { type: object }
+        confirm:
+          type: array
+          description: Parameter names the user confirms (basis becomes USER_CONFIRMED).
+          items: { type: string }
+
+    SourceSpan:
+      type: object
+      additionalProperties: false
+      required: [start, end]
+      properties:
+        start: { type: integer, minimum: 0 }
+        end: { type: integer, minimum: 0 }
+
+    ParameterEntry:
+      type: object
+      additionalProperties: false
+      required: [name, value, state, sourceSpan, basis, critical]
+      properties:
+        name: { type: string }
+        value:
+          type: [string, "null"]
+        range:
+          type: [object, "null"]
+          additionalProperties: false
+          properties:
+            kind: { enum: [RANGE, SET] }
+            min: { $ref: "#/components/schemas/DecimalString" }
+            max: { $ref: "#/components/schemas/DecimalString" }
+            step: { $ref: "#/components/schemas/DecimalString" }
+            values: { type: array, items: { type: string } }
+        state: { type: string, enum: [SPECIFIED, ASSUMED, MISSING] }
+        sourceSpan:
+          oneOf:
+            - { type: "null" }
+            - { $ref: "#/components/schemas/SourceSpan" }
+        basis:
+          type: string
+          enum: [CLAIMANT_TEXT, USER_FORM, USER_CONFIRMED, DEFAULT_POLICY, NONE]
+        critical: { type: boolean }
+      allOf:
+        - if: { properties: { state: { const: MISSING } } }
+          then: { properties: { value: { type: "null" }, basis: { const: NONE }, sourceSpan: { type: "null" } } }
+        - if: { properties: { state: { const: ASSUMED } } }
+          then: { properties: { basis: { const: DEFAULT_POLICY }, sourceSpan: { type: "null" } } }
+        - if: { properties: { state: { const: SPECIFIED } } }
+          then: { properties: { basis: { enum: [CLAIMANT_TEXT, USER_FORM, USER_CONFIRMED] } } }
+        - if: { properties: { basis: { not: { const: CLAIMANT_TEXT } } } }
+          then: { properties: { sourceSpan: { type: "null" } } }
+
+    DraftCase:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, caseId, claimType, state, dataMode, parameterLedger, outcomeFields, blockers, expiresAt]
+      properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
+        caseId: { $ref: "#/components/schemas/CaseId" }
+        claimType: { $ref: "#/components/schemas/ClaimTypeId" }
+        state: { const: DRAFT }
+        dataMode: { $ref: "#/components/schemas/DataMode" }
+        parameterLedger:
+          type: array
+          items: { $ref: "#/components/schemas/ParameterEntry" }
+        outcomeFields:
+          type: array
+          description: >
+            Asserted outcomes are write-only. The server never echoes their values (or spans)
+            before the verdict join; it reports only which fields were captured.
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, captured]
+            properties:
+              name: { type: string }
+              captured: { type: boolean }
+        blockers:
+          type: array
+          description: Non-empty means freeze will be refused until resolved.
+          items: { $ref: "#/components/schemas/Blocker" }
+        expiresAt: { $ref: "#/components/schemas/Timestamp" }
+
+    FrozenCase:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, caseId, state, specHash, commitment, frozenAt, ledgerSeq, parameterLedger, specimen]
+      properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
+        specimen: { $ref: "#/components/schemas/Specimen" }
+        caseId: { $ref: "#/components/schemas/CaseId" }
+        state: { const: FROZEN }
+        specHash: { $ref: "#/components/schemas/Sha256" }
+        commitment:
+          type: object
+          additionalProperties: false
+          required: [alg, digest]
+          properties:
+            alg: { const: sha256/vk-commit-v1 }
+            digest: { $ref: "#/components/schemas/Sha256" }
+        frozenAt: { $ref: "#/components/schemas/Timestamp" }
+        ledgerSeq: { type: integer, minimum: 0 }
+        parameterLedger:
+          type: array
+          description: Final ledger. sourceSpan is always null after freeze (pasted text is discarded).
+          items:
+            allOf:
+              - { $ref: "#/components/schemas/ParameterEntry" }
+              - { properties: { sourceSpan: { type: "null" } } }
+
+    CaseSummary:
+      type: object
+      additionalProperties: false
+      required: [caseId, claimType, state, dataMode, isolationMode]
+      properties:
+        caseId: { $ref: "#/components/schemas/CaseId" }
+        claimType: { $ref: "#/components/schemas/ClaimTypeId" }
+        state: { type: string, enum: [DRAFT, FROZEN, EVIDENCE_ACQUIRED, RUNNING, SEALED, BLOCKED, FAILED] }
+        dataMode: { $ref: "#/components/schemas/DataMode" }
+        isolationMode: { $ref: "#/components/schemas/IsolationMode" }
+        specHash: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/Sha256" }] }
+        latestRunId: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/RunId" }] }
+
+    # ---------- evidence ----------
+    EvidenceDTO:
+      type: object
+      additionalProperties: false
+      required: [evidenceId, providerId, origin, retrievedAt, snapshotHash, independenceBasis, rightsNote, licenseClass, embeddedInBundle, uri]
+      properties:
+        evidenceId: { type: string, pattern: "^ev_[0-9a-f]{16}$" }
+        providerId: { type: string }
+        origin:
+          type: string
+          enum: [EXCHANGE_PUBLIC_DATA, GOVERNMENT_OFFICIAL, CLAIMANT_DOCUMENT, SYNTHETIC_FIXTURE]
+        retrievedAt: { $ref: "#/components/schemas/Timestamp" }
+        snapshotHash: { $ref: "#/components/schemas/Sha256" }
+        independenceBasis:
+          type: string
+          enum: [INDEPENDENT_OF_CLAIMANT, CLAIMANT_DOCUMENT_SELF, SYNTHETIC_NOT_EVIDENCE]
+        rightsNote: { type: string, minLength: 1 }
+        licenseClass:
+          type: string
+          enum: [REDISTRIBUTABLE, REFETCH_ONLY, DOCUMENT, USER_SUPPLIED, SYNTHETIC]
+        embeddedInBundle: { type: boolean }
+        uri: { type: [string, "null"] }
+      allOf:
+        - if: { properties: { origin: { const: SYNTHETIC_FIXTURE } } }
+          then: { properties: { independenceBasis: { const: SYNTHETIC_NOT_EVIDENCE }, licenseClass: { const: SYNTHETIC } } }
+        - if: { properties: { origin: { const: CLAIMANT_DOCUMENT } } }
+          then: { properties: { independenceBasis: { const: CLAIMANT_DOCUMENT_SELF } } }
+        - if: { properties: { origin: { enum: [EXCHANGE_PUBLIC_DATA, GOVERNMENT_OFFICIAL] } } }
+          then: { properties: { independenceBasis: { const: INDEPENDENT_OF_CLAIMANT } } }
+        - if: { properties: { licenseClass: { const: REFETCH_ONLY } } }
+          then: { properties: { embeddedInBundle: { const: false } } }
+
+    EvidenceResult:
+      type: object
+      additionalProperties: false
+      required: [caseId, evidence]
+      properties:
+        caseId: { $ref: "#/components/schemas/CaseId" }
+        evidence:
+          type: array
+          items: { $ref: "#/components/schemas/EvidenceDTO" }
+
+    # ---------- runs ----------
+    RunAccepted:
+      type: object
+      additionalProperties: false
+      required: [runId, caseId, state, eventsUrl, runUrl]
+      properties:
+        runId: { $ref: "#/components/schemas/RunId" }
+        caseId: { $ref: "#/components/schemas/CaseId" }
+        state: { type: string, enum: [QUEUED, RUNNING, COMPLETED, BLOCKED, INDETERMINATE, FAILED] }
+        eventsUrl: { type: string }
+        runUrl: { type: string }
+
+    ProgressEvent:
+      type: object
+      additionalProperties: false
+      required: [runId, seq, stage, at, ledgerSeq, ledgerKind, detail]
+      properties:
+        runId: { $ref: "#/components/schemas/RunId" }
+        seq: { type: integer, minimum: 0 }
+        stage:
+          type: string
+          enum:
+            - RUN_QUEUED
+            - TASK_BLINDED
+            - EXAMINATION_STARTED
+            - EXAMINATION_PROGRESS
+            - EXAMINATION_COMMITTED
+            - OUTCOMES_REVEALED
+            - VERDICT_SEALED
+            - DIAGNOSTICS_APPENDED
+            - BUNDLE_WRITTEN
+            - RUN_COMPLETED
+            - RUN_BLOCKED
+            - RUN_INDETERMINATE
+            - RUN_FAILED
+        at: { $ref: "#/components/schemas/Timestamp" }
+        ledgerSeq: { type: [integer, "null"], minimum: 0 }
+        ledgerKind: { type: [string, "null"] }
+        detail:
+          type: object
+          additionalProperties: false
+          properties:
+            pointsDone: { type: integer, minimum: 0 }
+            pointsTotal: { type: integer, minimum: 1 }
+            blocker: { $ref: "#/components/schemas/Blocker" }
+      allOf:
+        - if: { properties: { stage: { enum: [EXAMINATION_COMMITTED, OUTCOMES_REVEALED, VERDICT_SEALED, DIAGNOSTICS_APPENDED, BUNDLE_WRITTEN] } } }
+          then:
+            properties: { ledgerSeq: { type: integer }, ledgerKind: { type: string } }
+        - if: { properties: { stage: { enum: [RUN_QUEUED, TASK_BLINDED, EXAMINATION_STARTED, EXAMINATION_PROGRESS] } } }
+          then:
+            properties: { ledgerSeq: { type: "null" }, ledgerKind: { type: "null" } }
+
+    RunRecord:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, runId, caseId, state, isolationMode, startedAt, finishedAt, events]
+      properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
+        runId: { $ref: "#/components/schemas/RunId" }
+        caseId: { $ref: "#/components/schemas/CaseId" }
+        state: { type: string, enum: [QUEUED, RUNNING, COMPLETED, BLOCKED, INDETERMINATE, FAILED] }
+        isolationMode: { $ref: "#/components/schemas/IsolationMode" }
+        startedAt: { $ref: "#/components/schemas/Timestamp" }
+        finishedAt: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/Timestamp" }] }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/ProgressEvent" }
+
+    # ---------- outcome (verdict join) ----------
+    Numbers:
+      type: object
+      additionalProperties: false
+      properties:
+        expected: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/DecimalString" }] }
+        observed: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/DecimalString" }] }
+        difference: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/DecimalString" }] }
+        tolerance: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/DecimalString" }] }
+
+    FindingDTO:
+      type: object
+      additionalProperties: false
+      required: [findingId, status, confidenceClass, confidenceScope, statement, reason, numbers, evidenceIds, assumptionDependencies, gridPointsEvaluated, keyRecordIds]
+      properties:
+        findingId: { type: string }
+        status: { $ref: "#/components/schemas/EpistemicStatus" }
+        confidenceClass: { $ref: "#/components/schemas/ConfidenceClass" }
+        confidenceScope: { type: [string, "null"] }
+        statement: { type: string }
+        reason: { type: [string, "null"] }
+        numbers: { $ref: "#/components/schemas/Numbers" }
+        evidenceIds: { type: array, items: { type: string } }
+        assumptionDependencies: { type: array, items: { type: string } }
+        gridPointsEvaluated: { type: integer, minimum: 0 }
+        keyRecordIds: { type: array, items: { type: string } }
+        pointOfFailure: { type: boolean }
+        propagated: { type: boolean }
+      allOf:
+        - if: { properties: { status: { const: INDETERMINATE } } }
+          then: { properties: { confidenceClass: { type: "null" }, confidenceScope: { type: "null" } } }
+
+    KeyRecord:
+      type: object
+      additionalProperties: false
+      required: [recordId, findingId, recordRole, recordKind, payload, note]
+      properties:
+        recordId: { type: string }
+        findingId: { type: [string, "null"] }
+        recordRole: { type: string, enum: [ILLUSTRATIVE, COUNTEREXAMPLE, INTERNAL_TRACE] }
+        recordKind:
+          type: string
+          enum: [GRID_POINT, WORKSHEET_LINE, TRADE, EQUITY_SERIES, LEDGER_ENTRY, LOCAL_CHECK]
+        payload: { type: object }
+        note: { type: string }
+      allOf:
+        # Aggregate claims are never refuted by an individual trade (correction 6).
+        - if: { properties: { recordKind: { enum: [TRADE, EQUITY_SERIES] } } }
+          then: { properties: { recordRole: { const: ILLUSTRATIVE } } }
+        - if: { properties: { recordKind: { const: LEDGER_ENTRY } } }
+          then: { properties: { recordRole: { const: INTERNAL_TRACE } } }
+        # Post-reveal diagnostics can never be counterexamples.
+        - if: { properties: { recordKind: { const: LOCAL_CHECK } } }
+          then: { properties: { recordRole: { enum: [ILLUSTRATIVE, INTERNAL_TRACE] } } }
+        - if: { properties: { recordRole: { const: COUNTEREXAMPLE } } }
+          then: { properties: { recordKind: { enum: [GRID_POINT, WORKSHEET_LINE] }, findingId: { type: string } } }
+
+    Diagnostics:
+      type: object
+      additionalProperties: false
+      required: [computedAfterReveal, affectsVerdict, items]
+      properties:
+        computedAfterReveal: { const: true }
+        affectsVerdict: { const: false }
+        items: { type: array, items: { type: object } }
+
+    OutcomeResponse:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, caseId, runId, claimType, dataMode, demonstrationOnly, demonstrationNotice, specimen, executionStatus, headline, findings, sensitivity, parameterLedger, evidence, keyRecords, diagnostics, blockers, specHash, verdictHash, isolationMode, bundleAvailable]
+      properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
+        demonstrationNotice: { type: [string, "null"] }
+        specimen: { $ref: "#/components/schemas/Specimen" }
+        sensitivity: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/Sensitivity" }] }
+        caseId: { $ref: "#/components/schemas/CaseId" }
+        runId: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/RunId" }] }
+        claimType: { $ref: "#/components/schemas/ClaimTypeId" }
+        dataMode: { $ref: "#/components/schemas/DataMode" }
+        demonstrationOnly: { type: boolean }
+        executionStatus: { $ref: "#/components/schemas/ExecutionStatus" }
+        headline:
+          type: object
+          additionalProperties: false
+          required: [status, confidenceClass]
+          properties:
+            status: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/EpistemicStatus" }] }
+            confidenceClass: { $ref: "#/components/schemas/ConfidenceClass" }
+        findings: { type: array, items: { $ref: "#/components/schemas/FindingDTO" } }
+        parameterLedger:
+          type: array
+          description: Post-freeze ledger; source spans are always null (pasted text was discarded).
+          items:
+            allOf:
+              - { $ref: "#/components/schemas/ParameterEntry" }
+              - { properties: { sourceSpan: { type: "null" } } }
+        evidence: { type: array, items: { $ref: "#/components/schemas/EvidenceDTO" } }
+        keyRecords: { type: array, items: { $ref: "#/components/schemas/KeyRecord" } }
+        diagnostics: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/Diagnostics" }] }
+        blockers: { type: array, items: { $ref: "#/components/schemas/Blocker" } }
+        specHash: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/Sha256" }] }
+        verdictHash: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/Sha256" }] }
+        isolationMode: { $ref: "#/components/schemas/IsolationMode" }
+        bundleAvailable: { type: boolean }
+      allOf:
+        - if: { properties: { executionStatus: { const: BLOCKED } } }
+          then:
+            properties:
+              headline:
+                properties: { status: { type: "null" }, confidenceClass: { type: "null" } }
+              findings: { maxItems: 0 }
+              keyRecords: { maxItems: 0 }
+              diagnostics: { type: "null" }
+              sensitivity: { type: "null" }
+              verdictHash: { type: "null" }
+              bundleAvailable: { const: false }
+              blockers: { minItems: 1 }
+        - if: { properties: { executionStatus: { const: INDETERMINATE } } }
+          then:
+            properties:
+              headline:
+                properties: { status: { const: INDETERMINATE }, confidenceClass: { type: "null" } }
+              findings:
+                minItems: 1
+                items: { properties: { status: { const: INDETERMINATE }, confidenceClass: { type: "null" } } }
+        - if: { properties: { executionStatus: { const: COMPLETED } } }
+          then:
+            properties:
+              findings:
+                minItems: 1
+                contains: { properties: { status: { not: { const: INDETERMINATE } } } }
+              verdictHash: { $ref: "#/components/schemas/Sha256" }
+              blockers: { maxItems: 0 }
+        - if: { properties: { dataMode: { const: SYNTHETIC_DEMO } } }
+          then:
+            properties:
+              demonstrationOnly: { const: true }
+              demonstrationNotice: { type: string, minLength: 40 }
+              specimen: { properties: { source: { const: SYNTHETIC_FIXTURE } } }
+              headline: { properties: { confidenceClass: { type: "null" } } }
+              findings: { items: { properties: { confidenceClass: { type: "null" } } } }
+        - if: { properties: { dataMode: { const: LIVE_EVIDENCE } } }
+          then:
+            properties:
+              demonstrationOnly: { const: false }
+              demonstrationNotice: { type: "null" }
+              specimen: { properties: { source: { const: USER_SUBMITTED } } }
+
+    # ---------- presentation metadata (adapter only; not evaluator inputs) ----------
+    Specimen:
+      type: object
+      additionalProperties: false
+      description: >
+        Display metadata derived from the frozen parameters only. Contains no outcome values
+        and no free text. Built by the presentation adapter, never by evaluators.
+      required: [specimenId, claimType, claimTypeLabel, source, title, fields, frozenAt, specHashShort]
+      properties:
+        specimenId: { type: string, pattern: "^SPC-[0-9A-F]{8}$" }
+        claimType: { $ref: "#/components/schemas/ClaimTypeId" }
+        claimTypeLabel: { type: string }
+        source: { type: string, enum: [USER_SUBMITTED, SYNTHETIC_FIXTURE] }
+        fixtureId: { type: [string, "null"] }
+        title:
+          type: string
+          maxLength: 120
+          description: Generated from a fixed template over frozen parameters.
+        fields:
+          type: array
+          maxItems: 12
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, value]
+            properties:
+              label: { type: string }
+              value: { type: string }
+        frozenAt: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/Timestamp" }] }
+        specHashShort: { type: [string, "null"], pattern: "^[0-9a-f]{12}$" }
+
+    Sensitivity:
+      type: object
+      additionalProperties: false
+      description: Bounded sweep as executed. Wording must say "verified at N grid points".
+      required: [templateVersion, gridCap, variantsExecuted, axes, results]
+      properties:
+        templateVersion: { type: string, pattern: "^[a-z]+\\.[a-z]+\\.v[0-9]+/sweep-v[0-9]+$" }
+        gridCap: { type: integer, minimum: 1, maximum: 1000 }
+        variantsExecuted: { type: integer, minimum: 1, maximum: 1000 }
+        axes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, values, origin]
+            properties:
+              name: { type: string }
+              values: { type: array, minItems: 1, items: { type: string } }
+              origin: { type: string, enum: [CLAIMANT, USER_CONFIRMED, DEFAULT_POLICY] }
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [findingId, aggregate, passCount, failCount, cells]
+            properties:
+              findingId: { type: string }
+              aggregate: { type: string, enum: [ALL_PASS, NONE_PASS, MIXED] }
+              passCount: { type: integer, minimum: 0 }
+              failCount: { type: integer, minimum: 0 }
+              cells:
+                type: array
+                maxItems: 1000
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [variant, point, passed, margin]
+                  properties:
+                    variant: { type: integer, minimum: 0 }
+                    point: { type: object, additionalProperties: { type: string } }
+                    passed: { type: boolean }
+                    margin: { $ref: "#/components/schemas/DecimalString" }
+
+    # ---------- bundle / replay (correction 10) ----------
+    IntegrityReport:
+      type: object
+      additionalProperties: false
+      required: [status, checks]
+      description: Internal consistency of the bundle since it was written. Says nothing about who wrote it.
+      properties:
+        status: { type: string, enum: [VERIFIED, FAILED] }
+        checks:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [check, ok]
+            properties:
+              check: { type: string, enum: [MANIFEST_HASHES, LEDGER_CHAIN, COMMITMENT, SPEC_HASH] }
+              ok: { type: boolean }
+              detail: { type: [string, "null"] }
+
+    ReproducibilityReport:
+      type: object
+      additionalProperties: false
+      required: [status, originalVerdictHash, replayedVerdictHash, envMatch]
+      description: Whether re-execution yields the same verdict hash.
+      properties:
+        status: { type: string, enum: [REPRODUCED, REPRODUCED_ACROSS_ENV, DIVERGED, UNVERIFIABLE, NOT_RUN] }
+        originalVerdictHash: { $ref: "#/components/schemas/Sha256" }
+        replayedVerdictHash: { oneOf: [{ type: "null" }, { $ref: "#/components/schemas/Sha256" }] }
+        envMatch: { type: [boolean, "null"] }
+
+    AuthenticityReport:
+      type: object
+      additionalProperties: false
+      required: [status, note]
+      description: Origin of the bundle. MVP bundles are unsigned.
+      properties:
+        status: { const: NOT_ESTABLISHED }
+        note: { type: string }
+
+    BundleMetadata:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, caseId, bundleSha256, sizeBytes, engineVersion, envFingerprint, isolationMode, embeddedEvidence, refetchOnlyEvidence, integrity, reproducibility, authenticity, replayCommand]
+      properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
+        caseId: { $ref: "#/components/schemas/CaseId" }
+        bundleSha256: { $ref: "#/components/schemas/Sha256" }
+        sizeBytes: { type: integer, minimum: 1 }
+        engineVersion: { type: string }
+        envFingerprint:
+          type: object
+          additionalProperties: false
+          required: [engineVersion, pythonVersion, lockfileSha256, imageDigest]
+          properties:
+            engineVersion: { type: string }
+            pythonVersion: { type: string }
+            lockfileSha256: { type: string }
+            imageDigest: { type: string }
+        isolationMode: { $ref: "#/components/schemas/IsolationMode" }
+        embeddedEvidence: { type: array, items: { type: string } }
+        refetchOnlyEvidence:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [evidenceId, uri, snapshotHash]
+            properties:
+              evidenceId: { type: string }
+              uri: { type: string }
+              snapshotHash: { $ref: "#/components/schemas/Sha256" }
+        integrity: { $ref: "#/components/schemas/IntegrityReport" }
+        reproducibility:
+          allOf:
+            - { $ref: "#/components/schemas/ReproducibilityReport" }
+            - { properties: { status: { const: NOT_RUN } } }
+        authenticity: { $ref: "#/components/schemas/AuthenticityReport" }
+        replayCommand: { type: string }
+
+    ReplayReport:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, integrity, reproducibility, authenticity, notes]
+      properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
+        integrity: { $ref: "#/components/schemas/IntegrityReport" }
+        reproducibility: { $ref: "#/components/schemas/ReproducibilityReport" }
+        authenticity: { $ref: "#/components/schemas/AuthenticityReport" }
+        notes: { type: array, items: { type: string } }

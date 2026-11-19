@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "verdictkit": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "verdictkit.mcp_server"],
+      "env": {
+        "VK_MCP_READONLY": "1"
+      },
+      "disabled": false,
+      "autoApprove": ["list_claim_types", "explain_verdict"]
+    }
+  }
+}

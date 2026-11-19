@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "core-contract-tests-on-agent-save",
+      "trigger": "PostFileSave",
+      "matcher": "core/src/verdictkit/.*\\.py$",
+      "action": {
+        "type": "command",
+        "command": "uv run pytest tests/contract -q -x -m \"not isolation\" --ignore=tests/contract/test_reel_contract.py --ignore=tests/contract/test_quote_contract.py"
+      },
+      "timeout": 180,
+      "enabled": true
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "contractVersion": "1.1.0",
+  "integrity": {
+    "status": "VERIFIED",
+    "checks": [
+      {
+        "check": "COMMITMENT",
+        "ok": true,
+        "detail": null
+      }
+    ]
+  },
+  "reproducibility": {
+    "status": "REPRODUCED_ACROSS_ENV",
+    "originalVerdictHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "replayedVerdictHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "envMatch": false
+  },
+  "authenticity": {
+    "status": "NOT_ESTABLISHED",
+    "note": "Bundles are unsigned."
+  },
+  "notes": []
+}

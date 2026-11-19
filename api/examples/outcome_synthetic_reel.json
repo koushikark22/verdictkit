@@ -1,0 +1,130 @@
+{
+  "contractVersion": "1.1.0",
+  "caseId": "case_00000000000000000000000000000001",
+  "runId": "run_00000000000000000000000000000001",
+  "claimType": "reel.mechanical.v1",
+  "dataMode": "SYNTHETIC_DEMO",
+  "demonstrationOnly": true,
+  "executionStatus": "COMPLETED",
+  "headline": {
+    "status": "IMPOSSIBLE",
+    "confidenceClass": null
+  },
+  "findings": [
+    {
+      "findingId": "bound",
+      "status": "IMPOSSIBLE",
+      "confidenceClass": null,
+      "confidenceScope": null,
+      "statement": "Demonstration on synthetic data: claim exceeds the perfect-foresight bound.",
+      "reason": null,
+      "numbers": {
+        "expected": "12.5",
+        "observed": "340",
+        "difference": "327.5",
+        "tolerance": "0.5"
+      },
+      "evidenceIds": [
+        "ev_3333333333333333"
+      ],
+      "assumptionDependencies": [],
+      "gridPointsEvaluated": 1,
+      "keyRecordIds": [
+        "kr_gp"
+      ]
+    }
+  ],
+  "parameterLedger": [],
+  "evidence": [
+    {
+      "evidenceId": "ev_3333333333333333",
+      "providerId": "synthetic-fixture-v1",
+      "origin": "SYNTHETIC_FIXTURE",
+      "retrievedAt": "2026-11-22T12:00:00Z",
+      "snapshotHash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "independenceBasis": "SYNTHETIC_NOT_EVIDENCE",
+      "rightsNote": "Generated test data. Not market data; proves nothing about any real claim.",
+      "licenseClass": "SYNTHETIC",
+      "embeddedInBundle": true,
+      "uri": null
+    }
+  ],
+  "keyRecords": [
+    {
+      "recordId": "kr_gp",
+      "findingId": "bound",
+      "recordRole": "COUNTEREXAMPLE",
+      "recordKind": "GRID_POINT",
+      "payload": {
+        "point": {}
+      },
+      "note": "Aggregate bound at the declared mechanics."
+    },
+    {
+      "recordId": "kr_t1",
+      "findingId": "bound",
+      "recordRole": "ILLUSTRATIVE",
+      "recordKind": "TRADE",
+      "payload": {
+        "entryBar": 3,
+        "exitBar": 9
+      },
+      "note": "Example trade; never decisive for an aggregate claim."
+    }
+  ],
+  "diagnostics": null,
+  "blockers": [],
+  "specHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "verdictHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "isolationMode": "ENFORCED",
+  "bundleAvailable": true,
+  "demonstrationNotice": "DEMONSTRATION ONLY: synthetic price data generated for testing. This result says nothing about any real trading claim or market.",
+  "specimen": {
+    "specimenId": "SPC-0000BEEF",
+    "claimType": "reel.mechanical.v1",
+    "claimTypeLabel": "Trading strategy claim",
+    "source": "SYNTHETIC_FIXTURE",
+    "fixtureId": "fx_impossible_sma",
+    "title": "Synthetic specimen \u00b7 SMA_CROSS 10/30 \u00b7 1d",
+    "fields": [
+      {
+        "label": "Data",
+        "value": "Synthetic fixture"
+      }
+    ],
+    "frozenAt": "2026-11-22T12:00:00Z",
+    "specHashShort": "aaaaaaaaaaaa"
+  },
+  "sensitivity": {
+    "templateVersion": "reel.mechanical.v1/sweep-v1",
+    "gridCap": 1000,
+    "variantsExecuted": 1,
+    "axes": [
+      {
+        "name": "position_fraction",
+        "values": [
+          "1"
+        ],
+        "origin": "DEFAULT_POLICY"
+      }
+    ],
+    "results": [
+      {
+        "findingId": "bound",
+        "aggregate": "NONE_PASS",
+        "passCount": 0,
+        "failCount": 1,
+        "cells": [
+          {
+            "variant": 0,
+            "point": {
+              "position_fraction": "1"
+            },
+            "passed": false,
+            "margin": "-327.0"
+          }
+        ]
+      }
+    ]
+  }
+}
