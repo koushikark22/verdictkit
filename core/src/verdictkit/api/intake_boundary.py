@@ -5,7 +5,7 @@ is admitted to the examination path until encrypted custody is available.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 from verdictkit.plugin import Registry
@@ -55,7 +55,7 @@ class PreparedIntake:
     """
     claim_type: str
     data_mode: str
-    raw_claim: Mapping[str, object]
+    raw_claim: Mapping[str, object] = field(repr=False)
     outcome_fields: tuple[dict[str, object], ...]
 
 
