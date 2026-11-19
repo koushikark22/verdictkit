@@ -1,7 +1,7 @@
 [project]
 name = "verdictkit-workspace"
 version = "0.1.0"
-description = "VerdictKit — The Claim Autopsy Engine (Kiroween 2026, Skeleton Crew)"
+description = "VerdictKit — The Claim Autopsy Engine"
 requires-python = ">=3.12"
 dependencies = ["verdictkit", "reel-autopsy", "quote-autopsy"]
 

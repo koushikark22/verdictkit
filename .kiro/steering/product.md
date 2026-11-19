@@ -3,7 +3,7 @@ inclusion: always
 ---
 # Product: VerdictKit — The Claim Autopsy Engine
 
-VerdictKit is a reusable forensic verification framework (Kiroween 2026, Skeleton Crew).
+VerdictKit is a reusable forensic verification framework.
 It freezes a claim into a canonical spec, seals the claimed outcome away from the evaluator,
 evaluates blind on policy-checked evidence across a bounded assumption grid, and emits a
 reproducible verdict bundle.

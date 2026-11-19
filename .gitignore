@@ -7,7 +7,7 @@ node_modules/
 dist/
 *.vkb
 !core/examples/**/*.vkb
-# NOTE: .kiro/ must never be ignored (submission requirement)
+# NOTE: .kiro/ must never be ignored (specs, steering and hooks are project evidence)
 
 # Local build and verification outputs
 artifacts/

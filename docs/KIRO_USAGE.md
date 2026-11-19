@@ -1,33 +1,40 @@
-# How Kiro is used (fill in as you go — this file becomes the submission write-up)
+# Kiro usage — evidence record
 
-## Process (decision B4)
-1. Open the repo in Kiro. Steering in `.kiro/steering/` loads automatically
-   (`product`, `tech`, `structure`, `verdict-integrity` always; `money-math`, `testing`
-   by file match).
-2. For each feature (`verdictkit-core`, `reel-autopsy`, `quote-autopsy`) start a Kiro
-   spec session and give it the reviewer draft in `.kiro/specs/<feature>/` as the brief.
-   Let Kiro run its requirements analysis (it may flag contradictions — record them here),
-   then design, then tasks. Keep Kiro's versions as the official spec files; move the
-   reviewer drafts to `docs/reviewer-inputs/` before the first Kiro commit.
-3. Use Kiro's correctness/property-based-testing flow to generate package-level
-   property tests from the design's properties P1–P17. `tests/contract/` stays as the
-   independent acceptance contract; do not edit it to make code pass.
-4. Execute tasks through Kiro. The `PostFileSave` command hooks in `.kiro/hooks/` run the
-   matching contract tests and the LLM fence after the agent edits files. File hooks fire
-   on agent edits only, not manual saves, so CI is the real gate.
-5. Register the VerdictKit MCP server (`.kiro/settings/mcp.json`) once `mcp_server.py`
-   exists; use it to replay fixture bundles from inside Kiro.
+This file records only verifiable facts. It must not contain reconstructed or invented
+Kiro sessions, timestamps or screenshots.
 
-## Evidence log (record real items only)
-| Date | Kiro feature | What happened | Commit |
+## Kiro artifacts committed in the repository
+
+| Artifact | Path | Verified state (2026-11-19) |
+|---|---|---|
+| Feature specs (requirements, design, tasks) | `.kiro/specs/{verdictkit-core,reel-autopsy,quote-autopsy}/` | Present. Task checkboxes updated to match passing tests; see `docs/TRACEABILITY.md`. |
+| Steering | `.kiro/steering/*.md` (6 files) | Present; rules (Decimal-only, LLM fence, fail-closed) are enforced by tests. |
+| Agent hooks | `.kiro/hooks/{core,app}-contract-tests.json`, `llm-fence.json` | Present. Each hook's command was executed by hand outside Kiro and passes: core contract 236 passed; reel 13 passed; quote 8 passed; LLM fence 55 passed. |
+| MCP registration | `.kiro/settings/mcp.json` → `python -m verdictkit.mcp_server` | The server now exists and was exercised over stdio with the MCP SDK client (4 tools listed, `list_claim_types` called). Not exercised from inside Kiro. |
+
+## Evidence log (real items only)
+
+| Date | Kiro feature | What happened | Evidence |
 |---|---|---|---|
-| | Spec requirements analysis | | |
-| | Property-based test caught a bug | | |
-| | Hook blocked a regression | | |
-| | Steering prevented a float/LLM import | | |
-| | MCP replay used in development | | |
+| — | — | No Kiro session transcript, Kiro-attributed commit or hook-run log exists in this repository's history. | `git log` authors: the repository owner, prior Claude sessions, `github-actions[bot]`. |
+
+## Integration pass of 2026-11-19 (not Kiro)
+
+The consolidation and completion pass (HTTP run/outcome/bundle/replay workflow, MCP
+server, quote rules loader and diagnostics, pasted-text intake, bundle hardening, CI
+gates) was performed with **Claude Code**, not with Kiro. Kiro was not available in that
+environment, so no Kiro spec, task-execution or property-generation run took place, and
+none is claimed. The `.kiro` specs were used as the requirements source and their task
+status was updated from test results.
+
+## Open item
+
+To produce genuine Kiro evidence, open the repository in Kiro, run the remaining open
+tasks (quote taxability/rounding sweeps, reel evaluator once B1 is resolved, UIs) through
+Kiro's spec workflow, and record each run here with its commit SHA.
 
 ## Honest attribution
+
 Architecture, interface stubs and the contract tests were drafted with reviewer AIs
-(Claude, ChatGPT) and Muse before implementation; specs were then run through Kiro's spec
-workflow and the implementation was produced through Kiro task execution.
+(Claude, ChatGPT) and Muse before implementation. Implementation commits are by the
+repository owner and by Claude sessions as shown in `git log`.

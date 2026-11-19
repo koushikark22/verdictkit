@@ -1,6 +1,6 @@
 # VerdictKit — Technical Architecture (frozen-scope baseline)
 
-Status: reviewer baseline for Kiroween 2026, Skeleton Crew. Author role: architecture (Claude).
+Status: reviewer baseline. Author role: architecture (Claude).
 Scope is frozen per the team consensus of 2026-11-16. This document resolves the remaining
 technical contradictions, fixes the interfaces, and defines the security boundaries the
 implementation must honour. Implementation is to be performed through Kiro's spec workflow
