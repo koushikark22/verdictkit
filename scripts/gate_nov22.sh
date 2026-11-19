@@ -59,6 +59,7 @@ printf '\n(app contract tests: see %s; not gating on Nov 22)\n' "$OUT/app_contra
 step docker build -t verdictkit:gate .
 step docker image inspect --format '{{.Id}}' verdictkit:gate
 step docker run --rm --network none -v "$PWD/$OUT:/out" verdictkit:gate gate-isolation /out/isolation.xml
+step docker run --rm --network none verdictkit:gate gate-startup
 
 # 4. Full path in the container (enforced isolation, no network), then offline replay.
 step docker run --rm --network none -v "$PWD/$OUT:/out" \
