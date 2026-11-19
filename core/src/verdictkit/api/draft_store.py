@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from .freeze_boundary import PreparedFreeze
+from verdictkit.custody.ledger import EntryKind, Ledger, LedgerEntry
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -60,6 +61,10 @@ class DraftStore:
                 "data_mode TEXT NOT NULL, encrypted BLOB NOT NULL)"
             )
             conn.execute("CREATE INDEX IF NOT EXISTS drafts_expiry ON drafts(expires_at)")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS evidence_stages ("
+                "case_id TEXT PRIMARY KEY, sealed BLOB NOT NULL)"
+            )
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS freezes ("
                 "case_id TEXT PRIMARY KEY, frozen_at TEXT NOT NULL,"
@@ -130,7 +135,8 @@ class DraftStore:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT d.created_at, d.expires_at, d.claim_type, d.data_mode, "
-                "f.spec_hash FROM drafts d LEFT JOIN freezes f ON f.case_id=d.case_id "
+                "f.spec_hash, e.case_id FROM drafts d LEFT JOIN freezes f ON f.case_id=d.case_id "
+                "LEFT JOIN evidence_stages e ON e.case_id=d.case_id "
                 "WHERE d.case_id=? AND (d.expires_at>? OR f.case_id IS NOT NULL)",
                 (case_id, now),
             ).fetchone()
@@ -139,7 +145,8 @@ class DraftStore:
         return {
             "caseId": case_id, "createdAt": row[0], "expiresAt": row[1],
             "claimType": row[2], "dataMode": row[3],
-            "state": "FROZEN" if row[4] is not None else "DRAFT",
+            "state": "EVIDENCE_ACQUIRED" if row[5] is not None else (
+                "FROZEN" if row[4] is not None else "DRAFT"),
             "specHash": row[4],
         }
 
@@ -219,3 +226,58 @@ class DraftStore:
             "commitment": sealed["commitment"],
             "ledgerSeq": sealed["ledger"][-1]["seq"],
         }
+
+    def acquire_internal_evidence(self, case_id: str, *, recorded_at: str) -> None:
+        """Commit empty external evidence only for a policy-vetted quote claim."""
+        self._case_id(case_id)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT f.sealed, e.case_id FROM freezes f "
+                "LEFT JOIN evidence_stages e ON e.case_id=f.case_id "
+                "WHERE f.case_id=?", (case_id,)
+            ).fetchone()
+            if row is None:
+                raise DraftNotFound("case is not frozen")
+            if row[1] is not None:
+                raise FreezeConflict("evidence stage already committed")
+            blob = bytes(row[0])
+            info = json.loads(self._cipher.decrypt(
+                blob[:12], blob[12:], (case_id + ":freeze").encode()
+            ).decode("utf-8"))
+            prior = tuple(
+                LedgerEntry(seq=item["seq"], kind=EntryKind(item["kind"]),
+                    payload_hash=item["payloadHash"], prev_hash=item["prevHash"],
+                    entry_hash=item["entryHash"], recorded_at=item["recordedAt"])
+                for item in info["ledger"]
+            )
+            ledger = Ledger.from_entries(prior, lambda: recorded_at)
+            if not ledger.verify().ok or prior[-1].kind is not EntryKind.OUTCOMES_COMMITTED:
+                raise ValueError("freeze ledger integrity failure")
+            entry = ledger.append(EntryKind.EVIDENCE_ACQUIRED, {
+                "evidence_count": 0, "evidence_hashes": []
+            })
+            record = {"evidence": [], "ledgerSeq": entry.seq,
+                      "ledgerEntryHash": entry.entry_hash, "prevHash": entry.prev_hash}
+            nonce = os.urandom(12)
+            sealed = nonce + self._cipher.encrypt(
+                nonce, json.dumps(record, sort_keys=True, separators=(",", ":")).encode("utf-8"),
+                (case_id + ":evidence").encode("utf-8"))
+            conn.execute("INSERT INTO evidence_stages(case_id,sealed) VALUES(?,?)",
+                         (case_id, sealed))
+
+    def get_evidence(self, case_id: str) -> list[dict]:
+        """Read only a committed, authenticated zero-request evidence record."""
+        self._case_id(case_id)
+        with self._connect() as conn:
+            row = conn.execute("SELECT sealed FROM evidence_stages WHERE case_id=?",
+                               (case_id,)).fetchone()
+        if row is None:
+            raise DraftNotFound("evidence stage is not committed")
+        blob = bytes(row[0])
+        record = json.loads(self._cipher.decrypt(
+            blob[:12], blob[12:], (case_id + ":evidence").encode("utf-8")
+        ).decode("utf-8"))
+        if record["evidence"] != [] or record["ledgerSeq"] != 3:
+            raise ValueError("invalid internal evidence record")
+        return []
