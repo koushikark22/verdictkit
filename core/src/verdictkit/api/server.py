@@ -21,7 +21,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .draft_store import DraftNotFound, DraftStore
+from .draft_store import DraftNotFound, DraftStore, FreezeConflict
+from .freeze_boundary import prepare_freeze
+from .presenter import specimen_dto
+from verdictkit.model import DataMode
 from .intake_boundary import IntakeRejected, prepare_intake
 
 VERSION = "1.1.0"
@@ -180,17 +183,59 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
         return {
             "caseId": case_id,
             "claimType": metadata["claimType"],
-            "state": "DRAFT",
+            "state": metadata["state"],
             "dataMode": metadata["dataMode"],
             "isolationMode": isolation,
-            "specHash": None,
+            "specHash": metadata["specHash"],
             "latestRunId": None,
         }
 
-    # Do not invent frozen hashes, SSE records or replay reports. These
+
+    @app.post('/api/v1/cases/{case_id}/freeze')
+    def freeze_case(case_id: str) -> Any:
+        if draft_store is None:
+            return error(LOCKED, "Encrypted draft custody not configured", 503)
+        try:
+            metadata = draft_store.get_metadata(case_id)
+        except (DraftNotFound, ValueError):
+            return error("NOT_FOUND", "Case unavailable", 404)
+        if metadata["state"] != "DRAFT":
+            return error("STATE_CONFLICT", "Case is already frozen", 409)
+        try:
+            raw = draft_store.load_private(case_id)
+            plugin = registry.get(metadata["claimType"])
+            frozen_at = datetime.now(timezone.utc).isoformat()
+            prepared = prepare_freeze(plugin, raw, case_id=case_id, clock=lambda: frozen_at)
+        except (ValueError, TypeError, ArithmeticError, KeyError):
+            # Never emit internal validation exceptions; they may contain outcomes.
+            return error("SCHEMA_INVALID", "Claim cannot be frozen", 422)
+        try:
+            draft_store.freeze(case_id, prepared, frozen_at=frozen_at)
+        except DraftNotFound:
+            return error("NOT_FOUND", "Case unavailable", 404)
+        except FreezeConflict:
+            return error("STATE_CONFLICT", "Case is already frozen or changed", 409)
+        stored = draft_store.get_freeze(case_id)
+        ledger = _draft_response(case_id, raw, metadata["expiresAt"])["parameterLedger"]
+        return {
+            "contractVersion": VERSION,
+            "caseId": case_id,
+            "state": "FROZEN",
+            "specHash": stored["specHash"],
+            "commitment": stored["commitment"],
+            "frozenAt": stored["frozenAt"],
+            "ledgerSeq": stored["ledgerSeq"],
+            "parameterLedger": ledger,
+            "specimen": specimen_dto(
+                prepared.frozen, claim_type=metadata["claimType"],
+                data_mode=DataMode(metadata["dataMode"]), fixture_id=None,
+                case_id=case_id, frozen_at=stored["frozenAt"],
+            ),
+        }
+
+    # Do not invent SSE records or replay reports. These
     # operations stay closed until the real custodian state machine is integrated.
     @app.api_route('/api/v1/cases/{case_id}', methods=['PATCH'])
-    @app.api_route('/api/v1/cases/{case_id}/freeze', methods=['POST'])
     @app.api_route('/api/v1/cases/{case_id}/evidence', methods=['GET', 'POST'])
     @app.api_route('/api/v1/cases/{case_id}/runs', methods=['POST'])
     @app.api_route('/api/v1/cases/{case_id}/runs/{run_id}', methods=['GET'])
