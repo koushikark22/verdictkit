@@ -391,3 +391,103 @@ def test_judge_mode_expires_frozen_cases(tmp_path):
     assert store.purge_expired(now=200) == 1
     with pytest.raises(DraftNotFound):
         store.load_private(case_id, now=105)
+
+
+# ---- Reel pasted text (API contract §8) ----------------------------------------------
+
+def _reel_client(tmp_path):
+    from reel_autopsy.claim_type import ReelClaimType
+    reg = Registry()
+    reg.register(ReelClaimType())
+    reg.register(FinanceClaimType())
+    env = {"VK_DRAFT_DIR": str(tmp_path), "VK_VAULT_KEY": KEY}
+    return env, reg
+
+
+PASTE = "SMA_CROSS fast 10 slow 30 instrument BTCUSD timeframe 1d start 2024-01-01 end 2025-01-01, return +340%"
+
+
+def test_reel_paste_is_transient_spanned_and_write_only(tmp_path):
+    env, reg = _reel_client(tmp_path)
+    with patch.dict(os.environ, env):
+        with TestClient(create_app(reg)) as c:
+            types = {t["claimType"]: t for t in c.get("/api/v1/claim-types").json()["claimTypes"]}
+            assert types["reel.mechanical.v1"]["acceptsPastedText"] is True
+            assert types["quote.finance.v1"]["acceptsPastedText"] is False
+            r = c.post("/api/v1/cases", json={"claimType": "reel.mechanical.v1",
+                                              "dataMode": "LIVE_EVIDENCE", "pastedText": PASTE})
+            assert r.status_code == 201, r.text
+            body = r.json()
+            check("DraftCase", body)
+            assert "340" not in r.text  # extracted outcome is write-only
+            ledger = {e["name"]: e for e in body["parameterLedger"]}
+            assert ledger["template"]["basis"] == "CLAIMANT_TEXT"
+            span = ledger["template"]["sourceSpan"]
+            assert PASTE[span["start"]:span["end"]] == "SMA_CROSS"
+            assert ledger["instrument_mode"]["state"] == "MISSING"
+            assert {b["field"] for b in body["blockers"]} == {"instrument_mode"}
+            captured = {o["name"]: o["captured"] for o in body["outcomeFields"]}
+            assert captured == {"max_drawdown_pct": False, "total_return_pct": True,
+                                "trade_count": False, "win_rate_pct": False}
+            case_id = body["caseId"]
+            # Freeze is refused while a critical parameter is missing.
+            assert c.post(f"/api/v1/cases/{case_id}/freeze").status_code == 422
+            patched = c.patch(f"/api/v1/cases/{case_id}",
+                              json={"params": {"instrument_mode": "SPOT_LONG_FLAT"}})
+            assert patched.status_code == 200, patched.text
+            check("DraftCase", patched.json())
+            after = {e["name"]: e for e in patched.json()["parameterLedger"]}
+            assert after["template"]["basis"] == "CLAIMANT_TEXT"
+            assert after["template"]["sourceSpan"] is None  # text was discarded
+            assert after["instrument_mode"]["basis"] == "USER_FORM"
+            assert patched.json()["blockers"] == []
+            frozen = c.post(f"/api/v1/cases/{case_id}/freeze")
+            assert frozen.status_code == 200, frozen.text
+            check("FrozenCase", frozen.json())
+            # No licensed OHLCV provider: evidence stays BLOCKED (fail closed).
+            ev = c.post(f"/api/v1/cases/{case_id}/evidence")
+            assert ev.status_code == 422
+            outcome = c.get(f"/api/v1/cases/{case_id}/outcome").json()
+            check("OutcomeResponse", outcome)
+            assert outcome["executionStatus"] == "BLOCKED"
+    for f in tmp_path.rglob("*"):
+        if f.is_file():
+            data = f.read_bytes()
+            assert b"SMA_CROSS fast 10" not in data and b"return +340%" not in data
+
+
+@pytest.mark.parametrize("text", [
+    "SMA cross on BTC, see https://example.com/x", "SMA cross by @trader_joe",
+    "mail me a@b.co SMA cross", "call 415-555-0100 SMA cross", "x" * 2001,
+])
+def test_reel_paste_privacy_rejected(tmp_path, text):
+    env, reg = _reel_client(tmp_path)
+    with patch.dict(os.environ, env):
+        with TestClient(create_app(reg)) as c:
+            r = c.post("/api/v1/cases", json={"claimType": "reel.mechanical.v1",
+                                              "dataMode": "LIVE_EVIDENCE", "pastedText": text})
+            assert r.status_code == 422
+            assert r.json()["error"]["code"] in ("PRIVACY_REJECTED", "SCHEMA_INVALID")
+            if len(text) <= 2000:
+                assert r.json()["error"]["code"] == "PRIVACY_REJECTED"
+            assert text not in r.text
+
+
+def test_iso_dates_do_not_trip_phone_rule(tmp_path):
+    env, reg = _reel_client(tmp_path)
+    with patch.dict(os.environ, env):
+        with TestClient(create_app(reg)) as c:
+            r = c.post("/api/v1/cases", json={"claimType": "reel.mechanical.v1",
+                                              "dataMode": "LIVE_EVIDENCE",
+                                              "pastedText": "BUY_AND_HOLD start 2024-01-01 end 2025-06-30"})
+            assert r.status_code == 201, r.text
+
+
+def test_quote_rejects_pasted_text(tmp_path):
+    env, reg = _reel_client(tmp_path)
+    with patch.dict(os.environ, env):
+        with TestClient(create_app(reg)) as c:
+            payload = intake({"sales_tax": "1.00"})
+            payload["pastedText"] = "anything"
+            r = c.post("/api/v1/cases", json=payload)
+            assert r.status_code == 422

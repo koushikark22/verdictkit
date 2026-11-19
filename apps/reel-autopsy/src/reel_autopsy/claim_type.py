@@ -56,6 +56,37 @@ class ReelClaimType:
         except ValueError as exc:
             raise SchemaError(str(exc)) from exc
 
+    def extract_text(self, text: str) -> tuple[dict, dict, dict[str, tuple[int, int]]]:
+        """Optional intake hook (API contract §8): deterministic, no LLM, no persistence.
+
+        Returns (params, outcomes, spans). Every parameter is present; values not found
+        in the text are None (MISSING). Raises ValueError("privacy:<kinds>") for URLs,
+        handles, emails, phone numbers or text over 2000 characters.
+        """
+        from .intake_text import extract, privacy_violations
+        issues = privacy_violations(text)
+        if issues:
+            raise ValueError("privacy:" + ",".join(issues))
+        found = extract(text)
+        params: dict[str, object] = {name: None for name in self.param_fields}
+        params["instrument_mode"] = None
+        outcomes: dict[str, object] = {}
+        spans: dict[str, tuple[int, int]] = {}
+        template_params: dict[str, int] = {}
+        for f in found.fields:
+            if f.name.startswith("template_params."):
+                template_params[f.name.split(".", 1)[1]] = int(f.value)
+                continue
+            if f.name in self.outcome_fields:
+                outcomes.setdefault(f.name, f.value)
+                continue
+            if f.name in params and params[f.name] is None:
+                params[f.name] = f.value
+                spans[f.name] = (f.start, f.end)
+        if template_params:
+            params["template_params"] = template_params
+        return params, outcomes, spans
+
     def validate_outcomes(self, outcomes: Mapping[str, object]) -> None:
         if not outcomes or not set(outcomes) <= self.outcome_fields:
             raise SchemaError("at least one recognized outcome required")

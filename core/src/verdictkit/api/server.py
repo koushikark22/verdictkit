@@ -169,7 +169,7 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
         return {"contractVersion": VERSION, "claimTypes": [
             {"claimType": tid, "schemaVersion": registry.get(tid).schema_version,
              "outcomeFields": sorted(registry.get(tid).outcome_fields),
-             "acceptsPastedText": False}
+             "acceptsPastedText": callable(getattr(registry.get(tid), "extract_text", None))}
             for tid in registry.type_ids()
         ]}
 
@@ -205,13 +205,16 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
     def _blockers_for(plugin: Any, raw: dict, confirmed: list[str]) -> list[dict]:
         out = []
         for entry in parameter_ledger(plugin, raw, confirmed):
+            if entry["name"] in plugin.outcome_fields:
+                continue
             if entry["state"] == "MISSING" and entry["critical"]:
                 out.append({"code": "MISSING_CRITICAL_PARAMETER",
                             "message": "A required parameter is missing", "field": entry["name"]})
         return out
 
     def _draft_response(case_id: str, raw: dict[str, object], expires_at: int,
-                        confirmed: list[str] | None = None) -> dict[str, object]:
+                        confirmed: list[str] | None = None, *, text_fields: list[str] | None = None,
+                        spans: dict | None = None) -> dict[str, object]:
         """Construct only the contract's pre-verdict, non-outcome projection."""
         plugin = registry.get(raw["claim_type"])
         params = raw["params"]
@@ -227,7 +230,8 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             "claimType": raw["claim_type"],
             "state": "DRAFT",
             "dataMode": "LIVE_EVIDENCE",
-            "parameterLedger": parameter_ledger(plugin, raw, confirmed),
+            "parameterLedger": parameter_ledger(plugin, raw, confirmed,
+                                                text_fields=text_fields or [], spans=spans),
             "outcomeFields": [
                 {"name": name, "captured": name in outcomes and outcomes[name] is not None}
                 for name in sorted(plugin.outcome_fields)
@@ -257,7 +261,9 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
         case_id = "case_" + uuid.uuid4().hex
         draft_store.create(case_id, prepared)
         metadata = draft_store.get_metadata(case_id)
-        return _draft_response(case_id, dict(prepared.raw_claim), metadata["expiresAt"])
+        return _draft_response(case_id, dict(prepared.raw_claim), metadata["expiresAt"],
+                               text_fields=sorted(prepared.text_spans),
+                               spans=dict(prepared.text_spans))
 
     @app.get('/api/v1/cases/{case_id}')
     def get_case(case_id: str) -> Any:
@@ -312,13 +318,17 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
         if set(confirm) - set(form["params"]):
             return error("SCHEMA_INVALID", "Unknown parameter confirmed", 422, "confirm")
         confirmed = sorted(set(draft_store.get_confirmed(case_id)) | set(confirm))
+        # A parameter edited in the form is no longer claimant text.
+        text_fields = sorted(set(draft_store.get_text_fields(case_id)) - set(update.get("params", {})))
         try:
             draft_store.update_draft(case_id, dict(prepared.raw_claim), confirmed=confirmed)
+            draft_store.set_text_fields(case_id, text_fields)
         except DraftNotFound:
             return error("NOT_FOUND", "Case unavailable", 404)
         except FreezeConflict:
             return error("STATE_CONFLICT", "Only draft cases can be edited", 409)
-        return _draft_response(case_id, dict(prepared.raw_claim), metadata["expiresAt"], confirmed)
+        return _draft_response(case_id, dict(prepared.raw_claim), metadata["expiresAt"],
+                               confirmed, text_fields=text_fields)
 
     @app.post('/api/v1/cases/{case_id}/freeze')
     def freeze_case(case_id: str) -> Any:
@@ -358,7 +368,8 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             return error("STATE_CONFLICT", "Case is already frozen or changed", 409)
         draft_store.record_blockers(case_id, [])
         stored = draft_store.get_freeze(case_id)
-        ledger = parameter_ledger(plugin, raw, confirmed, prepared.frozen)
+        ledger = parameter_ledger(plugin, raw, confirmed, prepared.frozen,
+                                  text_fields=draft_store.get_text_fields(case_id))
         return {
             "contractVersion": VERSION,
             "caseId": case_id,
@@ -530,7 +541,8 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
                     case_id=case_id, plugin=registry.get(metadata["claimType"]), raw=raw,
                     confirmed=draft_store.get_confirmed(case_id),
                     data_mode=DataMode(metadata["dataMode"]), isolation=isolation,
-                    spec_hash=metadata["specHash"], frozen_at=frozen_at, blockers=blockers)
+                    spec_hash=metadata["specHash"], frozen_at=frozen_at, blockers=blockers,
+                    text_fields=draft_store.get_text_fields(case_id))
         return error("TOO_EARLY", "No sealed verdict for this case yet", 425)
 
     def _bundle_file(case_id: str) -> tuple[Path, dict] | None:

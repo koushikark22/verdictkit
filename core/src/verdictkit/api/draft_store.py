@@ -73,6 +73,10 @@ class DraftStore:
                 "case_id TEXT PRIMARY KEY, names TEXT NOT NULL)"
             )
             conn.execute(
+                "CREATE TABLE IF NOT EXISTS text_fields ("
+                "case_id TEXT PRIMARY KEY, names TEXT NOT NULL)"
+            )
+            conn.execute(
                 "CREATE TABLE IF NOT EXISTS blockers ("
                 "case_id TEXT PRIMARY KEY, blockers TEXT NOT NULL)"
             )
@@ -122,6 +126,24 @@ class DraftStore:
                 )
         except sqlite3.IntegrityError as exc:
             raise DraftAlreadyExists("case ID already exists") from exc
+        if prepared.text_spans:
+            # Names only: the pasted text and its spans are never persisted.
+            self.set_text_fields(case_id, sorted(prepared.text_spans))
+
+    def set_text_fields(self, case_id: str, names: list[str]) -> None:
+        self._case_id(case_id)
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO text_fields(case_id,names) VALUES(?,?) "
+                "ON CONFLICT(case_id) DO UPDATE SET names=excluded.names",
+                (case_id, json.dumps(sorted(set(names)))))
+
+    def get_text_fields(self, case_id: str) -> list[str]:
+        self._case_id(case_id)
+        with self._connect() as conn:
+            row = conn.execute("SELECT names FROM text_fields WHERE case_id=?",
+                               (case_id,)).fetchone()
+        return [] if row is None else list(json.loads(row[0]))
 
     def load_private(self, case_id: str, *, now: int | None = None) -> dict:
         """Custodian-only private retrieval. Never return through an HTTP handler."""
@@ -189,7 +211,7 @@ class DraftStore:
                     "(SELECT 1 FROM freezes f WHERE f.case_id=drafts.case_id)", (now,))]
             for case_id in ids:
                 for table in ("drafts", "freezes", "evidence_stages", "confirmations",
-                              "blockers", "runs"):
+                              "text_fields", "blockers", "runs"):
                     conn.execute(f"DELETE FROM {table} WHERE case_id=?", (case_id,))
         for case_id in ids:
             bundle = self.directory / "bundles" / f"{case_id}.vkb"

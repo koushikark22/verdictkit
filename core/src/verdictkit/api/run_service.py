@@ -85,10 +85,15 @@ def _decimal_string(value: object) -> str | None:
 
 
 def parameter_ledger(plugin: ClaimType, raw: Mapping[str, Any], confirmed: Sequence[str],
-                     frozen: FrozenClaim | None = None) -> list[dict[str, object]]:
-    """Parameter ledger (API contract §5). Values only from parameters/assumptions."""
+                     frozen: FrozenClaim | None = None, *, text_fields: Sequence[str] = (),
+                     spans: Mapping[str, tuple[int, int]] | None = None) -> list[dict[str, object]]:
+    """Parameter ledger (API contract §5). Values only from parameters/assumptions.
+
+    ``spans`` is supplied only for the intake response; after freeze every span is null."""
     params = raw.get("params") or {}
     confirmed_set = set(confirmed)
+    text_set = set(text_fields)
+    spans = spans if frozen is None else None
     entries: list[dict[str, object]] = []
     for name, value in sorted(params.items()):
         if value is None:
@@ -99,11 +104,17 @@ def parameter_ledger(plugin: ClaimType, raw: Mapping[str, Any], confirmed: Seque
             text = value
         else:
             text = canonical_bytes(value).decode("utf-8")
-        entries.append({
-            "name": name, "value": text, "state": "SPECIFIED", "sourceSpan": None,
-            "basis": "USER_CONFIRMED" if name in confirmed_set else "USER_FORM",
-            "critical": False,
-        })
+        if name in confirmed_set:
+            basis, span = "USER_CONFIRMED", None
+        elif name in text_set:
+            basis = "CLAIMANT_TEXT"
+            span = None
+            if spans and name in spans:
+                span = {"start": spans[name][0], "end": spans[name][1]}
+        else:
+            basis, span = "USER_FORM", None
+        entries.append({"name": name, "value": text, "state": "SPECIFIED",
+                        "sourceSpan": span, "basis": basis, "critical": False})
     if frozen is not None:
         for a in sorted(frozen.assumptions, key=lambda x: x.name):
             if a.kind is AssumptionKind.MISSING:
@@ -204,12 +215,13 @@ def build_outcome(*, case_id: str, run_id: str, plugin: ClaimType, raw: Mapping[
                   confirmed: Sequence[str], frozen: FrozenClaim, frozen_at: str | None,
                   data_mode: DataMode, isolation: str, examination: Examination,
                   findings: Sequence[Finding], diagnostics: Mapping[str, object] | None,
-                  verdict_hash: str) -> dict[str, object]:
+                  verdict_hash: str, text_fields: Sequence[str] = ()) -> dict[str, object]:
     records, record_ids, point_of_failure = _key_records(frozen.claim_type, findings)
     body = outcome_response(
         case_id=case_id, run_id=run_id, claim_type=frozen.claim_type, data_mode=data_mode,
         isolation_mode=isolation, findings=findings, blockers=[],
-        parameter_ledger=parameter_ledger(plugin, raw, confirmed, frozen),
+        parameter_ledger=parameter_ledger(plugin, raw, confirmed, frozen,
+                                          text_fields=text_fields),
         evidence=[], key_records=records, diagnostics=diagnostics,
         spec_hash=frozen.spec_hash, verdict_hash=verdict_hash,
         grid_points=len(examination.points),
@@ -233,7 +245,8 @@ def build_outcome(*, case_id: str, run_id: str, plugin: ClaimType, raw: Mapping[
 def blocked_outcome(*, case_id: str, plugin: ClaimType, raw: Mapping[str, Any],
                     confirmed: Sequence[str], data_mode: DataMode, isolation: str,
                     spec_hash: str | None, frozen_at: str | None,
-                    blockers: Sequence[Mapping[str, object]]) -> dict[str, object]:
+                    blockers: Sequence[Mapping[str, object]],
+                    text_fields: Sequence[str] = ()) -> dict[str, object]:
     frozen = None
     try:
         frozen = freeze(plugin, raw).frozen
@@ -242,7 +255,8 @@ def blocked_outcome(*, case_id: str, plugin: ClaimType, raw: Mapping[str, Any],
     return outcome_response(
         case_id=case_id, run_id=None, claim_type=plugin.type_id, data_mode=data_mode,
         isolation_mode=isolation, findings=[], blockers=blockers,
-        parameter_ledger=parameter_ledger(plugin, raw, confirmed, frozen),
+        parameter_ledger=[{**e, "sourceSpan": None} for e in
+                          parameter_ledger(plugin, raw, confirmed, frozen, text_fields=text_fields)],
         evidence=[], key_records=[], diagnostics=None, spec_hash=spec_hash,
         verdict_hash=None, grid_points=0,
         specimen=specimen_dto(frozen, claim_type=plugin.type_id, data_mode=data_mode,
@@ -334,6 +348,7 @@ def execute_run(*, store: DraftStore, registry: Registry, examiner: Any, case_id
             isolation=examiner.isolation.value, examination=examination,
             findings=sealed.verdict.findings, diagnostics=sealed.diagnostics,
             verdict_hash=sealed.verdict.verdict_hash,
+            text_fields=store.get_text_fields(case_id),
         )
         state = "COMPLETED" if outcome["executionStatus"] == "COMPLETED" else "INDETERMINATE"
         emit("RUN_COMPLETED" if state == "COMPLETED" else "RUN_INDETERMINATE", state=state)

@@ -57,6 +57,9 @@ class PreparedIntake:
     data_mode: str
     raw_claim: Mapping[str, object] = field(repr=False)
     outcome_fields: tuple[dict[str, object], ...]
+    # Draft-response-only provenance for text-derived parameters. The pasted text
+    # itself is never stored here, persisted, logged, frozen or bundled.
+    text_spans: Mapping[str, tuple[int, int]] = field(default_factory=dict, repr=False)
 
 
 def prepare_intake(payload: Mapping[str, object], registry: Registry) -> PreparedIntake:
@@ -83,11 +86,10 @@ def prepare_intake(payload: Mapping[str, object], registry: Registry) -> Prepare
         )
     if payload.get("fixtureId") is not None:
         raise IntakeRejected("SCHEMA_INVALID", "Fixture forbidden in live mode", "fixtureId")
-    if payload.get("pastedText") is not None:
-        raise IntakeRejected(
-            "POLICY_VIOLATION", "Transient pasted-text parser not connected", "pastedText"
-        )
+    plugin = registry.get(claim_id)
     form = payload.get("form")
+    if form is None and payload.get("pastedText") is not None:
+        form = {"params": {}, "outcomes": {}}
     if not isinstance(form, dict) or set(form) - _ALLOWED_FORM:
         raise IntakeRejected("SCHEMA_INVALID", "Invalid form object", "form")
     params = form.get("params")
@@ -96,12 +98,43 @@ def prepare_intake(payload: Mapping[str, object], registry: Registry) -> Prepare
     if not isinstance(params, dict) or not isinstance(outcomes, dict) or not isinstance(assumptions, dict):
         raise IntakeRejected("SCHEMA_INVALID", "params, outcomes and assumptions must be objects", "form")
     _json_safe(form)
-    plugin = registry.get(claim_id)
+    spans: dict[str, tuple[int, int]] = {}
+    text = payload.get("pastedText")
+    if text is not None:
+        hook = getattr(plugin, "extract_text", None)
+        if hook is None:
+            raise IntakeRejected("SCHEMA_INVALID", "Claim type does not accept pasted text", "pastedText")
+        if not isinstance(text, str) or len(text) > 2000:
+            raise IntakeRejected("SCHEMA_INVALID", "pastedText must be at most 2000 characters", "pastedText")
+        try:
+            t_params, t_outcomes, spans = hook(text)
+        except ValueError as exc:
+            if str(exc).startswith("privacy:"):
+                raise IntakeRejected("PRIVACY_REJECTED",
+                                     "Pasted text contains a URL, handle, email or phone number",
+                                     "pastedText") from None
+            raise IntakeRejected("SCHEMA_INVALID", "Pasted text could not be parsed", "pastedText") from None
+        # Explicit form values (basis USER_FORM) take precedence over extracted text.
+        merged = dict(t_params)
+        merged.update({k: v for k, v in params.items() if v is not None})
+        spans = {k: v for k, v in spans.items() if params.get(k) is None}
+        params = merged
+        outcomes = {**t_outcomes, **outcomes}
+        del text
     if set(params) & set(plugin.outcome_fields):
         raise IntakeRejected("SCHEMA_INVALID", "Asserted outcome placed in parameters", "form.params")
+    if set(params) - set(plugin.param_fields):
+        raise IntakeRejected("SCHEMA_INVALID", "Unknown parameter", "form.params")
+    incomplete = any(v is None for v in params.values())
     try:
-        plugin.validate_params(params)
-        plugin.validate_outcomes(outcomes)
+        # A draft may be incomplete; MISSING parameters become blockers that refuse the
+        # freeze. Complete drafts are validated in full at intake.
+        if not incomplete:
+            plugin.validate_params(params)
+        if outcomes:
+            plugin.validate_outcomes(outcomes)
+        elif not incomplete:
+            plugin.validate_outcomes(outcomes)
         plugin.assumption_specs(assumptions)
     except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
         # Deliberately do not return exception text (may contain outcome values).
@@ -117,4 +150,4 @@ def prepare_intake(payload: Mapping[str, object], registry: Registry) -> Prepare
         {"name": name, "captured": name in outcomes and outcomes[name] is not None}
         for name in sorted(plugin.outcome_fields)
     )
-    return PreparedIntake(claim_id, mode, raw, fields)
+    return PreparedIntake(claim_id, mode, raw, fields, spans)
