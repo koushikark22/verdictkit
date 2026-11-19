@@ -76,10 +76,10 @@ class SafetyMiddleware(BaseHTTPMiddleware):
                 data.extend(chunk)
                 if len(data) > cap:
                     return error("BODY_TOO_LARGE", "Request body exceeds size limit", 413)
-            raw = bytes(data)
-            async def receive() -> dict[str, object]:
-                return {"type": "http.request", "body": raw, "more_body": False}
-            request._receive = receive
+            # BaseHTTPMiddleware passes a cached Request to downstream routes.
+            # Replacing _receive directly loses the cached body on some Starlette
+            # versions; use the cached body recognized by wrapped_receive.
+            request._body = bytes(data)
         response = await call_next(request)
         response.headers["X-VerdictKit-Contract"] = VERSION
         response.headers["Cache-Control"] = "no-store"
