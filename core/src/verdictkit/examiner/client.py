@@ -26,13 +26,28 @@ class Examiner(Protocol):
 
 
 class SocketExaminer:
-    isolation = IsolationMode.ENFORCED
+    isolation = IsolationMode.UNENFORCED
 
     def __init__(self, socket_path: str, timeout_s: float = 60.0,
                  expected_peer_uid: int | None = None) -> None:
         self._socket_path = socket_path
         self._timeout_s = timeout_s
         self._expected_peer_uid = expected_peer_uid
+        self.isolation = IsolationMode.UNENFORCED
+
+        if expected_peer_uid is not None:
+            from .identity import (
+                ExaminerIdentityError,
+                resolve_examiner_uid,
+                verify_examiner_socket,
+            )
+
+            # Do not let a caller choose an arbitrary UID as proof.
+            actual_uid = resolve_examiner_uid("")
+            if expected_peer_uid != actual_uid:
+                raise ExaminerIdentityError("examiner UID does not match designated OS account")
+            verify_examiner_socket(socket_path, expected_uid=actual_uid)
+            self.isolation = IsolationMode.ENFORCED
 
     def examine(self, task: BlindedTask) -> Examination:
         import socket as _socket
