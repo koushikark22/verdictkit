@@ -112,7 +112,13 @@ def _cmd_run(args: argparse.Namespace) -> int:
     # Choose examiner
     socket_path = os.environ.get("VK_EXAMINER_SOCKET")
     if socket_path:
-        examiner = SocketExaminer(socket_path)
+        from verdictkit.examiner.identity import resolve_examiner_uid
+
+        # A socket path or VK_ISOLATION flag cannot establish separation.
+        # The constructor also checks the actual kernel peer credentials.
+        examiner = SocketExaminer(
+            socket_path, expected_peer_uid=resolve_examiner_uid("")
+        )
     else:
         examiner = InProcessExaminer(registry)
 
