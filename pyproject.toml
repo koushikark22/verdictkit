@@ -9,7 +9,7 @@ dependencies = ["verdictkit", "reel-autopsy", "quote-autopsy"]
 dev = ["pytest>=8.3", "hypothesis>=6.120", "jsonschema>=4.23", "pyyaml>=6", "openapi-spec-validator>=0.7"]
 
 [tool.uv.workspace]
-members = ["core", "apps/reel-autopsy", "apps/quote-autopsy", "core/examples"]
+members = ["core", "apps/reel-autopsy", "apps/quote-autopsy", "examples"]
 
 [tool.uv.sources]
 verdictkit = { workspace = true }
