@@ -40,3 +40,16 @@ def test_registered_types_shape():
     with TestClient(create_app(Registry(), judge_mode=False)) as c:
         r=c.get('/api/v1/claim-types')
         assert r.status_code == 200 and r.json() == {'contractVersion': VERSION, 'claimTypes': []}
+
+
+def test_json_errors_and_missing_routes_are_contract_versioned():
+    with TestClient(create_app(Registry(), judge_mode=False)) as client:
+        missing = client.get("/api/v1/route-does-not-exist")
+        assert missing.status_code == 404
+        assert missing.json()["contractVersion"] == VERSION
+        assert missing.json()["error"]["code"] == "NOT_FOUND"
+
+        denied = client.post("/api/v1/cases", json={})
+        assert denied.status_code == 503
+        assert denied.json()["contractVersion"] == VERSION
+        assert denied.json()["error"]["code"] == "HTTP_WORKFLOW_NOT_YET_IMPLEMENTED"
