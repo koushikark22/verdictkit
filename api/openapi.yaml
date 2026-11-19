@@ -36,9 +36,7 @@ paths:
           description: Registered claim types.
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/ClaimTypeInfo" }
+              schema: { $ref: "#/components/schemas/ClaimTypesResponse" }
 
   /cases:
     post:
@@ -293,8 +291,9 @@ components:
     ErrorEnvelope:
       type: object
       additionalProperties: false
-      required: [error]
+      required: [contractVersion, error]
       properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
         error:
           type: object
           additionalProperties: false
@@ -327,8 +326,9 @@ components:
     BlockedResponse:
       type: object
       additionalProperties: false
-      required: [caseId, executionStatus, blockers]
+      required: [contractVersion, caseId, executionStatus, blockers]
       properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
         caseId: { $ref: "#/components/schemas/CaseId" }
         executionStatus: { const: BLOCKED }
         blockers:
@@ -349,6 +349,16 @@ components:
       allOf:
         - if: { properties: { judgeMode: { const: true } } }
           then: { properties: { isolationMode: { const: ENFORCED } } }
+
+    ClaimTypesResponse:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, claimTypes]
+      properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
+        claimTypes:
+          type: array
+          items: { $ref: "#/components/schemas/ClaimTypeInfo" }
 
     ClaimTypeInfo:
       type: object
@@ -522,8 +532,9 @@ components:
     CaseSummary:
       type: object
       additionalProperties: false
-      required: [caseId, claimType, state, dataMode, isolationMode]
+      required: [contractVersion, caseId, claimType, state, dataMode, isolationMode]
       properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
         caseId: { $ref: "#/components/schemas/CaseId" }
         claimType: { $ref: "#/components/schemas/ClaimTypeId" }
         state: { type: string, enum: [DRAFT, FROZEN, EVIDENCE_ACQUIRED, RUNNING, SEALED, BLOCKED, FAILED] }
@@ -567,8 +578,9 @@ components:
     EvidenceResult:
       type: object
       additionalProperties: false
-      required: [caseId, evidence]
+      required: [contractVersion, caseId, evidence]
       properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
         caseId: { $ref: "#/components/schemas/CaseId" }
         evidence:
           type: array
@@ -578,8 +590,9 @@ components:
     RunAccepted:
       type: object
       additionalProperties: false
-      required: [runId, caseId, state, eventsUrl, runUrl]
+      required: [contractVersion, runId, caseId, state, eventsUrl, runUrl]
       properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
         runId: { $ref: "#/components/schemas/RunId" }
         caseId: { $ref: "#/components/schemas/CaseId" }
         state: { type: string, enum: [QUEUED, RUNNING, COMPLETED, BLOCKED, INDETERMINATE, FAILED] }
@@ -589,8 +602,9 @@ components:
     ProgressEvent:
       type: object
       additionalProperties: false
-      required: [runId, seq, stage, at, ledgerSeq, ledgerKind, detail]
+      required: [contractVersion, runId, seq, stage, at, ledgerSeq, ledgerKind, detail]
       properties:
+        contractVersion: { $ref: "#/components/schemas/ContractVersion" }
         runId: { $ref: "#/components/schemas/RunId" }
         seq: { type: integer, minimum: 0 }
         stage:
