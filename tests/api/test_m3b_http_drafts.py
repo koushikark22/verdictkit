@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from verdictkit.plugin import Registry
 from verdictkit.api.server import create_app
-\n
+
 class DemoType:
     type_id = "quote.finance.v1"
     schema_version = 1
