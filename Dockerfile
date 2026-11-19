@@ -34,6 +34,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.4 /uv /uvx /usr/local/bin/
 WORKDIR /app
 COPY pyproject.toml ./
 COPY core/           ./core/
+COPY examples/       ./examples/
 COPY apps/           ./apps/
 COPY tests/          ./tests/
 COPY api/            ./api/
@@ -50,7 +51,7 @@ COPY uv.lock* ./
 # --group dev: install pytest, hypothesis and other dev dependencies.
 # No fallback: a failed sync means the image is not fit for the gate.
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv
-RUN uv sync --frozen --all-extras --group dev
+RUN uv sync --frozen --all-packages --all-extras --group dev
 # Make the venv readable and executable by all users (read + execute; no write).
 RUN chmod -R a+rX /app/.venv
 
