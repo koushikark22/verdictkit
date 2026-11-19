@@ -23,6 +23,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from .draft_store import DraftNotFound, DraftStore, FreezeConflict
 from .freeze_boundary import prepare_freeze
+from .evidence_boundary import preflight_evidence
 from .presenter import specimen_dto
 from verdictkit.model import DataMode
 from .intake_boundary import IntakeRejected, prepare_intake
@@ -233,10 +234,47 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             ),
         }
 
+
+    @app.post('/api/v1/cases/{case_id}/evidence')
+    def acquire_case_evidence(case_id: str) -> Any:
+        if draft_store is None:
+            return error(LOCKED, "Encrypted draft custody not configured", 503)
+        try:
+            metadata = draft_store.get_metadata(case_id)
+        except (DraftNotFound, ValueError):
+            return error("NOT_FOUND", "Case unavailable", 404)
+        if metadata["state"] != "FROZEN":
+            return error("STATE_CONFLICT", "Frozen case required", 409)
+        raw = draft_store.load_private(case_id)
+        plugin = registry.get(metadata["claimType"])
+        gate = preflight_evidence(plugin, raw["params"],
+                                  data_mode=DataMode(metadata["dataMode"]))
+        if not gate.allowed:
+            return JSONResponse(status_code=422, content={
+                "caseId": case_id, "executionStatus": "BLOCKED",
+                "blockers": [gate.public_blocker()],
+            })
+        try:
+            draft_store.acquire_internal_evidence(
+                case_id, recorded_at=datetime.now(timezone.utc).isoformat())
+        except DraftNotFound:
+            return error("NOT_FOUND", "Case unavailable", 404)
+        except FreezeConflict:
+            return error("STATE_CONFLICT", "Evidence already committed", 409)
+        return {"caseId": case_id, "evidence": []}
+
+    @app.get('/api/v1/cases/{case_id}/evidence')
+    def list_case_evidence(case_id: str) -> Any:
+        if draft_store is None:
+            return error(LOCKED, "Encrypted draft custody not configured", 503)
+        try:
+            return {"caseId": case_id, "evidence": draft_store.get_evidence(case_id)}
+        except (DraftNotFound, ValueError):
+            return error("NOT_FOUND", "Evidence not acquired", 404)
+
     # Do not invent SSE records or replay reports. These
     # operations stay closed until the real custodian state machine is integrated.
     @app.api_route('/api/v1/cases/{case_id}', methods=['PATCH'])
-    @app.api_route('/api/v1/cases/{case_id}/evidence', methods=['GET', 'POST'])
     @app.api_route('/api/v1/cases/{case_id}/runs', methods=['POST'])
     @app.api_route('/api/v1/cases/{case_id}/runs/{run_id}', methods=['GET'])
     @app.api_route('/api/v1/cases/{case_id}/runs/{run_id}/events', methods=['GET'])
