@@ -215,7 +215,6 @@ cmd_gate_startup() {
     rm -f "$SOCKET_PATH"
     as_examiner bash -c "cd /app && python -I -m verdictkit.examiner.worker" &
     local examiner_pid=$!
-    trap 'kill "$examiner_pid" 2>/dev/null || true; wait "$examiner_pid" 2>/dev/null || true' EXIT
 
     local retries=30
     while [ "$retries" -gt 0 ] && [ ! -S "$SOCKET_PATH" ]; do
@@ -235,6 +234,8 @@ cmd_gate_startup() {
     printf '%s\n' "$output"
     printf '%s\n' "$output" | grep -Fxq "VK_STARTUP_OK isolation=ENFORCED"
     echo "[gate-startup] Verified Linux judge startup"
+    kill "$examiner_pid" 2>/dev/null || true
+    wait "$examiner_pid" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
