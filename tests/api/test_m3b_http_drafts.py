@@ -74,7 +74,7 @@ def test_http_create_and_get_are_redacted_and_durable(tmp_path):
             assert client.post(f"/api/v1/cases/{case_id}/freeze").status_code == 409
             evidence = client.post(f"/api/v1/cases/{case_id}/evidence")
             assert evidence.status_code == 200, evidence.text
-            assert evidence.json() == {"caseId": case_id, "evidence": []}
+            assert evidence.json() == {"contractVersion": "1.1.0", "caseId": case_id, "evidence": []}
             assert client.get(f"/api/v1/cases/{case_id}/evidence").json()["evidence"] == []
             assert client.post(f"/api/v1/cases/{case_id}/evidence").status_code == 409
             assert client.patch(f"/api/v1/cases/{case_id}", json={}).status_code == 503
