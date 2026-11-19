@@ -6,6 +6,7 @@ locked until scheduling, durable events and verdict joining are implemented.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Sequence
 
 from verdictkit.custody.intake import blind
@@ -35,7 +36,7 @@ def prepare_examiner_handoff(
     The caller must verify frozen custody and acquired evidence before invoking
     this function. No outcome mapping or salt can be passed through its API.
     """
-    if not isinstance(case_id, str) or not case_id.startswith("case_"):
+    if not isinstance(case_id, str) or re.fullmatch(r"case_[0-9a-f]{32}", case_id) is None:
         raise ExaminationRejected("invalid case identifier")
     if any(not isinstance(ref, str) or len(ref) != 64 or
            any(c not in "0123456789abcdef" for c in ref) for ref in evidence_refs):
