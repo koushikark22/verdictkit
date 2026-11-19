@@ -128,3 +128,22 @@ def test_frozen_ledger_drops_source_spans():
     assert not validator("FrozenCase").is_valid(frozen)
     frozen["parameterLedger"] = [dict(entry, sourceSpan=None)]
     validator("FrozenCase").validate(frozen)
+
+
+def test_every_json_response_has_required_contract_version():
+    names = (
+        "ErrorEnvelope", "BlockedResponse", "Health", "ClaimTypesResponse",
+        "DraftCase", "FrozenCase", "CaseSummary", "EvidenceResult",
+        "RunAccepted", "ProgressEvent", "RunRecord", "OutcomeResponse",
+        "BundleMetadata", "ReplayReport",
+    )
+    schemas = SPEC["components"]["schemas"]
+    for name in names:
+        schema = schemas[name]
+        assert "contractVersion" in schema["required"], name
+        assert schema["properties"]["contractVersion"] == {
+            "$ref": "#/components/schemas/ContractVersion"
+        }, name
+    assert SPEC["paths"]["/claim-types"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/ClaimTypesResponse"}
