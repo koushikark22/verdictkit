@@ -81,7 +81,7 @@ step bash -c '
     rc=$?
     printf "%s\n" "$output"
     [ "$rc" -eq 2 ] &&
-    printf "%s\n" "$output" | grep -Fxq "VK_STARTUP_ERROR=INVALID_JUDGE_MODE"
+    printf "%s\n" "$output" | grep -Fxq "CONFIG_INVALID:VK_JUDGE_MODE"
 '
 
 # 6. True counts.
