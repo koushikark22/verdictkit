@@ -92,3 +92,10 @@ def test_http_malformed_case_id_not_found(tmp_path):
             assert r.status_code in (404, 422)
             r = client.get("/api/v1/cases/invalid")
             assert r.status_code == 404
+
+def test_env_judge_mode_rejects_unenforced_factory(tmp_path):
+    env = {"VK_JUDGE_MODE": "1", "VK_ISOLATION": "enforced", "VK_EXAMINER_SOCKET": ""}
+    with patch.dict(os.environ, env):
+        import pytest
+        with pytest.raises(RuntimeError, match="judge mode"):
+            create_app(_registry())
