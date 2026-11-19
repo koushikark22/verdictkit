@@ -9,6 +9,14 @@ on:
       - "apps/**"
       - "examples/**"
       - ".github/workflows/refresh-integration-lock.yml"
+  pull_request:
+    branches: [dev/m3b-case-lifecycle]
+    paths:
+      - "pyproject.toml"
+      - "core/**"
+      - "apps/**"
+      - "examples/**"
+      - ".github/workflows/refresh-integration-lock.yml"
   workflow_dispatch:
 
 permissions:
@@ -16,11 +24,13 @@ permissions:
 
 jobs:
   refresh:
+    if: github.event_name != 'pull_request' || github.head_ref == 'fix/p0-remote-integration'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: fix/p0-remote-integration
           persist-credentials: true
       - uses: astral-sh/setup-uv@v6
       - name: Reconcile locked workspace
