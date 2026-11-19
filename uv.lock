@@ -11,6 +11,7 @@ members = [
     "quote-autopsy",
     "reel-autopsy",
     "verdictkit",
+    "verdictkit-stub-receipt",
     "verdictkit-workspace",
 ]
 
@@ -1138,6 +1139,17 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.32" },
 ]
 provides-extras = ["api", "mcp"]
+
+[[package]]
+name = "verdictkit-stub-receipt"
+version = "0.1.0"
+source = { editable = "examples" }
+dependencies = [
+    { name = "verdictkit" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "verdictkit", editable = "core" }]
 
 [[package]]
 name = "verdictkit-workspace"
