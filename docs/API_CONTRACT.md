@@ -8,6 +8,7 @@ execution-level framing. Domain and security contracts in `docs/ARCHITECTURE.md`
 unchanged.
 
 Every JSON response carries `contractVersion: "1.1.0"` (header `X-VerdictKit-Contract`).
+`GET /claim-types` returns `{contractVersion, claimTypes: [...]}` rather than a bare array. Startup accepts only literal `VK_JUDGE_MODE=0` or `VK_JUDGE_MODE=1`; invalid values refuse with exit 2 and `CONFIG_INVALID:VK_JUDGE_MODE`. A successful startup check prints `VK_STARTUP_OK isolation=ENFORCED` or `VK_STARTUP_OK isolation=UNENFORCED`. Judge mode without verified isolation refuses with exit 3 and `VK_STARTUP_ERROR=ISOLATION_NOT_ENFORCED`.
 Changing any schema requires bumping it; the frontend refuses unknown versions.
 
 ## 0. Blinding scope (what is and is not secret)
