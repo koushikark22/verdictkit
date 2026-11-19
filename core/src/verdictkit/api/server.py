@@ -18,6 +18,8 @@ from collections import defaultdict, deque
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -92,6 +94,19 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
         registry = _load_registry()
     app = FastAPI(title="VerdictKit", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(SafetyMiddleware)
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_error(_request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        # Never return the framework's unversioned {"detail": ...} object.
+        if exc.status_code == 404:
+            return error("NOT_FOUND", "Route unavailable", 404)
+        if exc.status_code == 405:
+            return error("METHOD_NOT_ALLOWED", "HTTP method unavailable", 405)
+        return error("HTTP_ERROR", "Request rejected", exc.status_code)
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_error(_request: Request, _exc: RequestValidationError) -> JSONResponse:
+        return error("SCHEMA_INVALID", "Request validation failed", 422)
 
     @app.get('/api/v1/health')
     def health() -> dict[str, object]:
