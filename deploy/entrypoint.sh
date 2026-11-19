@@ -204,6 +204,40 @@ cmd_gate_case() {
 }
 
 # ---------------------------------------------------------------------------
+# subcommand: gate-startup
+# ---------------------------------------------------------------------------
+cmd_gate_startup() {
+    setup_vault
+    mkdir -p /tmp/vk-custodian /tmp/vk-examiner
+    chown vk-custodian /tmp/vk-custodian
+    chown vk-examiner /tmp/vk-examiner
+
+    rm -f "$SOCKET_PATH"
+    as_examiner bash -c "cd /app && python -I -m verdictkit.examiner.worker" &
+    local examiner_pid=$!
+    trap 'kill "$examiner_pid" 2>/dev/null || true; wait "$examiner_pid" 2>/dev/null || true' EXIT
+
+    local retries=30
+    while [ "$retries" -gt 0 ] && [ ! -S "$SOCKET_PATH" ]; do
+        sleep 0.2
+        retries=$((retries - 1))
+    done
+    if [ ! -S "$SOCKET_PATH" ]; then
+        echo "examiner socket did not become ready" >&2
+        return 1
+    fi
+    chgrp vk-ipc "$SOCKET_PATH"
+    chmod 660 "$SOCKET_PATH"
+
+    local VK_JUDGE_MODE=1
+    local output
+    output="$(as_custodian bash -c 'cd /app && /app/.venv/bin/python -m verdictkit.api --check-startup')"
+    printf '%s\n' "$output"
+    printf '%s\n' "$output" | grep -Fxq "VK_STARTUP_OK isolation=ENFORCED"
+    echo "[gate-startup] Verified Linux judge startup"
+}
+
+# ---------------------------------------------------------------------------
 # subcommand: serve
 # ---------------------------------------------------------------------------
 
@@ -260,6 +294,10 @@ case "$SUBCOMMAND" in
     gate-case)
         shift
         cmd_gate_case "$@"
+        ;;
+    gate-startup)
+        shift
+        cmd_gate_startup "$@"
         ;;
     serve)
         shift
