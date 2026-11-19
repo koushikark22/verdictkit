@@ -18,10 +18,10 @@ class IsolationNotEnforcedError(RuntimeError):
 
 
 def parse_judge_mode() -> bool:
-    raw = os.environ.get("VK_JUDGE_MODE", "0").strip().lower()
-    if raw in ("1", "true", "yes"):
+    raw = os.environ.get("VK_JUDGE_MODE", "0")
+    if raw == "1":
         return True
-    if raw in ("0", "false", "no"):
+    if raw == "0":
         return False
     raise StartupConfigurationError("invalid VK_JUDGE_MODE value")
 
