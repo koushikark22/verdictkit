@@ -79,3 +79,9 @@ def test_validation_error_does_not_echo_outcome(registry, payload):
     with pytest.raises(IntakeRejected) as exc:
         prepare_intake(payload, registry)
     assert "SECRET_SENTINEL" not in str(exc.value)
+
+
+def test_prepared_intake_repr_never_contains_claimed_outcome(registry, payload):
+    prepared = prepare_intake(payload, registry)
+    assert "555.12" not in repr(prepared)
+    assert "monthly_payment" in repr(prepared)
