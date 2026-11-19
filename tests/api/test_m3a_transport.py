@@ -39,4 +39,4 @@ def test_body_limit():
 def test_registered_types_shape():
     with TestClient(create_app(Registry(), judge_mode=False)) as c:
         r=c.get('/api/v1/claim-types')
-        assert r.status_code==200 and r.json()==[]
+        assert r.status_code == 200 and r.json() == {'contractVersion': VERSION, 'claimTypes': []}
