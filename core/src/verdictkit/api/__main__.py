@@ -20,7 +20,7 @@ def main() -> int:
     try:
         judge_mode, isolation = startup_checks()
     except StartupConfigurationError:
-        print("VK_STARTUP_ERROR=INVALID_JUDGE_MODE", file=sys.stderr)
+        print("CONFIG_INVALID:VK_JUDGE_MODE", file=sys.stderr)
         return 2
     except IsolationNotEnforcedError:
         print("VK_STARTUP_ERROR=ISOLATION_NOT_ENFORCED", file=sys.stderr)
@@ -29,7 +29,7 @@ def main() -> int:
     if args.check_startup:
         print(f"isolation_mode: {isolation}")
         print(f"judge_mode: {judge_mode}")
-        print("startup checks PASSED")
+        print(f"VK_STARTUP_OK isolation={isolation}")
         return 0
 
     try:
