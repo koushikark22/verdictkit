@@ -125,8 +125,18 @@ def parameter_ledger(plugin: ClaimType, raw: Mapping[str, Any], confirmed: Seque
     confirmed_set = set(confirmed)
     text_set = set(text_fields)
     spans = spans if frozen is None else None
+    if frozen is not None:
+        assumptions = tuple(frozen.assumptions)
+    else:
+        try:
+            assumptions = tuple(plugin.assumption_specs(dict(raw.get("assumptions") or {})))
+        except Exception:
+            assumptions = ()
+    axis_names = {a.name for a in assumptions}
     entries: list[dict[str, object]] = []
     for name, value in sorted(params.items()):
+        if value is None and name in axis_names:
+            continue  # unknown fact: reported below as an ASSUMED, swept assumption
         if value is None:
             entries.append({"name": name, "value": None, "state": "MISSING",
                             "sourceSpan": None, "basis": "NONE", "critical": True})
@@ -146,8 +156,8 @@ def parameter_ledger(plugin: ClaimType, raw: Mapping[str, Any], confirmed: Seque
             basis, span = "USER_FORM", None
         entries.append({"name": name, "value": text, "state": "SPECIFIED",
                         "sourceSpan": span, "basis": basis, "critical": False})
-    if frozen is not None:
-        for a in sorted(frozen.assumptions, key=lambda x: x.name):
+    if assumptions:
+        for a in sorted(assumptions, key=lambda x: x.name):
             if a.kind is AssumptionKind.MISSING:
                 entries.append({"name": a.name, "value": None, "state": "MISSING",
                                 "sourceSpan": None, "basis": "NONE", "critical": False})

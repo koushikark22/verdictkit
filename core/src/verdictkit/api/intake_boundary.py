@@ -125,7 +125,9 @@ def prepare_intake(payload: Mapping[str, object], registry: Registry) -> Prepare
         raise IntakeRejected("SCHEMA_INVALID", "Asserted outcome placed in parameters", "form.params")
     if set(params) - set(plugin.param_fields):
         raise IntakeRejected("SCHEMA_INVALID", "Unknown parameter", "form.params")
-    incomplete = any(v is None for v in params.values())
+    # A null parameter declared as an assumption of the same name is an unknown fact
+    # to be swept, not a missing value.
+    incomplete = any(v is None and k not in assumptions for k, v in params.items())
     try:
         # A draft may be incomplete; MISSING parameters become blockers that refuse the
         # freeze. Complete drafts are validated in full at intake.
@@ -135,7 +137,10 @@ def prepare_intake(payload: Mapping[str, object], registry: Registry) -> Prepare
             plugin.validate_outcomes(outcomes)
         elif not incomplete:
             plugin.validate_outcomes(outcomes)
-        plugin.assumption_specs(assumptions)
+        axes = plugin.assumption_specs(assumptions)
+        cross_check = getattr(plugin, "validate_assumptions", None)
+        if cross_check is not None and not incomplete:
+            cross_check(params, axes)
     except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
         # Deliberately do not return exception text (may contain outcome values).
         raise IntakeRejected("SCHEMA_INVALID", "Claim validation rejected the form", "form") from exc

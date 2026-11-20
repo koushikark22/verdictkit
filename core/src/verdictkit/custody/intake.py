@@ -93,6 +93,11 @@ def freeze(claim_type: ClaimType, raw: Mapping[str, object]) -> IntakeResult:
     # Parse assumptions
     raw_assumptions: dict = dict(raw.get("assumptions") or {})
     plugin_assumptions = claim_type.assumption_specs(raw_assumptions)
+    # Optional plugin hook: cross-check parameters against the resolved axes (e.g. a
+    # parameter left unknown must have a swept axis of the same name).
+    cross_check = getattr(claim_type, "validate_assumptions", None)
+    if cross_check is not None:
+        cross_check(raw_params, plugin_assumptions)
 
     # Validate grid size
     expand_grid(plugin_assumptions)  # raises GridTooLargeError if over cap
