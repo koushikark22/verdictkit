@@ -17,6 +17,10 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from verdictkit.plugin import Registry
 
 
 def _load_registry() -> "Registry":
@@ -112,12 +116,24 @@ def _cmd_run(args: argparse.Namespace) -> int:
     # Choose examiner
     socket_path = os.environ.get("VK_EXAMINER_SOCKET")
     if socket_path:
-        examiner = SocketExaminer(socket_path)
+        from verdictkit.examiner.identity import resolve_examiner_uid
+
+        # A socket path or VK_ISOLATION flag cannot establish separation.
+        # The constructor also checks the actual kernel peer credentials.
+        examiner = SocketExaminer(
+            socket_path, expected_peer_uid=resolve_examiner_uid("")
+        )
     else:
-        examiner = InProcessExaminer(registry)
+        examiner = None
 
     with tempfile.TemporaryDirectory(prefix="vk-run-") as tmpdir:
         import datetime
+
+        # The examiner must be able to read acquired evidence: the shared, group-readable
+        # VK_EVIDENCE_DIR in the container, else a private directory for in-process runs.
+        evidence_root = Path(os.environ.get("VK_EVIDENCE_DIR") or Path(tmpdir) / "evidence")
+        if examiner is None:
+            examiner = InProcessExaminer(registry, evidence_root=str(evidence_root))
 
         def clock() -> str:
             return datetime.datetime.now(datetime.timezone.utc).strftime(
@@ -132,6 +148,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 workdir=Path(tmpdir),
                 clock=clock,
                 data_mode=data_mode,
+                evidence_root=evidence_root,
             )
         except Exception as exc:
             print(f"ERROR: run failed: {exc}", file=sys.stderr)
@@ -176,50 +193,22 @@ def _cmd_replay(args: argparse.Namespace) -> int:
             print(f"ERROR: replay failed: {exc}", file=sys.stderr)
             return 1
 
-    # Determine integrity: all notes absent = VERIFIED, any note = FAILED
-    integrity_status = "VERIFIED" if not report.notes else "FAILED"
-    # Refine: specifically flag ledger/commitment failures
-    integrity_checks = []
-    integrity_checks.append({"check": "LEDGER_CHAIN",  "ok": report.ledger_ok})
-    integrity_checks.append({"check": "COMMITMENT",    "ok": report.commitment_ok})
-    manifest_ok = all(
-        "hash mismatch" not in n and "missing file" not in n
-        for n in report.notes
-    )
-    integrity_checks.append({"check": "MANIFEST_HASHES", "ok": manifest_ok})
-    if not (report.ledger_ok and report.commitment_ok and manifest_ok):
-        integrity_status = "FAILED"
-
-    reproducibility = {
-        "status": report.status.value,
-        "originalVerdictHash": report.original_verdict_hash,
-        "replayedVerdictHash": report.replayed_verdict_hash,
-        "envMatch": report.env_match,
-    }
-
-    authenticity = {
-        "status": "NOT_ESTABLISHED",
-        "note": "Bundles are unsigned in v1.",
-    }
+    from verdictkit.bundle import replay_report_dict
+    body = replay_report_dict(report)
+    integrity_status = body["integrity"]["status"]
 
     if args.json:
-        output = {
-            "integrity": {"status": integrity_status, "checks": integrity_checks},
-            "reproducibility": reproducibility,
-            "authenticity": authenticity,
-            "notes": list(report.notes),
-        }
-        print(json.dumps(output, indent=2))
+        print(json.dumps(body, indent=2))
     else:
         print(f"integrity:         {integrity_status}")
-        for c in integrity_checks:
+        for c in body["integrity"]["checks"]:
             mark = "OK" if c["ok"] else "FAIL"
             print(f"  [{mark}] {c['check']}")
         print(f"reproducibility:   {report.status.value}")
         print(f"  original_hash:   {report.original_verdict_hash}")
         print(f"  replayed_hash:   {report.replayed_verdict_hash}")
         print(f"  env_match:       {report.env_match}")
-        print(f"authenticity:      NOT_ESTABLISHED (bundles unsigned in v1)")
+        print("authenticity:      NOT_ESTABLISHED (bundles unsigned in v1)")
         if report.notes:
             print("notes:")
             for note in report.notes:

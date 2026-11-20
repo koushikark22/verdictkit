@@ -1,0 +1,84 @@
+name: Integration gate
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  security-and-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify workspace lock
+        run: uv lock --check
+      - name: Install complete workspace and test tools
+        run: uv sync --frozen --all-packages --all-extras --group dev
+      - name: Lint (ruff)
+        run: uv run --no-sync ruff check .
+      - name: Verify startup and examiner negative tests
+        run: uv run --no-sync pytest -q tests/api/test_startup_gate.py tests/contract/test_examiner_attestation.py
+      - name: Full regression
+        run: HYPOTHESIS_PROFILE=ci uv run --no-sync pytest -q -m "not isolation"
+      - name: Docker build
+        run: docker build -t verdictkit:p0-ci .
+      - name: Docker isolation tests
+        run: |
+          mkdir -p gate
+          docker run --rm --network none -v "$PWD/gate:/out" verdictkit:p0-ci gate-isolation /out/isolation.xml
+      - name: Positive enforced judge startup
+        run: docker run --rm --network none verdictkit:p0-ci gate-startup
+      - name: Judge-mode HTTP lifecycle through the authenticated examiner
+        run: docker run --rm --network none verdictkit:p0-ci gate-http
+      - name: Docker receipt and replay
+        run: |
+          docker run --rm --network none -v "$PWD/gate:/out" -v "$PWD/examples/stub_claimtype:/in:ro" verdictkit:p0-ci gate-case /in/claim.json /out/stub.vkb
+          docker run --rm --network none -v "$PWD/gate:/out:ro" verdictkit:p0-ci verdictkit replay /out/stub.vkb
+      - name: Complete November gate and transcript
+        run: bash scripts/gate_nov22.sh
+      - name: Archive authentic test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0-gate-artifacts
+          path: gate/
+          if-no-files-found: ignore
+
+  web-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install UI workspace
+        run: npm ci
+      - name: Typecheck, unit tests, build
+        run: |
+          npm run typecheck
+          npm test
+          npm run build
+      - name: Install Python workspace for the real API
+        run: uv sync --frozen --all-packages --all-extras --group dev
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Browser E2E against the real API
+        run: bash scripts/ui_e2e.sh

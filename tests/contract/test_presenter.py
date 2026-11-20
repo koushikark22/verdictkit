@@ -1,5 +1,4 @@
 """Presentation adapter rules (corrections 1, 2, 4, 6) and B1 data-mode policy."""
-import json
 from pathlib import Path
 
 import pytest
@@ -34,7 +33,7 @@ from verdictkit.model import (
 )
 from verdictkit.plugin import EvidencePolicySpec, Examination, PointResult
 from verdictkit.sweep import PointOutcome
-from verdictkit.model import Assumption, AssumptionKind, FrozenClaim, Origin
+from verdictkit.model import FrozenClaim
 from decimal import Decimal
 
 ROOT = Path(__file__).resolve().parents[2]

@@ -234,8 +234,8 @@ def validate_finding(finding: Finding) -> Finding:
             d = Decimal(val)
             if not d.is_finite():
                 raise InvalidFindingError(f"numbers[{key!r}] is not a finite Decimal: {val!r}")
-        except (InvalidOperation, TypeError):
-            raise InvalidFindingError(f"numbers[{key!r}] is not a valid Decimal string: {val!r}")
+        except (InvalidOperation, TypeError) as exc:
+            raise InvalidFindingError(f"numbers[{key!r}] is not a valid Decimal string: {val!r}") from exc
     return finding
 
 

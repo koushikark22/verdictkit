@@ -14,9 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from ..evidence.policy import apply_policy
+from ..evidence.policy import apply_policy, effective_policy
 from ..model import (
     Commitment,
+    DataMode,
     EvidenceItem,
     FrozenClaim,
     Status,
@@ -50,6 +51,7 @@ def compare_and_seal(
     commitment: Commitment,
     salt: bytes,
     ledger: Ledger,
+    data_mode: DataMode = DataMode.LIVE_EVIDENCE,
 ) -> SealedCase:
     # 1. Verify we are in the right state (EXAMINATION_COMMITTED)
     if not ledger.entries or ledger.entries[-1].kind is not EntryKind.EXAMINATION_COMMITTED:
@@ -71,7 +73,8 @@ def compare_and_seal(
 
     # 4. Build findings; apply evidence policy (fail-closed)
     evidence_map = {item.sha256: item for item in evidence}
-    policy = claim_type.evidence_policy()
+    # The core, not the plugin, applies the data-mode rule (LIVE forbids synthetic).
+    policy = effective_policy(claim_type.evidence_policy(), data_mode)
     raw_findings = claim_type.findings(frozen, examination, outcomes, list(evidence))
     validated_findings = []
     for f in raw_findings:

@@ -1,20 +1,35 @@
 [project]
 name = "verdictkit-workspace"
 version = "0.1.0"
-description = "VerdictKit — The Claim Autopsy Engine (Kiroween 2026, Skeleton Crew)"
+description = "VerdictKit — The Claim Autopsy Engine"
 requires-python = ">=3.12"
 dependencies = ["verdictkit", "reel-autopsy", "quote-autopsy"]
 
 [dependency-groups]
-dev = ["pytest>=8.3", "hypothesis>=6.120", "jsonschema>=4.23", "pyyaml>=6", "openapi-spec-validator>=0.7"]
+dev = [
+    "pytest>=8.3",
+    "hypothesis>=6.120",
+    "jsonschema>=4.23",
+    "pyyaml>=6",
+    "openapi-spec-validator>=0.7",
+    "ruff==0.8.4",
+]
 
 [tool.uv.workspace]
-members = ["core", "apps/reel-autopsy", "apps/quote-autopsy", "core/examples"]
+members = ["core", "apps/reel-autopsy", "apps/quote-autopsy", "examples"]
 
 [tool.uv.sources]
 verdictkit = { workspace = true }
 reel-autopsy = { workspace = true }
 quote-autopsy = { workspace = true }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+# Correctness-focused set: syntax errors, pyflakes, bugbear.
+select = ["E9", "F", "B"]
 
 [tool.pytest.ini_options]
 pythonpath = ["core/src", "apps/reel-autopsy/src", "apps/quote-autopsy/src", "tests"]

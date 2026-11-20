@@ -8,6 +8,7 @@ execution-level framing. Domain and security contracts in `docs/ARCHITECTURE.md`
 unchanged.
 
 Every JSON response carries `contractVersion: "1.1.0"` (header `X-VerdictKit-Contract`).
+`GET /claim-types` returns `{contractVersion, claimTypes: [...]}` rather than a bare array. Startup accepts only literal `VK_JUDGE_MODE=0` or `VK_JUDGE_MODE=1`; invalid values refuse with exit 2 and `VK_STARTUP_ERROR=CONFIG_INVALID:VK_JUDGE_MODE`. A successful startup check prints `VK_STARTUP_OK isolation=ENFORCED` or `VK_STARTUP_OK isolation=UNENFORCED`. Judge mode without verified isolation refuses with exit 3 and `VK_STARTUP_ERROR=ISOLATION_NOT_ENFORCED`.
 Changing any schema requires bumping it; the frontend refuses unknown versions.
 
 ## 0. Blinding scope (what is and is not secret)
@@ -148,3 +149,35 @@ response carries `isolationMode`; judge mode refuses to start unless `ENFORCED`.
 | `authenticity` | Did our deployment produce it? | always `NOT_ESTABLISHED` (bundles are unsigned in v1) |
 
 The UI and write-up must never present integrity or reproducibility as proof of origin.
+
+## 11. Implementation notes (server behaviour, 1.1.0)
+
+* `POST /cases/{caseId}/runs` executes the run to a terminal state before answering
+  `202 RunAccepted` (state `COMPLETED` or `INDETERMINATE`); a repeated call returns the
+  existing run. Infrastructure failure (examiner unreachable or unauthenticated, spec
+  substitution, commitment mismatch) yields run state `FAILED`, HTTP 500
+  `RUN_FAILED`, no bundle and no verdict.
+* The SSE stream replays the persisted `RunRecord` (`id = seq`, `event: progress`) and
+  ends at the terminal event; `Last-Event-ID` must be a non-negative integer.
+* `GET /cases/{caseId}/outcome` answers `425 TOO_EARLY` until a verdict is sealed, or a
+  `BLOCKED` `OutcomeResponse` when freeze or evidence was refused.
+* Case routes answer `503 CUSTODY_NOT_CONFIGURED` unless `VK_DRAFT_DIR` and a 32-byte
+  base64 `VK_VAULT_KEY` are configured. Only claim types in the `ClaimTypeId` enum are
+  exposed over HTTP.
+* `POST /replays` never refetches; malformed, oversized (> 64 MiB uncompressed) or
+  integrity-failing bundles are reported `UNVERIFIABLE` and are not re-executed. At most
+  two replays run concurrently (`429` otherwise).
+* In judge mode every case, frozen or not, is purged 24 h after intake.
+* `SYNTHETIC_DEMO` is implemented as specified in §3: `POST /cases` accepts only a bundled
+  `fixtureId` (Reel: `fx_reel_supported_hold`, `fx_reel_conditional_sma`,
+  `fx_reel_impossible_sma`), refuses any form or pasted text, and the case cannot be
+  edited. Evidence is the labelled synthetic series (origin `SYNTHETIC_FIXTURE`, licence
+  `SYNTHETIC`, embedded in the bundle). A `LIVE_EVIDENCE` claim on the synthetic
+  instrument is `BLOCKED / POLICY_VIOLATION`. No schema changed for this.
+* Reel outcomes may carry one `EQUITY_SERIES` key record (role `ILLUSTRATIVE`, `findingId`
+  null) with the first grid point's sampled equity; it is never a counterexample (§6).
+* `quote.lease.v1` accepts the itemised worksheet (quote req 2.1) or the reduced form;
+  the claim-type info lists the union of outcome fields. Tolerances follow quote req 3.6.
+* Unknown document facts (Quote) are sent as `null` parameters plus a missing assumption
+  of the same name in `form.assumptions`; the ledger reports them as `ASSUMED` with the
+  swept set. No schema changed for this.

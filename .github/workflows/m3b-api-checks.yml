@@ -1,0 +1,31 @@
+name: API safety checks (pip install)
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  intake-and-custody:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest hypothesis cryptography fastapi httpx uvicorn pyyaml jsonschema
+          python -m pip install --no-deps -e ./core
+          python -m pip install --no-deps -e ./apps/quote-autopsy
+          python -m pip install --no-deps -e ./apps/reel-autopsy
+          python -m pip install --no-deps -e ./examples
+      - name: Verify M3b intake and sealed draft store
+        run: |
+          python -m pytest -q tests/api/test_m3b_intake_boundary.py tests/api/test_m3b_draft_store.py tests/api/test_m3b_http_drafts.py tests/api/test_m3a_transport.py tests/api/test_m3b_freeze_boundary.py tests/api/test_m3b_evidence_boundary.py tests/api/test_m3b_examination_boundary.py tests/api/test_m3b_examiner_identity.py tests/api/test_http_run_lifecycle.py

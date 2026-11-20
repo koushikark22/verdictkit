@@ -101,6 +101,14 @@ class ClaimType(Protocol):
     ) -> Sequence[Finding]:
         """Pure comparison after reveal. Runs in the Custodian."""
 
+    # Optional hooks (looked up with getattr; absent on most claim types):
+    #   validate_assumptions(params, assumptions) -> None   cross-check at freeze/intake
+    #   point_outcomes(frozen, examination, outcomes) -> {finding_id: [PointOutcome]}
+    #   illustrative_records(frozen, examination) -> [KeyRecord dict]  ILLUSTRATIVE only
+    #   evidence_adapters() -> [SourceAdapter]               local evidence adapters
+    #   fixtures() -> {fixture_id: raw_claim}                trusted SYNTHETIC_DEMO claims
+    #   extract_text(text) -> (params, outcomes, spans)      transient pasted-text intake
+
     def diagnose(
         self,
         frozen: FrozenClaim,
@@ -123,7 +131,7 @@ class Registry:
         try:
             return self._types[type_id]
         except KeyError:
-            raise KeyError(f"unknown claim type: {type_id!r}")
+            raise KeyError(f"unknown claim type: {type_id!r}") from None
 
     def type_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self._types.keys()))

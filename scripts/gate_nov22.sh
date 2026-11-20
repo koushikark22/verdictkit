@@ -40,17 +40,17 @@ step git rev-parse HEAD
 step git status --porcelain
 step uv --version
 step docker --version
-step uv sync --frozen
+step uv sync --frozen --all-packages --all-extras --group dev
 
 # 1. Core contract tests (gate scope) — must be fully green.
-step uv run pytest tests/contract -m "not isolation" -q -rfEs \
+step uv run --no-sync pytest tests/contract -m "not isolation" -q -rfEs \
   --ignore=tests/contract/test_reel_contract.py \
   --ignore=tests/contract/test_quote_contract.py \
   --ignore=tests/contract/test_reel_intake_presentation.py \
   --junitxml="$OUT/core_contract.xml"
 
 # 2. App contract tests — reported, not gating on Nov 22 (apps are scheduled after).
-uv run pytest tests/contract/test_reel_contract.py tests/contract/test_quote_contract.py \
+uv run --no-sync pytest tests/contract/test_reel_contract.py tests/contract/test_quote_contract.py \
   tests/contract/test_reel_intake_presentation.py -q --junitxml="$OUT/app_contract.xml" \
   > "$OUT/app_contract.txt" 2>&1 || true
 printf '\n(app contract tests: see %s; not gating on Nov 22)\n' "$OUT/app_contract.txt" | tee -a "$LOG"
@@ -59,20 +59,35 @@ printf '\n(app contract tests: see %s; not gating on Nov 22)\n' "$OUT/app_contra
 step docker build -t verdictkit:gate .
 step docker image inspect --format '{{.Id}}' verdictkit:gate
 step docker run --rm --network none -v "$PWD/$OUT:/out" verdictkit:gate gate-isolation /out/isolation.xml
+step docker run --rm --network none verdictkit:gate gate-startup
+step docker run --rm --network none verdictkit:gate gate-http
 
 # 4. Full path in the container (enforced isolation, no network), then offline replay.
 step docker run --rm --network none -v "$PWD/$OUT:/out" \
-  -v "$PWD/core/examples/stub_claimtype:/in:ro" verdictkit:gate gate-case /in/claim.json /out/stub.vkb
+  -v "$PWD/examples/stub_claimtype:/in:ro" verdictkit:gate gate-case /in/claim.json /out/stub.vkb
 step docker run --rm --network none -v "$PWD/$OUT:/out" verdictkit:gate verdictkit replay /out/stub.vkb
 # Outside the container: a different environment, so REPRODUCED_ACROSS_ENV is the expected status.
-step uv run verdictkit replay "$OUT/stub.vkb"
+step uv run --no-sync verdictkit replay "$OUT/stub.vkb"
 step sha256sum "$OUT/stub.vkb"
 
 # 5. Judge mode must refuse to start without enforced isolation.
-step bash -c '! VK_JUDGE_MODE=1 timeout 20 uv run python -m verdictkit.api --check-startup'
+step bash -c '
+    output=$(VK_JUDGE_MODE=1 timeout 20 uv run --no-sync python -m verdictkit.api --check-startup 2>&1)
+    rc=$?
+    printf "%s\n" "$output"
+    [ "$rc" -eq 3 ] &&
+    printf "%s\n" "$output" | grep -Fxq "VK_STARTUP_ERROR=ISOLATION_NOT_ENFORCED"
+'
+step bash -c '
+    output=$(VK_JUDGE_MODE=banana timeout 20 uv run --no-sync python -m verdictkit.api --check-startup 2>&1)
+    rc=$?
+    printf "%s\n" "$output"
+    [ "$rc" -eq 2 ] &&
+    printf "%s\n" "$output" | grep -Fxq "VK_STARTUP_ERROR=CONFIG_INVALID:VK_JUDGE_MODE"
+'
 
 # 6. True counts.
-step uv run python scripts/junit_counts.py "$OUT/core_contract.xml" "$OUT/isolation.xml" "$OUT/app_contract.xml"
+step uv run --no-sync python scripts/junit_counts.py "$OUT/core_contract.xml" "$OUT/isolation.xml" "$OUT/app_contract.xml"
 
 printf '\nGATE %s\n' "$([ $RC -eq 0 ] && echo PASSED || echo FAILED)" | tee -a "$LOG"
 exit $RC

@@ -1,5 +1,4 @@
 """Minimal adapter contract checks. Do not weaken existing core tests."""
-from decimal import Decimal
 
 from quote_autopsy.claim_type import FinanceClaimType, LeaseClaimType
 from reel_autopsy.claim_type import ReelClaimType

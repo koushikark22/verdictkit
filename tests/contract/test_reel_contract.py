@@ -91,7 +91,7 @@ def test_flat_is_constant(bars):
 def test_bound_matches_exact_oracle(bars):
     """Req 7.1–7.2: implementation equals the Fraction oracle."""
     assert len(interval_returns(bars)) == len(bars) - 1
-    for got, exp in zip(interval_returns(bars), interval_returns_oracle(bars)):
+    for got, exp in zip(interval_returns(bars), interval_returns_oracle(bars), strict=False):
         assert abs(F(got) - exp) <= Fraction(1, 10**25)
     exp = bound_pct_oracle(bars)
     assert abs(F(perfect_foresight_bound_pct(bars)) - exp) <= Fraction(1, 10**20) * (1 + abs(exp))

@@ -26,15 +26,31 @@ class Examiner(Protocol):
 
 
 class SocketExaminer:
-    isolation = IsolationMode.ENFORCED
+    isolation = IsolationMode.UNENFORCED
 
-    def __init__(self, socket_path: str, timeout_s: float = 60.0) -> None:
+    def __init__(self, socket_path: str, timeout_s: float = 60.0,
+                 expected_peer_uid: int | None = None) -> None:
         self._socket_path = socket_path
         self._timeout_s = timeout_s
+        self._expected_peer_uid = expected_peer_uid
+        self.isolation = IsolationMode.UNENFORCED
+
+        if expected_peer_uid is not None:
+            from .identity import (
+                ExaminerIdentityError,
+                resolve_examiner_uid,
+                verify_examiner_socket,
+            )
+
+            # Do not let a caller choose an arbitrary UID as proof.
+            actual_uid = resolve_examiner_uid("")
+            if expected_peer_uid != actual_uid:
+                raise ExaminerIdentityError("examiner UID does not match designated OS account")
+            verify_examiner_socket(socket_path, expected_uid=actual_uid)
+            self.isolation = IsolationMode.ENFORCED
 
     def examine(self, task: BlindedTask) -> Examination:
         import socket as _socket
-        import time
 
         payload = encode_task(task)
         framed = frame(payload)
@@ -43,6 +59,9 @@ class SocketExaminer:
         sock.settimeout(self._timeout_s)
         try:
             sock.connect(self._socket_path)
+            if self._expected_peer_uid is not None:
+                from .identity import verify_connected_peer
+                verify_connected_peer(sock, self._expected_peer_uid)
             sock.sendall(framed)
 
             # Read 4-byte length prefix
@@ -97,10 +116,10 @@ class InProcessExaminer:
 
         # Build a minimal evidence reader from the evidence store if available
         evidence_reader = _EmptyEvidenceReader()
-        if self._evidence_root is not None:
-            from ..evidence.store import EvidenceStore
-            store = EvidenceStore(Path(self._evidence_root))
-            evidence_reader = _StoreEvidenceReader(store)
+        if self._evidence_root is not None and decoded_task.evidence_refs:
+            from ..evidence.store import ReadOnlyEvidence
+            evidence_reader = ReadOnlyEvidence(Path(self._evidence_root),
+                                               decoded_task.evidence_refs)
 
         examination = claim_type.examine(decoded_task, evidence_reader, points)
 
@@ -115,14 +134,3 @@ class _EmptyEvidenceReader:
 
     def items(self):
         return ()
-
-
-class _StoreEvidenceReader:
-    def __init__(self, store):
-        self._store = store
-
-    def read(self, sha256: str) -> bytes:
-        return self._store.get(sha256)
-
-    def items(self):
-        return []

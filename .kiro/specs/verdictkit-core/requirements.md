@@ -65,6 +65,7 @@ by code convention.
 4. THE Examiner SHALL run under CPU-time and address-space resource limits.
 5. WHEN the Core runs on a platform without OS-user separation THE Core SHALL set `isolation_mode` to `UNENFORCED` and stamp it in the ledger, bundle manifest, API responses and UI.
 6. IF judge mode is enabled AND `isolation_mode` is not `ENFORCED` THEN THE Core SHALL refuse to start.
+7. THE API startup gate SHALL accept only literal `VK_JUDGE_MODE=0` or `VK_JUDGE_MODE=1`; invalid values SHALL exit 2 with `VK_STARTUP_ERROR=CONFIG_INVALID:VK_JUDGE_MODE`, unenforced judge mode SHALL exit 3 with `VK_STARTUP_ERROR=ISOLATION_NOT_ENFORCED`, and successful checks SHALL print `VK_STARTUP_OK isolation=ENFORCED` or `VK_STARTUP_OK isolation=UNENFORCED`.
 
 ### Requirement 5: Evidence provenance and policy
 

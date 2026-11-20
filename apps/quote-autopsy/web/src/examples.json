@@ -1,0 +1,37 @@
+{
+  "_note": "Constructed example worksheets (quote task 8). Not real dealer quotes. Figures were computed by the engine; 'padded' adds an unexplained 400.00 to the amount financed and derives the later lines from it. tests/integration/test_quote_constructed_examples.py runs both through the engine.",
+  "examples": [
+    {
+      "id": "consistent",
+      "label": "Constructed example: consistent worksheet",
+      "expect": "CONSISTENT",
+      "form": {
+        "selling_price": "28500.00", "doc_fee": "150.00", "doc_fee_taxable": "yes",
+        "addon_code": "GAP", "addon_amount": "795.00", "addon_taxable": "no",
+        "gov_fee_amount": "33.00", "gov_fee_taxable": "no",
+        "trade_allowance": "6000.00", "trade_payoff": "2500.00", "trade_tax_credit": "yes",
+        "cash_down": "3000.00", "stated_tax_rate_pct": "6.25", "apr_pct": "6.90", "term_months": "72", "state": "TX"
+      },
+      "stated": {
+        "taxable_base": "22650.00", "sales_tax": "1415.63", "amount_financed": "24393.63",
+        "monthly_payment": "414.72", "total_of_payments": "29859.84", "finance_charge": "5466.21"
+      }
+    },
+    {
+      "id": "padded",
+      "label": "Constructed example: 400.00 packed into the amount financed",
+      "expect": "CONTRADICTED",
+      "form": {
+        "selling_price": "28500.00", "doc_fee": "150.00", "doc_fee_taxable": "yes",
+        "addon_code": "GAP", "addon_amount": "795.00", "addon_taxable": "no",
+        "gov_fee_amount": "33.00", "gov_fee_taxable": "no",
+        "trade_allowance": "6000.00", "trade_payoff": "2500.00", "trade_tax_credit": "yes",
+        "cash_down": "3000.00", "stated_tax_rate_pct": "6.25", "apr_pct": "6.90", "term_months": "72", "state": "TX"
+      },
+      "stated": {
+        "taxable_base": "22650.00", "sales_tax": "1415.63", "amount_financed": "24793.63",
+        "monthly_payment": "421.52", "total_of_payments": "30349.44", "finance_charge": "5555.81"
+      }
+    }
+  ]
+}
