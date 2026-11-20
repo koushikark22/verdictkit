@@ -174,6 +174,10 @@ The UI and write-up must never present integrity or reproducibility as proof of 
   edited. Evidence is the labelled synthetic series (origin `SYNTHETIC_FIXTURE`, licence
   `SYNTHETIC`, embedded in the bundle). A `LIVE_EVIDENCE` claim on the synthetic
   instrument is `BLOCKED / POLICY_VIOLATION`. No schema changed for this.
+* Reel outcomes may carry one `EQUITY_SERIES` key record (role `ILLUSTRATIVE`, `findingId`
+  null) with the first grid point's sampled equity; it is never a counterexample (§6).
+* `quote.lease.v1` accepts the itemised worksheet (quote req 2.1) or the reduced form;
+  the claim-type info lists the union of outcome fields. Tolerances follow quote req 3.6.
 * Unknown document facts (Quote) are sent as `null` parameters plus a missing assumption
   of the same name in `form.assumptions`; the ledger reports them as `ASSUMED` with the
   swept set. No schema changed for this.

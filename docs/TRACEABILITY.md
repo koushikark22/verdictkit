@@ -43,9 +43,9 @@ reel evaluators), **P3** UIs and demo fixtures.
 
 | Req | Status | Implementation / tests |
 |---|---|---|
-| 1 Finance schema | Partial | Implemented field set differs from 1.1–1.2 (outcome names without `stated_` prefix; term 1–120). **1.3 Done**: an unshown taxability flag is `null` + a missing assumption of the same name, swept over {0,1} with origin DEFAULT_POLICY (`claim_type.py`; `integration/test_quote_sweeps.py`). |
-| 2 Lease schema | Partial | Reduced parameter set (`adjusted_cap_cost`, `residual_value`, …), not 2.1's itemised `msrp`/`capitalized_items`/`cap_cost_reductions`. |
-| 3 Finance arithmetic | Done | 3.1–3.5 (P16, P16b, P17b in `test_quote_contract.py`); 3.6 CONDITIONAL across swept flags with failing and passing points (property test against an independent per-point oracle); 3.7 conventions disclosed in the UI. A negative amount financed is now an intake rejection. |
+| 1 Finance schema | Partial | Implemented field set differs from 1.1–1.2 (finance outcome names have no `stated_` prefix; term 1–120 instead of 1–96). **1.3 Done**: an unshown taxability flag is `null` + a missing assumption of the same name, swept over {0,1} with origin DEFAULT_POLICY (`claim_type.py`; `integration/test_quote_sweeps.py`). |
+| 2 Lease schema | Done | Itemised form per 2.1 (`msrp`, `selling_price`, `capitalized_items`, `cap_cost_reductions`, `residual_value` xor `residual_pct_of_msrp`, term 1–60, `stated_tax_rate_pct`, `jurisdiction`) with `stated_gross_cap_cost`, `stated_adjusted_cap_cost`, `stated_residual_value` outcomes; the reduced form remains accepted (`integration/test_quote_lease_itemised.py`, incl. a form-equivalence property). |
+| 3 Finance arithmetic | Done | Tolerances per 3.6: 0.00 for sums and exact lines, 0.01 for payment-derived values. 3.1–3.5 (P16, P16b, P17b in `test_quote_contract.py`); 3.6 CONDITIONAL across swept flags with failing and passing points (property test against an independent per-point oracle); 3.7 conventions disclosed in the UI. A negative amount financed is now an intake rejection. |
 | 4 Lease arithmetic | Done | 4.1–4.2 (P17); **4.3** unconfirmed rounding convention swept over COMPONENT/FINAL; 4.4 APR ≈ MF × 2400 labelled a convention in the UI. |
 | 5.1 Rules snapshot | Partial | Hash-verified loader done. **Blocked**: no official snapshot — decision B7 (which state) is open. |
 | 5.2–5.5 External findings | Blocked | INDETERMINATE(`evidence_unavailable`) until a snapshot exists (B7). |
@@ -67,12 +67,13 @@ reel evaluators), **P3** UIs and demo fixtures.
 | Req 6, 7 Findings and bound | Done | EXTERNAL_EVIDENCE per metric (SUPPORTED/REFUTED/CONDITIONAL); MECHANICAL_BOUND (`IMPOSSIBLE` when claim − tolerance > bound). |
 | 8 SYNTHETIC_DEMO fixtures | Done | `fixtures.py` (3 fixtures, statuses computed by the engine and asserted in `integration/test_reel_synthetic_demo.py`, 18 tests). Container gate `gate-http` runs one through the authenticated isolated worker. |
 | 9 Intake text and presentation | Done | `test_reel_intake_presentation.py`; connected to HTTP intake. |
-| UI (task 7) | Partial | `apps/reel-autopsy/web`: demos, claim intake (form or paste), progress, verdict, sensitivity heatmap, evidence provenance, bound scope, bundle and replay. Not done: equity-curve chart (the curve is in the bundle's examination record but not in the 1.1.0 OutcomeResponse). |
+| UI (task 7) | Done | `apps/reel-autopsy/web`: demos, claim intake (form or paste), progress, verdict, sensitivity heatmap, illustrative equity chart (an `EQUITY_SERIES` key record, role ILLUSTRATIVE — no schema change), evidence provenance, bound scope, bundle and replay. |
 
 ## Web UIs and verification
 
 | Item | Status |
 |---|---|
 | Shared `ui-kit` (contract-checked client, SSE progress, components) | Done (`ui-kit/src/*.test.*`) |
-| Browser E2E against a real API | Done (`scripts/ui_e2e.sh`, `tests/ui/e2e_browser.cjs`, 17 checks; CI job `web-ui`) |
+| Browser E2E against a real API | Done (`scripts/ui_e2e.sh`, `tests/ui/e2e_browser.cjs`, 19 checks; CI job `web-ui`) |
+| Lint | Done (ruff E9/F/B in the dev group and CI) |
 | Read-only judge preview (`ui/judge`) | Done (`tests/ui`) |

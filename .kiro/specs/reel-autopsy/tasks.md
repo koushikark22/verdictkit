@@ -37,9 +37,9 @@ Window: Nov 23–26 (core gate must be green first).
       Live instruments remain INDETERMINATE/BLOCKED until a licensed source exists (5.0).
   - _Requirements: 1.1–1.6, 6.1–6.5, 7.3–7.5_
 
-- [ ] 7. UI (`web/`) on the shared ui-kit
-  - [ ] 7.1 Claim form, toe-tag verdict, findings list, sweep heatmap, equity chart, bound gauge, bundle download
-    - Done except the equity chart (not exposed by the 1.1.0 OutcomeResponse). Bound shown as a finding with its scope sentence.
+- [x] 7. UI (`web/`) on the shared ui-kit
+  - [x] 7.1 Claim form, toe-tag verdict, findings list, sweep heatmap, equity chart, bound gauge, bundle download
+    - Equity chart from an ILLUSTRATIVE `EQUITY_SERIES` key record; bound shown as a finding with its scope sentence.
   - _Requirements: 7.5_
 
 - [x] 8. Demo fixtures (B1): labelled synthetic OHLCV + three fixture-only (`fixtureId`) SYNTHETIC_DEMO claims (one SUPPORTED, one CONDITIONAL, one IMPOSSIBLE) whose results are computed by the engine. Real-data claims only after a rights basis is documented.
