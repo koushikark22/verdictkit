@@ -168,3 +168,12 @@ The UI and write-up must never present integrity or reproducibility as proof of 
   integrity-failing bundles are reported `UNVERIFIABLE` and are not re-executed. At most
   two replays run concurrently (`429` otherwise).
 * In judge mode every case, frozen or not, is purged 24 h after intake.
+* `SYNTHETIC_DEMO` is implemented as specified in §3: `POST /cases` accepts only a bundled
+  `fixtureId` (Reel: `fx_reel_supported_hold`, `fx_reel_conditional_sma`,
+  `fx_reel_impossible_sma`), refuses any form or pasted text, and the case cannot be
+  edited. Evidence is the labelled synthetic series (origin `SYNTHETIC_FIXTURE`, licence
+  `SYNTHETIC`, embedded in the bundle). A `LIVE_EVIDENCE` claim on the synthetic
+  instrument is `BLOCKED / POLICY_VIOLATION`. No schema changed for this.
+* Unknown document facts (Quote) are sent as `null` parameters plus a missing assumption
+  of the same name in `form.assumptions`; the ledger reports them as `ASSUMED` with the
+  swept set. No schema changed for this.

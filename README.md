@@ -9,12 +9,13 @@ Two applications on one core:
 * `apps/reel-autopsy` — mechanical trading-strategy performance claims
 * `apps/quote-autopsy` — vehicle finance and lease worksheets
 
-Status (2026-11-19): the core custody pipeline, CLI, MCP server and the full HTTP API
-(contract 1.1.0: intake → freeze → evidence → run → outcome → bundle → replay) are
-implemented and tested. Quote Autopsy runs document-internal arithmetic with post-reveal
-diagnostics; external tax/fee checks await an official state snapshot (decision B7). Reel
-Autopsy is fail-closed (BLOCKED / INDETERMINATE) until a licensed OHLCV source exists
-(decision B1). Per-requirement status: `docs/TRACEABILITY.md`.
+Status (2026-11-20): the core custody pipeline, CLI, MCP server, the full HTTP API
+(contract 1.1.0) and both web UIs are implemented and tested. Quote Autopsy runs
+document-internal arithmetic, sweeps facts the worksheet does not show, and adds
+post-reveal diagnostics; external tax/fee checks await an official state snapshot
+(decision B7). Reel Autopsy runs its full evaluator on labelled synthetic demo data;
+real claims are fail-closed (BLOCKED) until a licensed OHLCV source exists (decision B1).
+Per-requirement status: `docs/TRACEABILITY.md`.
 
 Quick start:
 
@@ -23,6 +24,11 @@ uv sync --frozen --all-packages --all-extras --group dev
 HYPOTHESIS_PROFILE=ci uv run --no-sync pytest -q -m "not isolation"
 uv run --no-sync verdictkit replay examples/stub_claimtype/golden.vkb
 ```
+
+Web UIs (real API, no mock verdicts): run the API with
+`VK_DRAFT_DIR=/tmp/vk VK_VAULT_KEY=$(python3 -c 'import os,base64;print(base64.b64encode(os.urandom(32)).decode())') uv run --no-sync python -m verdictkit.api --port 8000`,
+then `npm ci && npm run dev -w apps/quote-autopsy/web` (port 5173) or
+`-w apps/reel-autopsy/web` (port 5174). Browser E2E: `bash scripts/ui_e2e.sh`.
 
 Enforced isolation (two OS users, authenticated examiner socket) exists only in the
 container: `docker build -t verdictkit . && docker run --rm --network none verdictkit gate-http`.

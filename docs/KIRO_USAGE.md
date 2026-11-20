@@ -27,6 +27,14 @@ environment, so no Kiro spec, task-execution or property-generation run took pla
 none is claimed. The `.kiro` specs were used as the requirements source and their task
 status was updated from test results.
 
+## Implementation pass of 2026-11-20 (not Kiro)
+
+Synthetic demo fixtures, the Reel evaluator on evidence, quote sweeps and the two
+React/Vite UIs were implemented with **Claude Code**, not Kiro. No Kiro spec,
+task-execution, hook or property-generation run took place and none is claimed. The
+`.kiro` task checkboxes were updated from passing tests; `docs/TRACEABILITY.md` lists
+the evidence for each.
+
 ## Open item
 
 To produce genuine Kiro evidence, open the repository in Kiro, run the remaining open

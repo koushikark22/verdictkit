@@ -2,8 +2,8 @@
 
 Status legend: **Done** (implemented and covered by passing tests), **Partial** (some
 acceptance criteria open; listed), **Blocked** (needs an external decision or resource),
-**Open** (not implemented). Test counts are from a local run on 2026-11-19 (Python
-3.12.13): `374 passed, 4 deselected (isolation)`; the 4 isolation tests run only in the
+**Open** (not implemented). Test counts are from a local run on 2026-11-20 (Python
+3.12.13); see the final report for the exact totals; the 4 isolation tests run only in the
 container (`entrypoint.sh gate-isolation`) and are validated in CI, not locally.
 
 Priority tiers used in the integration report: **P0** security/custody gate
@@ -41,30 +41,38 @@ reel evaluators), **P3** UIs and demo fixtures.
 
 ## Quote Autopsy (`.kiro/specs/quote-autopsy`)
 
-| Req | Status | Notes |
+| Req | Status | Implementation / tests |
 |---|---|---|
-| 1 Finance schema | Partial | Implemented field set differs from 1.1–1.2 (outcome names without `stated_` prefix; term 1–120); 1.3 "unknown" taxability flags swept over {true,false} is **Open**. |
-| 2 Lease schema | Partial | Implemented lease params are the reduced set (`adjusted_cap_cost`, `residual_value`, …), not 2.1's itemised `msrp`/`capitalized_items`/`cap_cost_reductions`. |
-| 3 Finance arithmetic | Done (3.1–3.5), Partial (3.6 CONDITIONAL needs 1.3 sweeps) | P16, P16b, P17b in `test_quote_contract.py`; P16b also in `integration/test_quote_rules_diagnostics.py` |
-| 4 Lease arithmetic | Done (4.1–4.2 math, P17); 4.3 convention sweep **Open** (convention is a fixed parameter) | |
-| 5.1 Rules snapshot | Partial | Hash-verified loader done (`rules.py`, 11 tests). **Blocked**: no official snapshot — decision B7 (which state) is open. |
-| 5.2–5.5 External findings | Blocked | External fields report INDETERMINATE(`evidence_unavailable`) until a snapshot exists. |
-| 6 Diagnostics | Done | `diagnostics.py`, wired through `FinanceClaimType.diagnose`; P17c test. Lease has no diagnostics. |
+| 1 Finance schema | Partial | Implemented field set differs from 1.1–1.2 (outcome names without `stated_` prefix; term 1–120). **1.3 Done**: an unshown taxability flag is `null` + a missing assumption of the same name, swept over {0,1} with origin DEFAULT_POLICY (`claim_type.py`; `integration/test_quote_sweeps.py`). |
+| 2 Lease schema | Partial | Reduced parameter set (`adjusted_cap_cost`, `residual_value`, …), not 2.1's itemised `msrp`/`capitalized_items`/`cap_cost_reductions`. |
+| 3 Finance arithmetic | Done | 3.1–3.5 (P16, P16b, P17b in `test_quote_contract.py`); 3.6 CONDITIONAL across swept flags with failing and passing points (property test against an independent per-point oracle); 3.7 conventions disclosed in the UI. A negative amount financed is now an intake rejection. |
+| 4 Lease arithmetic | Done | 4.1–4.2 (P17); **4.3** unconfirmed rounding convention swept over COMPONENT/FINAL; 4.4 APR ≈ MF × 2400 labelled a convention in the UI. |
+| 5.1 Rules snapshot | Partial | Hash-verified loader done. **Blocked**: no official snapshot — decision B7 (which state) is open. |
+| 5.2–5.5 External findings | Blocked | INDETERMINATE(`evidence_unavailable`) until a snapshot exists (B7). |
+| 6 Diagnostics | Done | Local checks + payment packing after VERDICT_SEALED (P17c). Not produced when flags are swept (needs a fully stated worksheet). |
+| UI (task 7) | Done | `apps/quote-autopsy/web`: intake with "not shown on worksheet" options, progress, findings with point of failure / propagated, sensitivity, diagnostics, evidence, bundle download, metadata, replay. |
+| Constructed examples (task 8) | Done | `apps/quote-autopsy/web/src/examples.json`, asserted by `integration/test_quote_constructed_examples.py`. |
 
 ## Reel Autopsy (`.kiro/specs/reel-autopsy`)
 
 | Item | Status | Notes |
 |---|---|---|
 | Bars, strategies, simulator, metrics, bound (tasks 1–4) | Done | `test_reel_contract.py` (P13–P15b) |
-| 5.0 Licensed OHLCV source | Blocked | Needs a documented rights basis (decision B1). |
-| 5 Evidence adapter | Blocked | Depends on 5.0. Staging tooling exists (`scripts/reel_ohlcv_acquire.py`, `tests/reel_evidence`). |
-| 6 Claim type | Partial | Fail-closed scaffold: validates params/outcomes and returns INDETERMINATE(`evidence_unavailable`); evaluator not wired to evidence. |
-| 8 Synthetic demo fixtures (`SYNTHETIC_DEMO`) | Open | Intake refuses `SYNTHETIC_DEMO` until a trusted fixture loader and a synthetic evidence path through the isolated worker exist. |
-| 9 Intake text and presentation | Done | `test_reel_intake_presentation.py`; now connected to HTTP intake. |
+| 5.0 Licensed OHLCV source | Blocked | Needs a documented rights basis (decision B1). Not claimed resolved. |
+| 5 Evidence adapter | Partial | Synthetic adapter done (`sources/synthetic.py`: pinned SHA-256, network-free, class SYNTHETIC_FIXTURE). Live adapter blocked on B1; live instruments get no evidence request and stay INDETERMINATE/BLOCKED. |
+| Req 1.4, 6.5 Assumptions | Done | `fee_bps_per_side` × `slippage_bps_per_side` × `position_fraction` default grid (16 points, DEFAULT_POLICY); declared values are CLAIMANT. |
+| Req 1.5 1h span | Done | Rejected at intake when > 366 days. |
+| Req 5.3 Gaps | Done | Missing bars ⇒ INDETERMINATE(`evidence_gap`), never interpolated. |
+| Req 5.6 Synthetic fixtures | Done | `synthetic_ohlcv_v1.csv`, regenerated byte-for-byte by `generate()`; forbidden in LIVE_EVIDENCE by the core (`effective_policy` in pipeline, comparator, HTTP preflight and replay). |
+| Req 6, 7 Findings and bound | Done | EXTERNAL_EVIDENCE per metric (SUPPORTED/REFUTED/CONDITIONAL); MECHANICAL_BOUND (`IMPOSSIBLE` when claim − tolerance > bound). |
+| 8 SYNTHETIC_DEMO fixtures | Done | `fixtures.py` (3 fixtures, statuses computed by the engine and asserted in `integration/test_reel_synthetic_demo.py`, 18 tests). Container gate `gate-http` runs one through the authenticated isolated worker. |
+| 9 Intake text and presentation | Done | `test_reel_intake_presentation.py`; connected to HTTP intake. |
+| UI (task 7) | Partial | `apps/reel-autopsy/web`: demos, claim intake (form or paste), progress, verdict, sensitivity heatmap, evidence provenance, bound scope, bundle and replay. Not done: equity-curve chart (the curve is in the bundle's examination record but not in the 1.1.0 OutcomeResponse). |
 
-## UIs
+## Web UIs and verification
 
 | Item | Status |
 |---|---|
-| Read-only judge preview (`ui/judge`, `scripts/serve_judge_ui.py`) | Done (`tests/ui`) |
-| React/Vite apps (`apps/*/web`, `ui-kit/`) | Open |
+| Shared `ui-kit` (contract-checked client, SSE progress, components) | Done (`ui-kit/src/*.test.*`) |
+| Browser E2E against a real API | Done (`scripts/ui_e2e.sh`, `tests/ui/e2e_browser.cjs`, 17 checks; CI job `web-ui`) |
+| Read-only judge preview (`ui/judge`) | Done (`tests/ui`) |
