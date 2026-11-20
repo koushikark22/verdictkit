@@ -47,6 +47,11 @@ async function quote(browser) {
   await page.getByTestId("replay-report").waitFor();
   const replayed = (await page.getByTestId("replay-report").getByTestId("repro-status").textContent() || "").trim();
   check(["REPRODUCED", "REPRODUCED_ACROSS_ENV"].includes(replayed), `quote: server replay reproduces (${replayed})`);
+  await page.locator("[data-example=padded]").click();
+  await form.getByRole("button", { name: "Freeze and examine" }).click();
+  await page.waitForFunction(() => document.querySelector("[data-testid=headline]")?.textContent?.includes("CONTRADICTED"), null, { timeout: 30000 });
+  check((await text(page, "finding-amount_financed")).includes("point of failure"), "quote: padded example marks amount_financed as point of failure");
+  check((await text(page, "diagnostics")).includes('"firstBrokenLine": "amount_financed"'), "quote: after-reveal diagnostic localises the packed amount");
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: "Download .vkb" }).click();
   check((await download).suggestedFilename().endsWith(".vkb"), "quote: bundle downloads");

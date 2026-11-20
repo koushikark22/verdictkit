@@ -38,7 +38,12 @@ class EvidenceStore:
     def put(self, data: bytes, meta: EvidenceMeta) -> EvidenceItem:
         sha = hashlib.sha256(data).hexdigest()
         blob_path = self._blobs / sha
-        blob_path.write_bytes(data)
+        # Content-addressed and write-once: existing bytes and metadata are never replaced
+        # (an uploaded bundle cannot rewrite records already in a shared store).
+        if not blob_path.exists():
+            tmp = blob_path.with_name(f".{sha}.tmp")
+            tmp.write_bytes(data)
+            tmp.replace(blob_path)
 
         meta_obj = {
             "source_id": meta.source_id,
@@ -50,7 +55,8 @@ class EvidenceStore:
             "sha256": sha,
         }
         meta_path = self._meta / f"{sha}.json"
-        meta_path.write_bytes(canonical_bytes(meta_obj))
+        if not meta_path.exists():
+            meta_path.write_bytes(canonical_bytes(meta_obj))
 
         return EvidenceItem(
             source_id=meta.source_id,

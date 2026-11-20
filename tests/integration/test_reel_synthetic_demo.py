@@ -264,3 +264,15 @@ def test_ui_fixture_list_matches_server():
     source = (ROOT / "apps/reel-autopsy/web/src/intake.ts").read_text()
     ui_ids = set(re.findall(r'id: "(fx_[a-z0-9_]+)"', source))
     assert ui_ids == set(FIXTURES)
+
+
+def test_evidence_store_is_write_once(tmp_path):
+    from verdictkit.evidence.store import EvidenceMeta, EvidenceStore
+    from verdictkit.model import LicenseClass, SourceClass
+    store = EvidenceStore(tmp_path)
+    first = store.put(b"bytes", EvidenceMeta("orig", SourceClass.DOCUMENT, "u1", "t1", "text/plain",
+                                             LicenseClass.DOCUMENT))
+    store.put(b"bytes", EvidenceMeta("attacker", SourceClass.CLAIMANT, "u2", "t2", "text/plain",
+                                     LicenseClass.USER_SUPPLIED))
+    assert store.item(first.sha256).source_id == "orig"
+    assert store.get(first.sha256) == b"bytes"

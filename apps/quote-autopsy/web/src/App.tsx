@@ -7,6 +7,9 @@ import {
   FINANCE_OUTCOMES, LEASE_OUTCOMES, emptyFinance, emptyLease, financeIntake, leaseIntake,
   type FinanceForm, type LeaseForm, type Tri,
 } from "./intake";
+import examplesFile from "./examples.json";
+
+const EXAMPLES = examplesFile.examples as { id: string; label: string; form: FinanceForm; stated: Record<string, string> }[];
 
 const ADDON_CODES = ["SERVICE_CONTRACT", "GAP", "PAINT_PROTECTION", "THEFT_ETCH", "TIRE_WHEEL", "OTHER"];
 
@@ -62,6 +65,17 @@ export function App() {
         <button type="button" aria-pressed={kind === "finance"} onClick={() => { setKind("finance"); setStated({}); }}>Finance (retail installment)</button>
         <button type="button" aria-pressed={kind === "lease"} onClick={() => { setKind("lease"); setStated({}); }}>Lease</button>
       </div>
+
+      {kind === "finance" ? (
+        <div className="vk-card" data-testid="examples">
+          <p className="vk-muted">Constructed examples (not real dealer quotes; figures computed by the engine). Loading one
+            fills the form; you still submit it as a normal case.</p>
+          {EXAMPLES.map((ex) => (
+            <button key={ex.id} type="button" className="vk-secondary" data-example={ex.id}
+              onClick={() => { setFinance({ ...ex.form }); setStated({ ...ex.stated }); }}>{ex.label}</button>
+          ))}
+        </div>
+      ) : null}
 
       <form className="vk-card vk-form" onSubmit={onSubmit} aria-label="Worksheet intake">
         {kind === "finance" ? <>
