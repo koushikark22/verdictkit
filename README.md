@@ -34,6 +34,8 @@ Enforced isolation (two OS users, authenticated examiner socket) exists only in 
 container: `docker build -t verdictkit . && docker run --rm --network none verdictkit gate-http`.
 The full gate is `scripts/gate_nov22.sh` (Linux with Docker).
 
+* Reproducible judge demonstration: `docs/JUDGE_DEMO.md`
+* Submission preparation and authentic Kiro evidence: `docs/SUBMISSION_READINESS.md`
 * Architecture and decision log: `docs/ARCHITECTURE.md`
 * Specs: `.kiro/specs/{verdictkit-core,reel-autopsy,quote-autopsy}/`
 * Contract tests: `uv run pytest tests/contract -q`
