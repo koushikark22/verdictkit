@@ -256,3 +256,11 @@ def test_cli_pipeline_live_mode_drops_synthetic_evidence(tmp_path):
                     evidence_root=tmp_path / "ev", network=False)
     assert case.evidence == ()
     assert {f.status.value for f in case.verdict.findings} == {"INDETERMINATE"}
+
+
+def test_ui_fixture_list_matches_server():
+    """The Reel UI may only offer fixture ids the server actually bundles."""
+    import re
+    source = (ROOT / "apps/reel-autopsy/web/src/intake.ts").read_text()
+    ui_ids = set(re.findall(r'id: "(fx_[a-z0-9_]+)"', source))
+    assert ui_ids == set(FIXTURES)

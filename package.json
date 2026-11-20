@@ -1,0 +1,12 @@
+{
+  "name": "verdictkit-web",
+  "private": true,
+  "description": "VerdictKit web clients (npm workspaces): shared ui-kit and the two app UIs.",
+  "workspaces": ["ui-kit", "apps/quote-autopsy/web", "apps/reel-autopsy/web"],
+  "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "engines": { "node": ">=20" }
+}
