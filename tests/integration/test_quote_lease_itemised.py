@@ -8,7 +8,7 @@ import pytest
 from hypothesis import given, settings, strategies as st
 
 from quote_autopsy.claim_type import FinanceClaimType, LeaseClaimType
-from verdictkit.custody.intake import SchemaError, freeze
+from verdictkit.custody.intake import SchemaError
 from verdictkit.examiner.client import InProcessExaminer
 from verdictkit.model import Status
 from verdictkit.pipeline import run_case
