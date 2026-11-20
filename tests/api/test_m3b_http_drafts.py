@@ -141,7 +141,8 @@ def test_freeze_persistence_survives_restart_and_expiry(tmp_path):
     assert reopened.get_freeze(case_id) == before
     assert reopened.get_metadata(case_id, now=200)["state"] == "FROZEN"
     assert reopened.purge_expired(now=200) == 0
-    with pytest.raises(Exception):
+    from verdictkit.api.draft_store import FreezeConflict
+    with pytest.raises(FreezeConflict):
         reopened.freeze(case_id, freeze, frozen_at="2026-01-01T00:01:00Z", now=200)
     assert reopened.get_freeze(case_id) == before
     db = (tmp_path / "drafts.sqlite3").read_bytes()

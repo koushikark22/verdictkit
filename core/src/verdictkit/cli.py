@@ -17,6 +17,10 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from verdictkit.plugin import Registry
 
 
 def _load_registry() -> "Registry":

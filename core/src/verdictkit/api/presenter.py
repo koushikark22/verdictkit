@@ -6,7 +6,6 @@ class where the contract requires it and adds execution-level framing.
 from __future__ import annotations
 
 import hashlib
-from decimal import Decimal
 from typing import Mapping, Sequence
 
 from ..model import Basis, DataMode, EvidenceItem, Finding, FrozenClaim, LicenseClass, SourceClass, Status

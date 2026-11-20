@@ -101,7 +101,7 @@ def expand_grid(assumptions: Sequence[Assumption], cap: int = GRID_CAP_MAX) -> G
         axis_names = [a.name for a in active_axes]
         axis_value_lists = [_axis_values(a) for a in active_axes]
         points = [
-            dict(zip(axis_names, combo))
+            dict(zip(axis_names, combo, strict=False))
             for combo in itertools.product(*axis_value_lists)
         ]
 

@@ -81,7 +81,6 @@ def freeze(claim_type: ClaimType, raw: Mapping[str, object]) -> IntakeResult:
 
     # Ensure partition: outcomes must not appear in params
     param_keys = frozenset(raw_params.keys())
-    outcome_keys = frozenset(raw_outcomes.keys())
     extra_in_params = param_keys & outcome_fields_of(claim_type)
     if extra_in_params:
         raise SchemaError(f"outcome fields found in params: {extra_in_params}")

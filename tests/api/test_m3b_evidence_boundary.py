@@ -1,5 +1,4 @@
 """No independent evidence may be silently inferred from an empty request list."""
-from dataclasses import dataclass
 
 from verdictkit.api.evidence_boundary import preflight_evidence
 from verdictkit.model import DataMode

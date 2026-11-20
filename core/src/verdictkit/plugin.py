@@ -130,7 +130,7 @@ class Registry:
         try:
             return self._types[type_id]
         except KeyError:
-            raise KeyError(f"unknown claim type: {type_id!r}")
+            raise KeyError(f"unknown claim type: {type_id!r}") from None
 
     def type_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self._types.keys()))

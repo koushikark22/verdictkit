@@ -63,7 +63,6 @@ def _handle(conn: socket.socket, registry) -> None:
 
     task = decode_task(payload)
 
-    from ..plugin import Registry as _Registry
     from ..sweep import expand_grid
     from .client import _EmptyEvidenceReader
 

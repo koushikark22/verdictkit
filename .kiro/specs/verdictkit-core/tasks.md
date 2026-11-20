@@ -4,9 +4,9 @@ Target gate: **Nov 22 â€” stub-claim bundle replays to `REPRODUCED` offline; P1â
 Contract tests already exist in `tests/contract/`; each task is done when its listed
 contract tests pass in addition to Kiro-generated property tests.
 
-- [ ] 1. Project skeleton
-  - [ ] 1.1 `uv` workspace (core, apps/*), Python 3.12 pin, lockfile, Ruff, pytest + Hypothesis profiles (`ci`: derandomize)
-    - Open: Ruff is not configured. Workspace, 3.12 pin, lockfile and Hypothesis `ci` profile are done.
+- [x] 1. Project skeleton
+  - [x] 1.1 `uv` workspace (core, apps/*), Python 3.12 pin, lockfile, Ruff, pytest + Hypothesis profiles (`ci`: derandomize)
+    - Ruff 0.8.4 (rules E9, F, B) in the dev group and CI.
   - [x] 1.2 CI: unit + contract tests, LLM fence, lockfile check
   - [x] 1.3 Generate and commit `uv.lock` (`uv lock`); CI uses `uv sync --frozen`. Gate prerequisite.
   - _Requirements: 11.3_

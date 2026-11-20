@@ -61,7 +61,7 @@ def reference_points(assumptions):
     axes = sorted((a for a in assumptions if a.kind is not AssumptionKind.MISSING), key=lambda a: a.name)
     names = [a.name for a in axes]
     combos = itertools.product(*[axis_values(a) for a in axes])
-    return [dict(zip(names, (format(v, "f") for v in c))) for c in combos]
+    return [dict(zip(names, (format(v, "f") for v in c), strict=False)) for c in combos]
 
 
 @given(assumption_lists())

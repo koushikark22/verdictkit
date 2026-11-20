@@ -53,7 +53,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header('Cache-Control','no-store')
                 self.send_header('X-Content-Type-Options','nosniff')
                 self.end_headers();self.wfile.write(data);conn.close()
-            except (OSError,ValueError,http.client.HTTPException) as exc:
+            except (OSError,ValueError,http.client.HTTPException):
                 error=json.dumps({'error':{'code':'BACKEND_UNAVAILABLE','message':'API backend is unavailable'}}).encode()
                 self.send_response(502);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(error)));self.end_headers();self.wfile.write(error)
             return

@@ -299,7 +299,7 @@ class ReelClaimType:
                       AggregateKind.NONE_PASS: Status.REFUTED,
                       AggregateKind.MIXED: Status.CONDITIONAL}[agg.kind]
 
-            def cex(po: PointOutcome, note: str) -> Counterexample:
+            def cex(po: PointOutcome, note: str, name: str = name, tol: str = tol) -> Counterexample:
                 computed = next(pr.values[name] for pr in examination.points if dict(pr.point) == dict(po.point))
                 diff = Decimal(outcomes[name]) - Decimal(str(computed))
                 return Counterexample(dict(po.point), str(computed), str(outcomes[name]),

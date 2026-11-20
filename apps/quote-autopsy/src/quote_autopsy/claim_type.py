@@ -269,7 +269,8 @@ def _findings(frozen: FrozenClaim, examination: Examination, outcomes: Mapping[s
                   AggregateKind.NONE_PASS: Status.CONTRADICTED,
                   AggregateKind.MIXED: Status.CONDITIONAL}[agg.kind]
 
-        def cex(po: PointOutcome, note: str) -> Counterexample:
+        def cex(po: PointOutcome, note: str, name: str = name, observed: Decimal = observed,
+                tol: Decimal = tol) -> Counterexample:
             expected = next(Decimal(str(pr.values[name])) for pr in examination.points
                             if dict(pr.point) == dict(po.point))
             return Counterexample(dict(po.point), str(expected), str(observed),
@@ -353,7 +354,7 @@ class FinanceClaimType(_BaseQuote):
             raise SchemaError("too many unknown document facts to sweep (grid cap 1000)")
         import itertools
         for combo in itertools.product("01", repeat=len(unknown)):
-            if chain_af(_resolve_finance(ws, dict(zip(unknown, combo)))) < 0:
+            if chain_af(_resolve_finance(ws, dict(zip(unknown, combo, strict=False)))) < 0:
                 raise SchemaError("amount financed would be negative")
 
     def validate_assumptions(self, params: Mapping[str, object], assumptions: Sequence[Assumption]) -> None:

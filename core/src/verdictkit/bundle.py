@@ -5,7 +5,6 @@ Layout and rules: docs/ARCHITECTURE.md §7. Zip entries sorted, timestamps fixed
 """
 from __future__ import annotations
 
-import hashlib
 import io
 import zipfile
 from dataclasses import dataclass
@@ -16,23 +15,18 @@ from typing import Callable
 
 from .canonical import canonical_bytes, parse_canonical, sha256_hex
 from .custody.commitment import verify as verify_commitment
-from .custody.intake import blind, freeze
+from .custody.intake import blind
 from .custody.ledger import Ledger
-from .envprint import EnvFingerprint, fingerprint
+from .envprint import fingerprint
 from .model import (
     Assumption,
     AssumptionKind,
     Commitment,
-    DataMode,
     EvidenceItem,
-    Finding,
-    IsolationMode,
-    LicenseClass,
     Origin,
-    Status,
 )
 from .pipeline import CaseFile
-from .plugin import Examination, PointResult, Registry, examination_payload
+from .plugin import Registry, examination_payload
 
 # Fixed zip timestamp (1980-01-01 00:00:00)
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -541,7 +535,7 @@ def replay_bundle(
 
             from .evidence.policy import apply_policy, effective_policy
             from .model import DataMode
-            from .model import compute_verdict_hash, headline_status, validate_finding
+            from .model import compute_verdict_hash, validate_finding
 
             evidence_map = {item.sha256: item for item in evidence_items}
             try:

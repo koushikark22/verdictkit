@@ -24,6 +24,8 @@ jobs:
         run: uv lock --check
       - name: Install complete workspace and test tools
         run: uv sync --frozen --all-packages --all-extras --group dev
+      - name: Lint (ruff)
+        run: uv run --no-sync ruff check .
       - name: Verify startup and examiner negative tests
         run: uv run --no-sync pytest -q tests/api/test_startup_gate.py tests/contract/test_examiner_attestation.py
       - name: Full regression

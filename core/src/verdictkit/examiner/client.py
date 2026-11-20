@@ -51,7 +51,6 @@ class SocketExaminer:
 
     def examine(self, task: BlindedTask) -> Examination:
         import socket as _socket
-        import time
 
         payload = encode_task(task)
         framed = frame(payload)

@@ -1,5 +1,4 @@
 """Encrypted custodian draft storage regressions (isolated temporary directory)."""
-import sqlite3
 
 import pytest
 from cryptography.exceptions import InvalidTag
