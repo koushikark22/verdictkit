@@ -69,7 +69,12 @@ def _handle(conn: socket.socket, registry) -> None:
 
     claim_type = registry.get(task.claim_type)
     grid = expand_grid(task.assumptions)
-    examination = claim_type.examine(task, _EmptyEvidenceReader(), list(grid.points))
+    reader = _EmptyEvidenceReader()
+    evidence_dir = os.environ.get("VK_EVIDENCE_DIR")
+    if evidence_dir and task.evidence_refs:
+        from ..evidence.store import ReadOnlyEvidence
+        reader = ReadOnlyEvidence(evidence_dir, task.evidence_refs)
+    examination = claim_type.examine(task, reader, list(grid.points))
 
     result_payload = encode_result(examination)
     conn.sendall(frame(result_payload))

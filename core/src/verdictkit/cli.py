@@ -120,10 +120,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
             socket_path, expected_peer_uid=resolve_examiner_uid("")
         )
     else:
-        examiner = InProcessExaminer(registry)
+        examiner = None
 
     with tempfile.TemporaryDirectory(prefix="vk-run-") as tmpdir:
         import datetime
+
+        # The examiner must be able to read acquired evidence: the shared, group-readable
+        # VK_EVIDENCE_DIR in the container, else a private directory for in-process runs.
+        evidence_root = Path(os.environ.get("VK_EVIDENCE_DIR") or Path(tmpdir) / "evidence")
+        if examiner is None:
+            examiner = InProcessExaminer(registry, evidence_root=str(evidence_root))
 
         def clock() -> str:
             return datetime.datetime.now(datetime.timezone.utc).strftime(
@@ -138,6 +144,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
                 workdir=Path(tmpdir),
                 clock=clock,
                 data_mode=data_mode,
+                evidence_root=evidence_root,
             )
         except Exception as exc:
             print(f"ERROR: run failed: {exc}", file=sys.stderr)

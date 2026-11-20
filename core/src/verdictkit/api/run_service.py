@@ -33,8 +33,39 @@ from verdictkit.sweep import GRID_CAP_MAX, PointOutcome, expand_grid
 from .draft_store import DraftStore
 from .examination_boundary import ExaminationRejected, require_isolated_examiner
 from .presenter import (
-    CONTRACT_VERSION, check_key_records, outcome_response, sensitivity_dto, specimen_dto,
+    CONTRACT_VERSION, check_key_records, evidence_dto, outcome_response, sensitivity_dto,
+    specimen_dto,
 )
+from verdictkit.evidence.store import EvidenceStore
+from verdictkit.model import EvidenceItem, LicenseClass, SourceClass
+from verdictkit.pipeline import EMBEDDABLE
+
+DEFAULT_RIGHTS_NOTE = "Recorded with its licence class; see the evidence index in the bundle."
+
+
+def item_from_dict(d: Mapping[str, Any]) -> EvidenceItem:
+    return EvidenceItem(source_id=d["source_id"], source_class=SourceClass(d["source_class"]),
+                        uri=d["uri"], retrieved_at=d["retrieved_at"], sha256=d["sha256"],
+                        media_type=d["media_type"], license_class=LicenseClass(d["license_class"]))
+
+
+def item_to_dict(item: EvidenceItem) -> dict[str, str]:
+    return {"source_id": item.source_id, "source_class": item.source_class.value,
+            "uri": item.uri, "retrieved_at": item.retrieved_at, "sha256": item.sha256,
+            "media_type": item.media_type, "license_class": item.license_class.value}
+
+
+def evidence_dtos(plugin: ClaimType, items: Sequence[EvidenceItem]) -> list[dict[str, object]]:
+    notes = {a.source_id: getattr(a, "rights_note", None)
+             for a in getattr(plugin, "evidence_adapters", lambda: ())()}
+    out = []
+    for item in items:
+        dto = evidence_dto(item, rights_note=notes.get(item.source_id) or DEFAULT_RIGHTS_NOTE,
+                           embedded=item.license_class in EMBEDDABLE)
+        if dto["origin"] == "SYNTHETIC_FIXTURE":
+            dto["uri"] = None  # packaged fixture, not a fetchable location
+        out.append(dto)
+    return out
 
 # Claim types that the 1.1.0 HTTP contract can represent (ClaimTypeId enum).
 CONTRACT_CLAIM_TYPES = frozenset({"reel.mechanical.v1", "quote.finance.v1", "quote.lease.v1"})
@@ -144,7 +175,8 @@ def parameter_ledger(plugin: ClaimType, raw: Mapping[str, Any], confirmed: Seque
 
 
 def _sensitivity(frozen: FrozenClaim, examination: Examination,
-                 findings: Sequence[Finding]) -> dict[str, object] | None:
+                 findings: Sequence[Finding], plugin: ClaimType | None = None,
+                 outcomes: Mapping[str, object] | None = None) -> dict[str, object] | None:
     if not examination.points:
         return None
     grid = expand_grid(frozen.assumptions)
@@ -157,7 +189,12 @@ def _sensitivity(frozen: FrozenClaim, examination: Examination,
                 values.append(p[name])
         axes.append({"name": name, "values": values, "origin": origins.get(name, "CLAIMANT")})
     point_outcomes: dict[str, list[PointOutcome]] = {}
-    if len(examination.points) == 1:
+    hook = getattr(plugin, "point_outcomes", None) if plugin is not None else None
+    if hook is not None and outcomes is not None:
+        determinate = {f.finding_id for f in findings if f.status is not Status.INDETERMINATE}
+        point_outcomes = {k: list(v) for k, v in hook(frozen, examination, outcomes).items()
+                          if k in determinate and v}
+    elif len(examination.points) == 1:
         point = examination.points[0].point
         for f in findings:
             if f.status is Status.INDETERMINATE:
@@ -215,19 +252,21 @@ def build_outcome(*, case_id: str, run_id: str, plugin: ClaimType, raw: Mapping[
                   confirmed: Sequence[str], frozen: FrozenClaim, frozen_at: str | None,
                   data_mode: DataMode, isolation: str, examination: Examination,
                   findings: Sequence[Finding], diagnostics: Mapping[str, object] | None,
-                  verdict_hash: str, text_fields: Sequence[str] = ()) -> dict[str, object]:
+                  verdict_hash: str, text_fields: Sequence[str] = (),
+                  evidence: Sequence[EvidenceItem] = (), fixture_id: str | None = None,
+                  outcomes: Mapping[str, object] | None = None) -> dict[str, object]:
     records, record_ids, point_of_failure = _key_records(frozen.claim_type, findings)
     body = outcome_response(
         case_id=case_id, run_id=run_id, claim_type=frozen.claim_type, data_mode=data_mode,
         isolation_mode=isolation, findings=findings, blockers=[],
         parameter_ledger=parameter_ledger(plugin, raw, confirmed, frozen,
                                           text_fields=text_fields),
-        evidence=[], key_records=records, diagnostics=diagnostics,
+        evidence=evidence_dtos(plugin, evidence), key_records=records, diagnostics=diagnostics,
         spec_hash=frozen.spec_hash, verdict_hash=verdict_hash,
         grid_points=len(examination.points),
         specimen=specimen_dto(frozen, claim_type=frozen.claim_type, data_mode=data_mode,
-                              fixture_id=None, case_id=case_id, frozen_at=frozen_at),
-        sensitivity=_sensitivity(frozen, examination, findings),
+                              fixture_id=fixture_id, case_id=case_id, frozen_at=frozen_at),
+        sensitivity=_sensitivity(frozen, examination, findings, plugin, outcomes),
     )
     seen_failure = False
     for dto in body["findings"]:
@@ -246,7 +285,7 @@ def blocked_outcome(*, case_id: str, plugin: ClaimType, raw: Mapping[str, Any],
                     confirmed: Sequence[str], data_mode: DataMode, isolation: str,
                     spec_hash: str | None, frozen_at: str | None,
                     blockers: Sequence[Mapping[str, object]],
-                    text_fields: Sequence[str] = ()) -> dict[str, object]:
+                    text_fields: Sequence[str] = (), fixture_id: str | None = None) -> dict[str, object]:
     frozen = None
     try:
         frozen = freeze(plugin, raw).frozen
@@ -260,7 +299,7 @@ def blocked_outcome(*, case_id: str, plugin: ClaimType, raw: Mapping[str, Any],
         evidence=[], key_records=[], diagnostics=None, spec_hash=spec_hash,
         verdict_hash=None, grid_points=0,
         specimen=specimen_dto(frozen, claim_type=plugin.type_id, data_mode=data_mode,
-                              fixture_id=None, case_id=case_id, frozen_at=frozen_at),
+                              fixture_id=fixture_id, case_id=case_id, frozen_at=frozen_at),
         sensitivity=None,
     )
 
@@ -270,7 +309,8 @@ class RunFailed(RuntimeError):
 
 
 def execute_run(*, store: DraftStore, registry: Registry, examiner: Any, case_id: str,
-                run_id: str, judge_mode: bool, clock: Callable[[], str] = utc_now) -> str:
+                run_id: str, judge_mode: bool, clock: Callable[[], str] = utc_now,
+                evidence_dir: Any = None) -> str:
     """Execute a queued run to a terminal state. Returns the terminal run state."""
     seq = 0
 
@@ -302,8 +342,19 @@ def execute_run(*, store: DraftStore, registry: Registry, examiner: Any, case_id
         commitment = Commitment(alg=commitment_d["alg"], digest=commitment_d["digest"])
         ledger = Ledger.from_entries(entries, clock)
 
+        evidence = tuple(item_from_dict(d) for d in store.get_evidence(case_id))
+        blobs: dict[str, bytes] = {}
+        if evidence:
+            if evidence_dir is None:
+                raise RunFailed("evidence store not configured")
+            ev_store = EvidenceStore(evidence_dir)
+            for item in evidence:  # hash-checked before anything reaches the examiner
+                data = ev_store.get(item.sha256)
+                if item.license_class in EMBEDDABLE:
+                    blobs[item.sha256] = data
+
         require_isolated_examiner(examiner.isolation, judge_mode=judge_mode)
-        task = blind(frozen, case_id=case_id, evidence_refs=())
+        task = blind(frozen, case_id=case_id, evidence_refs=tuple(e.sha256 for e in evidence))
         emit("TASK_BLINDED")
         total = max(1, len(expand_grid(frozen.assumptions).points))
         emit("EXAMINATION_STARTED", detail={"pointsDone": 0, "pointsTotal": total})
@@ -320,18 +371,18 @@ def execute_run(*, store: DraftStore, registry: Registry, examiner: Any, case_id
 
         before = len(ledger.entries)
         sealed = compare_and_seal(
-            claim_type=plugin, frozen=frozen, examination=examination, evidence=(),
+            claim_type=plugin, frozen=frozen, examination=examination, evidence=evidence,
             vault=_RevealedDraft(result.outcomes), sealed=None, commitment=commitment,
-            salt=salt, ledger=ledger,
+            salt=salt, ledger=ledger, data_mode=data_mode,
         )
         for entry in ledger.entries[before:]:
             emit(_LEDGER_STAGES[entry.kind], ledger_entry=entry)
 
         case = CaseFile(
             case_id=case_id, isolation=examiner.isolation, data_mode=data_mode, frozen=frozen,
-            commitment=commitment, salt=salt, outcomes=sealed.outcomes, evidence=(),
+            commitment=commitment, salt=salt, outcomes=sealed.outcomes, evidence=evidence,
             examination=examination, verdict=sealed.verdict, diagnostics=sealed.diagnostics,
-            ledger=ledger,
+            ledger=ledger, evidence_blobs=blobs,
         )
         path = store.bundle_path(case_id)
         tmp = path.with_suffix(".tmp")
@@ -349,6 +400,8 @@ def execute_run(*, store: DraftStore, registry: Registry, examiner: Any, case_id
             findings=sealed.verdict.findings, diagnostics=sealed.diagnostics,
             verdict_hash=sealed.verdict.verdict_hash,
             text_fields=store.get_text_fields(case_id),
+            evidence=evidence, fixture_id=metadata.get("fixtureId"),
+            outcomes=sealed.outcomes,
         )
         state = "COMPLETED" if outcome["executionStatus"] == "COMPLETED" else "INDETERMINATE"
         emit("RUN_COMPLETED" if state == "COMPLETED" else "RUN_INDETERMINATE", state=state)

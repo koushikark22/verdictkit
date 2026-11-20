@@ -31,7 +31,8 @@ from .freeze_boundary import prepare_freeze
 from .evidence_boundary import preflight_evidence
 from .presenter import specimen_dto
 from .run_service import (
-    CONTRACT_CLAIM_TYPES, blocked_outcome, execute_run, parameter_ledger, utc_now,
+    CONTRACT_CLAIM_TYPES, blocked_outcome, evidence_dtos, execute_run, item_from_dict,
+    item_to_dict, parameter_ledger, utc_now,
 )
 from verdictkit.model import DataMode
 from verdictkit.plugin import Registry
@@ -118,7 +119,7 @@ def _contract_registry(registry: Any) -> Registry:
     return view
 
 
-def _make_examiner(isolation: str, registry: Any) -> Any:
+def _make_examiner(isolation: str, registry: Any, evidence_dir: Any = None) -> Any:
     """ENFORCED: authenticated socket worker (peer UID checked on every connection).
     Otherwise an in-process examiner that is reported UNENFORCED everywhere."""
     from verdictkit.examiner.client import InProcessExaminer, SocketExaminer
@@ -126,7 +127,7 @@ def _make_examiner(isolation: str, registry: Any) -> Any:
         from verdictkit.examiner.identity import resolve_examiner_uid
         return SocketExaminer(os.environ["VK_EXAMINER_SOCKET"],
                               expected_peer_uid=resolve_examiner_uid(""))
-    return InProcessExaminer(registry)
+    return InProcessExaminer(registry, evidence_root=None if evidence_dir is None else str(evidence_dir))
 
 
 def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
@@ -185,6 +186,11 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             draft_store = DraftStore(draft_dir, key, expire_frozen=judge_mode)
         except (binascii.Error, ValueError, OSError) as exc:
             raise RuntimeError("invalid draft custody configuration") from exc
+    # Evidence written by the custodian and readable by the examiner. In the container
+    # this is VK_EVIDENCE_DIR (0750, group vk-examiner); natively a custody subdirectory.
+    evidence_dir = None
+    if draft_store is not None:
+        evidence_dir = Path(os.environ.get("VK_EVIDENCE_DIR") or Path(draft_dir) / "evidence")
 
     purge_state = {"at": 0.0}
     purge_lock = threading.Lock()
@@ -214,7 +220,7 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
 
     def _draft_response(case_id: str, raw: dict[str, object], expires_at: int,
                         confirmed: list[str] | None = None, *, text_fields: list[str] | None = None,
-                        spans: dict | None = None) -> dict[str, object]:
+                        spans: dict | None = None, data_mode: str = "LIVE_EVIDENCE") -> dict[str, object]:
         """Construct only the contract's pre-verdict, non-outcome projection."""
         plugin = registry.get(raw["claim_type"])
         params = raw["params"]
@@ -229,7 +235,7 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             "caseId": case_id,
             "claimType": raw["claim_type"],
             "state": "DRAFT",
-            "dataMode": "LIVE_EVIDENCE",
+            "dataMode": data_mode,
             "parameterLedger": parameter_ledger(plugin, raw, confirmed,
                                                 text_fields=text_fields or [], spans=spans),
             "outcomeFields": [
@@ -263,7 +269,7 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
         metadata = draft_store.get_metadata(case_id)
         return _draft_response(case_id, dict(prepared.raw_claim), metadata["expiresAt"],
                                text_fields=sorted(prepared.text_spans),
-                               spans=dict(prepared.text_spans))
+                               spans=dict(prepared.text_spans), data_mode=prepared.data_mode)
 
     @app.get('/api/v1/cases/{case_id}')
     def get_case(case_id: str) -> Any:
@@ -292,6 +298,8 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             return error("NOT_FOUND", "Case unavailable", 404)
         if metadata["state"] != "DRAFT":
             return error("STATE_CONFLICT", "Only draft cases can be edited", 409)
+        if metadata["dataMode"] != "LIVE_EVIDENCE":
+            return error("POLICY_VIOLATION", "Bundled fixture claims cannot be edited", 422)
         try:
             update = await request.json()
         except (ValueError, UnicodeDecodeError):
@@ -381,7 +389,7 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             "parameterLedger": ledger,
             "specimen": specimen_dto(
                 prepared.frozen, claim_type=metadata["claimType"],
-                data_mode=DataMode(metadata["dataMode"]), fixture_id=None,
+                data_mode=DataMode(metadata["dataMode"]), fixture_id=metadata["fixtureId"],
                 case_id=case_id, frozen_at=stored["frozenAt"],
             ),
         }
@@ -397,31 +405,58 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             return error("STATE_CONFLICT", "Frozen case required", 409)
         raw = draft_store.load_private(case_id)
         plugin = registry.get(metadata["claimType"])
-        gate = preflight_evidence(plugin, raw["params"],
-                                  data_mode=DataMode(metadata["dataMode"]))
+        mode = DataMode(metadata["dataMode"])
+        gate = preflight_evidence(plugin, raw["params"], data_mode=mode,
+                                  fixture_id=metadata["fixtureId"])
         if not gate.allowed:
             b = [gate.public_blocker()]
             draft_store.record_blockers(case_id, b)
             return blocked(case_id, b)
+        items = []
+        if gate.request_count:
+            from verdictkit.evidence.broker import EvidenceBroker
+            from verdictkit.evidence.policy import check as check_policy, effective_policy
+            from verdictkit.evidence.store import EvidenceStore
+            policy = effective_policy(plugin.evidence_policy(), mode)
+            broker = EvidenceBroker(EvidenceStore(evidence_dir), list(plugin.evidence_adapters()),
+                                    network=False, clock=utc_now)
+            try:
+                acquired = broker.acquire(plugin.evidence_requests(raw["params"]), policy)
+            except Exception:
+                b = [{"code": "EVIDENCE_UNAVAILABLE", "message": "Evidence could not be acquired",
+                      "field": None}]
+                draft_store.record_blockers(case_id, b)
+                return blocked(case_id, b)
+            if any(not check_policy(item, policy).allowed for item in acquired):
+                b = [{"code": "POLICY_VIOLATION", "message": "Evidence class not permitted",
+                      "field": None}]
+                draft_store.record_blockers(case_id, b)
+                return blocked(case_id, b)
+            items = list(acquired)
         try:
-            draft_store.acquire_internal_evidence(case_id, recorded_at=utc_now())
+            draft_store.acquire_evidence(case_id, [item_to_dict(i) for i in items],
+                                         recorded_at=utc_now())
         except DraftNotFound:
             return error("NOT_FOUND", "Case unavailable", 404)
         except FreezeConflict:
             return error("STATE_CONFLICT", "Evidence already committed", 409)
         draft_store.record_blockers(case_id, [])
-        return {"contractVersion": VERSION, "caseId": case_id, "evidence": []}
+        return {"contractVersion": VERSION, "caseId": case_id,
+                "evidence": evidence_dtos(plugin, items)}
 
     @app.get('/api/v1/cases/{case_id}/evidence')
     def list_case_evidence(case_id: str) -> Any:
         if store() is None:
             return unavailable()
-        if _metadata(case_id) is None:
+        metadata = _metadata(case_id)
+        if metadata is None:
             return error("NOT_FOUND", "Case unavailable", 404)
         try:
-            return {"contractVersion": VERSION, "caseId": case_id, "evidence": draft_store.get_evidence(case_id)}
+            items = [item_from_dict(d) for d in draft_store.get_evidence(case_id)]
         except (DraftNotFound, ValueError):
             return error("NOT_FOUND", "Evidence not acquired", 404)
+        return {"contractVersion": VERSION, "caseId": case_id,
+                "evidence": evidence_dtos(registry.get(metadata["claimType"]), items)}
 
     run_lock = threading.Lock()
 
@@ -452,15 +487,12 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
                     "contractVersion": VERSION, "runId": existing["runId"], "caseId": case_id,
                     "state": existing["state"], **_run_urls(case_id, existing["runId"])})
         try:
-            examiner = _make_examiner(isolation, full_registry)
+            examiner = _make_examiner(isolation, full_registry, evidence_dir)
         except Exception:
-            examiner = None
-        if examiner is None:
-            state = execute_run(store=draft_store, registry=registry, examiner=_Unavailable(),
-                                case_id=case_id, run_id=run_id, judge_mode=judge_mode)
-        else:
-            state = execute_run(store=draft_store, registry=registry, examiner=examiner,
-                                case_id=case_id, run_id=run_id, judge_mode=judge_mode)
+            examiner = _Unavailable()
+        state = execute_run(store=draft_store, registry=registry, examiner=examiner,
+                            case_id=case_id, run_id=run_id, judge_mode=judge_mode,
+                            evidence_dir=evidence_dir)
         if state == "FAILED":
             return error("RUN_FAILED", "Run failed; no verdict was produced", 500)
         return JSONResponse(status_code=202, content={
@@ -544,7 +576,8 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
                     confirmed=draft_store.get_confirmed(case_id),
                     data_mode=DataMode(metadata["dataMode"]), isolation=isolation,
                     spec_hash=metadata["specHash"], frozen_at=frozen_at, blockers=blockers,
-                    text_fields=draft_store.get_text_fields(case_id))
+                    text_fields=draft_store.get_text_fields(case_id),
+                    fixture_id=metadata["fixtureId"])
         return error("TOO_EARLY", "No sealed verdict for this case yet", 425)
 
     def _bundle_file(case_id: str) -> tuple[Path, dict] | None:
@@ -642,13 +675,19 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
         with tempfile.TemporaryDirectory(prefix="vk-replay-") as tmp:
             bundle = Path(tmp) / "upload.vkb"
             bundle.write_bytes(body)
+            # Embedded evidence is hash-checked, then restored where the examiner can read
+            # it: the shared evidence store when isolation is enforced (the worker reads
+            # only VK_EVIDENCE_DIR), otherwise a private directory for this replay.
+            replay_evidence = (evidence_dir if isolation == "ENFORCED" and evidence_dir is not None
+                               else Path(tmp) / "work" / "evidence")
             try:
-                examiner = _make_examiner(isolation, full_registry)
+                examiner = _make_examiner(isolation, full_registry, replay_evidence)
             except Exception:
                 examiner = _Unavailable()
             # No network: refetch is never permitted for uploaded bundles.
             report = replay_bundle(bundle, registry=full_registry, workdir=Path(tmp) / "work",
-                                   allow_refetch=False, examiner=examiner)
+                                   allow_refetch=False, examiner=examiner,
+                                   evidence_root=replay_evidence)
         return {"contractVersion": VERSION, **replay_report_dict(report)}
 
     return app

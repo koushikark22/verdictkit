@@ -6,7 +6,7 @@ serves only from the store.
 """
 from __future__ import annotations
 
-from typing import Protocol, Sequence
+from typing import Callable, Protocol, Sequence
 
 from ..model import EvidenceItem
 from ..plugin import EvidencePolicySpec, EvidenceRequest
@@ -14,6 +14,10 @@ from .store import EvidenceMeta, EvidenceStore
 
 
 class SourceAdapter(Protocol):
+    """``requires_network`` (optional attribute, default True): local adapters that read
+    packaged, hash-pinned files set it False and may run with ``network=False``.
+    Optional attributes ``source_class``, ``license_class`` and ``rights_note``."""
+
     source_id: str
     allowed_hosts: frozenset[str]
 
@@ -26,10 +30,12 @@ class EvidenceUnavailable(RuntimeError):
 
 
 class EvidenceBroker:
-    def __init__(self, store: EvidenceStore, adapters: Sequence[SourceAdapter], *, network: bool) -> None:
+    def __init__(self, store: EvidenceStore, adapters: Sequence[SourceAdapter], *, network: bool,
+                 clock: Callable[[], str] | None = None) -> None:
         self._store = store
         self._adapters: dict[str, SourceAdapter] = {a.source_id: a for a in adapters}
         self._network = network
+        self._clock = clock
 
     def acquire(
         self, requests: Sequence[EvidenceRequest], policy: EvidencePolicySpec
@@ -45,19 +51,17 @@ class EvidenceBroker:
                 raise EvidenceUnavailable(
                     f"no adapter registered for source {req.source_id!r}"
                 )
-            if not self._network:
+            if not self._network and getattr(adapter, "requires_network", True):
                 raise EvidenceUnavailable(
                     f"network access disabled; cannot fetch from {req.source_id!r}"
                 )
             data, uri, media_type = adapter.fetch(req)
-            # We need a retrieved_at timestamp and source class; the adapter provides them
-            # via a richer interface in practice. For the core protocol we store a minimal
-            # EvidenceMeta. The retrieved_at must be provided externally; use a placeholder.
+            # retrieved_at comes from the injected clock (never an evaluator input).
             meta = EvidenceMeta(
                 source_id=req.source_id,
                 source_class=_source_class_for(adapter),
                 uri=uri,
-                retrieved_at="",
+                retrieved_at=self._clock() if self._clock is not None else "",
                 media_type=media_type,
                 license_class=_license_class_for(adapter),
             )

@@ -73,6 +73,10 @@ class DraftStore:
                 "case_id TEXT PRIMARY KEY, names TEXT NOT NULL)"
             )
             conn.execute(
+                "CREATE TABLE IF NOT EXISTS fixtures ("
+                "case_id TEXT PRIMARY KEY, fixture_id TEXT NOT NULL)"
+            )
+            conn.execute(
                 "CREATE TABLE IF NOT EXISTS text_fields ("
                 "case_id TEXT PRIMARY KEY, names TEXT NOT NULL)"
             )
@@ -126,6 +130,10 @@ class DraftStore:
                 )
         except sqlite3.IntegrityError as exc:
             raise DraftAlreadyExists("case ID already exists") from exc
+        if prepared.fixture_id is not None:
+            with self._connect() as conn:
+                conn.execute("INSERT INTO fixtures(case_id,fixture_id) VALUES(?,?)",
+                             (case_id, prepared.fixture_id))
         if prepared.text_spans:
             # Names only: the pasted text and its spans are never persisted.
             self.set_text_fields(case_id, sorted(prepared.text_spans))
@@ -194,7 +202,15 @@ class DraftStore:
             "state": state,
             "specHash": row[4],
             "latestRunId": None if run is None else run["runId"],
+            "fixtureId": self.get_fixture_id(case_id),
         }
+
+    def get_fixture_id(self, case_id: str) -> str | None:
+        self._case_id(case_id)
+        with self._connect() as conn:
+            row = conn.execute("SELECT fixture_id FROM fixtures WHERE case_id=?",
+                               (case_id,)).fetchone()
+        return None if row is None else row[0]
 
     def purge_expired(self, *, now: int | None = None) -> int:
         """Delete expired drafts (and, in judge mode, expired frozen cases with their
@@ -211,7 +227,7 @@ class DraftStore:
                     "(SELECT 1 FROM freezes f WHERE f.case_id=drafts.case_id)", (now,))]
             for case_id in ids:
                 for table in ("drafts", "freezes", "evidence_stages", "confirmations",
-                              "text_fields", "blockers", "runs"):
+                              "text_fields", "fixtures", "blockers", "runs"):
                     conn.execute(f"DELETE FROM {table} WHERE case_id=?", (case_id,))
         for case_id in ids:
             bundle = self.directory / "bundles" / f"{case_id}.vkb"
@@ -291,6 +307,13 @@ class DraftStore:
 
     def acquire_internal_evidence(self, case_id: str, *, recorded_at: str) -> None:
         """Commit empty external evidence only for a policy-vetted quote claim."""
+        self.acquire_evidence(case_id, [], recorded_at=recorded_at)
+
+    def acquire_evidence(self, case_id: str, items: list[dict], *, recorded_at: str) -> None:
+        """Commit policy-vetted, content-addressed evidence records (EVIDENCE_ACQUIRED).
+
+        ``items`` are EvidenceItem dicts already verified by the caller; the ledger entry
+        commits their hashes in order."""
         self._case_id(case_id)
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -317,9 +340,9 @@ class DraftStore:
             if not ledger.verify().ok or prior[-1].kind is not EntryKind.OUTCOMES_COMMITTED:
                 raise ValueError("freeze ledger integrity failure")
             entry = ledger.append(EntryKind.EVIDENCE_ACQUIRED, {
-                "evidence_count": 0, "evidence_hashes": []
+                "evidence_count": len(items), "evidence_hashes": [i["sha256"] for i in items]
             })
-            record = {"evidence": [], "ledgerSeq": entry.seq,
+            record = {"evidence": list(items), "ledgerSeq": entry.seq,
                       "ledgerEntryHash": entry.entry_hash, "prevHash": entry.prev_hash,
                       "kind": entry.kind.value, "payloadHash": entry.payload_hash,
                       "recordedAt": entry.recorded_at}
@@ -331,7 +354,7 @@ class DraftStore:
                          (case_id, sealed))
 
     def get_evidence(self, case_id: str) -> list[dict]:
-        """Read only a committed, authenticated zero-request evidence record."""
+        """Read a committed, authenticated evidence record (EvidenceItem dicts)."""
         self._case_id(case_id)
         with self._connect() as conn:
             row = conn.execute("SELECT sealed FROM evidence_stages WHERE case_id=?",
@@ -342,9 +365,9 @@ class DraftStore:
         record = json.loads(self._cipher.decrypt(
             blob[:12], blob[12:], (case_id + ":evidence").encode("utf-8")
         ).decode("utf-8"))
-        if record["evidence"] != [] or record["ledgerSeq"] != 3:
-            raise ValueError("invalid internal evidence record")
-        return []
+        if not isinstance(record["evidence"], list) or record["ledgerSeq"] != 3:
+            raise ValueError("invalid evidence record")
+        return list(record["evidence"])
 
     # ---- custodian-only reconstruction for the run stage -------------------------
     def _decrypt(self, blob: bytes, aad: bytes) -> dict:

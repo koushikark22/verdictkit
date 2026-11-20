@@ -117,10 +117,10 @@ class InProcessExaminer:
 
         # Build a minimal evidence reader from the evidence store if available
         evidence_reader = _EmptyEvidenceReader()
-        if self._evidence_root is not None:
-            from ..evidence.store import EvidenceStore
-            store = EvidenceStore(Path(self._evidence_root))
-            evidence_reader = _StoreEvidenceReader(store)
+        if self._evidence_root is not None and decoded_task.evidence_refs:
+            from ..evidence.store import ReadOnlyEvidence
+            evidence_reader = ReadOnlyEvidence(Path(self._evidence_root),
+                                               decoded_task.evidence_refs)
 
         examination = claim_type.examine(decoded_task, evidence_reader, points)
 
@@ -135,14 +135,3 @@ class _EmptyEvidenceReader:
 
     def items(self):
         return ()
-
-
-class _StoreEvidenceReader:
-    def __init__(self, store):
-        self._store = store
-
-    def read(self, sha256: str) -> bytes:
-        return self._store.get(sha256)
-
-    def items(self):
-        return []

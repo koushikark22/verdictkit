@@ -5,6 +5,7 @@ is admitted to the examination path until encrypted custody is available.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -60,6 +61,7 @@ class PreparedIntake:
     # Draft-response-only provenance for text-derived parameters. The pasted text
     # itself is never stored here, persisted, logged, frozen or bundled.
     text_spans: Mapping[str, tuple[int, int]] = field(default_factory=dict, repr=False)
+    fixture_id: str | None = None
 
 
 def prepare_intake(payload: Mapping[str, object], registry: Registry) -> PreparedIntake:
@@ -81,9 +83,7 @@ def prepare_intake(payload: Mapping[str, object], registry: Registry) -> Prepare
     if mode not in ("LIVE_EVIDENCE", "SYNTHETIC_DEMO"):
         raise IntakeRejected("SCHEMA_INVALID", "Unknown data mode", "dataMode")
     if mode == "SYNTHETIC_DEMO":
-        raise IntakeRejected(
-            "POLICY_VIOLATION", "Synthetic intake requires a verified bundled fixture", "fixtureId"
-        )
+        return _prepare_fixture(payload, registry, claim_id)
     if payload.get("fixtureId") is not None:
         raise IntakeRejected("SCHEMA_INVALID", "Fixture forbidden in live mode", "fixtureId")
     plugin = registry.get(claim_id)
@@ -151,3 +151,42 @@ def prepare_intake(payload: Mapping[str, object], registry: Registry) -> Prepare
         for name in sorted(plugin.outcome_fields)
     )
     return PreparedIntake(claim_id, mode, raw, fields, spans)
+
+
+_FIXTURE_ID = re.compile(r"^fx_[a-z0-9_]{1,40}$")
+
+
+def _prepare_fixture(payload: Mapping[str, object], registry: Registry, claim_id: str) -> PreparedIntake:
+    """SYNTHETIC_DEMO intake (API contract §3): the claim comes only from a trusted
+    fixture bundled with the claim type. No form, no pasted text, no user values, so no
+    user-supplied claim can ever be evaluated against synthetic data."""
+    if payload.get("form") is not None or payload.get("pastedText") is not None:
+        raise IntakeRejected("POLICY_VIOLATION", "Synthetic cases accept no user claim data", "form")
+    fixture_id = payload.get("fixtureId")
+    plugin = registry.get(claim_id)
+    fixtures = getattr(plugin, "fixtures", lambda: {})()
+    if not isinstance(fixture_id, str) or not _FIXTURE_ID.fullmatch(fixture_id) or fixture_id not in fixtures:
+        raise IntakeRejected(
+            "POLICY_VIOLATION", "Synthetic intake requires a verified bundled fixture", "fixtureId")
+    trusted = fixtures[fixture_id]
+    if trusted.get("claim_type") != claim_id:
+        raise IntakeRejected("POLICY_VIOLATION", "Fixture belongs to another claim type", "fixtureId")
+    import copy
+    raw = {
+        "claim_type": claim_id,
+        "schema_version": plugin.schema_version,
+        "params": copy.deepcopy(dict(trusted["params"])),
+        "outcomes": copy.deepcopy(dict(trusted["outcomes"])),
+        "assumptions": copy.deepcopy(dict(trusted.get("assumptions") or {})),
+    }
+    try:
+        plugin.validate_params(raw["params"])
+        plugin.validate_outcomes(raw["outcomes"])
+        plugin.assumption_specs(raw["assumptions"])
+    except (ValueError, TypeError, KeyError, ArithmeticError) as exc:
+        raise IntakeRejected("SCHEMA_INVALID", "Bundled fixture failed validation", "fixtureId") from exc
+    fields = tuple(
+        {"name": name, "captured": name in raw["outcomes"]}
+        for name in sorted(plugin.outcome_fields)
+    )
+    return PreparedIntake(claim_id, "SYNTHETIC_DEMO", raw, fields, {}, fixture_id)

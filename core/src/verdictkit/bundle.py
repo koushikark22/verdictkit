@@ -146,7 +146,7 @@ def write_bundle(case: CaseFile, path: Path, *, clock: Callable[[], str]) -> Pat
 
     # Evidence blobs (REDISTRIBUTABLE, DOCUMENT, USER_SUPPLIED only; Req 9.2).
     # REFETCH_ONLY evidence is sealed by URI + SHA-256 only and never embedded.
-    embeddable = {LicenseClass.REDISTRIBUTABLE, LicenseClass.DOCUMENT, LicenseClass.USER_SUPPLIED}
+    from .pipeline import EMBEDDABLE as embeddable
     for item in case.evidence:
         if item.license_class not in embeddable:
             continue
@@ -423,6 +423,7 @@ def replay_bundle(
     allow_refetch: bool = False,
     evidence_cache: Path | None = None,
     examiner=None,
+    evidence_root: Path | None = None,
 ) -> ReplayReport:
     """Re-run examination + comparison from the bundle's frozen claim, evidence and
     revealed outcomes. No network unless ``allow_refetch``. Verifies the ledger chain, the
@@ -488,7 +489,9 @@ def replay_bundle(
                 tolerances=frozen_dict.get("tolerances", {}),
                 spec_hash=frozen_dict["spec_hash"],
             )
-            replay_ev_dir = workdir / "evidence"
+            # Restored bytes are hash-checked before being stored; ``evidence_root`` lets a
+            # service place them where its isolated examiner can read them.
+            replay_ev_dir = Path(evidence_root) if evidence_root is not None else workdir / "evidence"
             ev_store = EvidenceStore(replay_ev_dir)
             evidence_index = parse_canonical(_read_bounded(zf, "evidence/index.json"))
             if not isinstance(evidence_index, list):
@@ -536,11 +539,16 @@ def replay_bundle(
                 return unverifiable("examiner returned a different specification",
                                     prior=tuple(notes), **common)
 
-            from .evidence.policy import apply_policy
+            from .evidence.policy import apply_policy, effective_policy
+            from .model import DataMode
             from .model import compute_verdict_hash, headline_status, validate_finding
 
             evidence_map = {item.sha256: item for item in evidence_items}
-            policy = claim_type.evidence_policy()
+            try:
+                bundle_mode = DataMode(manifest.get("data_mode", "LIVE_EVIDENCE"))
+            except ValueError:
+                return unverifiable("unknown data mode in manifest", prior=tuple(notes), **common)
+            policy = effective_policy(claim_type.evidence_policy(), bundle_mode)
             findings_tuple = tuple(
                 validate_finding(apply_policy(f, evidence_map, policy))
                 for f in claim_type.findings(frozen, examination, outcomes, evidence_items)
