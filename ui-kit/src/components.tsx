@@ -176,6 +176,26 @@ export function EvidenceTable({ items }: { items: EvidenceDTO[] }) {
   );
 }
 
+/** Draws an EQUITY_SERIES key record. Always illustrative: never a counterexample. */
+export function EquityChart({ record }: { record: KeyRecord }) {
+  const values = ((record.payload.equity as string[] | undefined) ?? []).map(Number).filter(Number.isFinite);
+  if (values.length < 2) return null;
+  const w = 640, h = 180, pad = 24;
+  const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
+  const pts = values.map((v, i) => `${(pad + (i * (w - 2 * pad)) / (values.length - 1)).toFixed(1)},${(h - pad - ((v - min) * (h - 2 * pad)) / span).toFixed(1)}`).join(" ");
+  const point = Object.entries((record.payload.point as Record<string, string>) ?? {}).map(([k, v]) => `${k}=${v}`).join(", ");
+  return (
+    <figure className="vk-card" data-testid="equity-chart">
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label={`Equity series from ${values[0]} to ${values[values.length - 1]}`}>
+        <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="2" />
+        <text x={pad} y={14} fontSize="11">max {max.toFixed(2)}</text>
+        <text x={pad} y={h - 6} fontSize="11">min {min.toFixed(2)}</text>
+      </svg>
+      <figcaption className="vk-muted">ILLUSTRATIVE equity (start 10000) at grid point {point || "—"}. {record.note}</figcaption>
+    </figure>
+  );
+}
+
 export function KeyRecords({ records }: { records: KeyRecord[] }) {
   if (!records.length) return null;
   return (
@@ -220,7 +240,9 @@ export function VerdictView({ outcome, children }: { outcome: OutcomeResponse; c
       {outcome.findings.map((f) => <FindingCard key={f.findingId} f={f} />)}
       <SensitivityGrid s={outcome.sensitivity} />
       <EvidenceTable items={outcome.evidence} />
-      <KeyRecords records={outcome.keyRecords} />
+      {outcome.keyRecords.filter((r) => r.recordKind === "EQUITY_SERIES" && r.recordRole === "ILLUSTRATIVE")
+        .map((r) => <EquityChart key={r.recordId} record={r} />)}
+      <KeyRecords records={outcome.keyRecords.filter((r) => r.recordKind !== "EQUITY_SERIES")} />
       <Diagnostics d={outcome.diagnostics} />
       <section className="vk-card"><h3>Parameter ledger (frozen)</h3><ParameterLedger entries={outcome.parameterLedger} /></section>
       {children}

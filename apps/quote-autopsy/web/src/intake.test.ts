@@ -49,3 +49,19 @@ describe("leaseIntake", () => {
     expect(intake!.form!.assumptions).toEqual({});
   });
 });
+
+describe("itemisedLeaseIntake", () => {
+  it("builds item lines and exactly one residual form", async () => {
+    const { emptyItemisedLease, itemisedLeaseIntake } = await import("./intake");
+    const { intake, errors } = itemisedLeaseIntake({ ...emptyItemisedLease(), msrp: "42000.00", selling_price: "39500.00",
+      acquisition_fee: "895.00", cash_reduction: "2000.00", residual: "58", money_factor: "0.00125",
+      stated_tax_rate_pct: "8.25", state: "tx" }, { stated_adjusted_cap_cost: "38395.00" });
+    expect(errors).toEqual([]);
+    const p = intake!.form!.params as any;
+    expect(p.capitalized_items).toEqual([{ code: "ACQUISITION_FEE", amount: "895.00" }]);
+    expect(p.cap_cost_reductions).toEqual([{ code: "CASH", amount: "2000.00" }]);
+    expect(p.residual_pct_of_msrp).toBe("58");
+    expect("residual_value" in p).toBe(false);
+    expect(intake!.form!.assumptions).toEqual({ rounding_convention: null });
+  });
+});

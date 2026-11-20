@@ -107,7 +107,12 @@ def test_fixture_runs_through_real_pipeline(client, fixture_id):
         "fee_bps_per_side": "DEFAULT_POLICY", "slippage_bps_per_side": "DEFAULT_POLICY",
         "position_fraction": "DEFAULT_POLICY"}
     for rec in out["keyRecords"]:
-        assert rec["recordKind"] == "GRID_POINT"
+        if rec["recordKind"] == "EQUITY_SERIES":
+            assert rec["recordRole"] == "ILLUSTRATIVE" and rec["findingId"] is None
+            assert len(rec["payload"]["equity"]) > 50
+        else:
+            assert rec["recordKind"] == "GRID_POINT"
+    assert sum(r["recordKind"] == "EQUITY_SERIES" for r in out["keyRecords"]) == 1
 
     bundle = client.get(f"/api/v1/cases/{case_id}/bundle").content
     with zipfile.ZipFile(io.BytesIO(bundle)) as zf:

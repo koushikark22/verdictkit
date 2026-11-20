@@ -151,7 +151,67 @@ def _finance_worksheet(params: Mapping[str, object]) -> FinanceWorksheet:
     return ws
 
 
+_LEASE_ITEM_CODES = frozenset({"ACQUISITION_FEE", "DOC_FEE", "ADDON", "OTHER"})
+_LEASE_REDUCTION_CODES = frozenset({"CASH", "REBATE", "NET_TRADE"})
+_ITEMISED_BASE = {"msrp", "selling_price", "capitalized_items", "cap_cost_reductions", "money_factor",
+                  "term_months", "stated_tax_rate_pct", "jurisdiction", "rounding_convention"}
+
+
+def _lease_itemised(params: Mapping[str, object]) -> tuple:
+    """Quote req 2.1 / 4.1: itemised worksheet -> gross and adjusted cap cost, residual."""
+    from .money import cents
+    keys = set(params)
+    residual_keys = keys & {"residual_value", "residual_pct_of_msrp"}
+    if len(residual_keys) != 1 or keys != _ITEMISED_BASE | residual_keys:
+        raise SchemaError(f"itemised lease params must contain exactly {sorted(_ITEMISED_BASE)} "
+                          "and one of residual_value / residual_pct_of_msrp")
+    msrp = _money(params["msrp"], "msrp")
+    price = _money(params["selling_price"], "selling_price")
+
+    def lines(name: str, codes: frozenset[str]) -> Decimal:
+        total = Decimal(0)
+        for entry in _objects(params[name], name):
+            if set(entry) != {"code", "amount"} or entry["code"] not in codes:
+                raise SchemaError(f"{name} entries need code in {sorted(codes)} and amount")
+            amount = _money(entry["amount"], f"{name}.amount")
+            if amount < 0:
+                raise SchemaError(f"{name} amounts must be nonnegative")
+            total += amount
+        return total
+
+    gross = price + lines("capitalized_items", _LEASE_ITEM_CODES)
+    adj = gross - lines("cap_cost_reductions", _LEASE_REDUCTION_CODES)
+    if "residual_value" in params:
+        residual = _money(params["residual_value"], "residual_value")
+    else:
+        pct = _money(params["residual_pct_of_msrp"], "residual_pct_of_msrp")
+        if pct < 0 or pct > 100:
+            raise SchemaError("residual_pct_of_msrp must be 0-100")
+        residual = cents(msrp * pct / Decimal(100))
+    n = _integer(params["term_months"], "term_months")
+    if n > 60:
+        raise SchemaError("lease term must be 1-60 months")
+    jurisdiction = params["jurisdiction"]
+    if not isinstance(jurisdiction, dict) or not (set(jurisdiction) <= {"state", "locality_code"} and "state" in jurisdiction) \
+            or not isinstance(jurisdiction["state"], str) or len(jurisdiction["state"]) != 2:
+        raise SchemaError("jurisdiction requires a two-letter state")
+    return adj, residual, _money(params["money_factor"], "money_factor"), n, \
+        _money(params["stated_tax_rate_pct"], "stated_tax_rate_pct"), gross, msrp, price
+
+
 def _lease_params(params: Mapping[str, object]) -> tuple:
+    """Returns (adjusted_cap_cost, residual, money_factor, n, tax_pct, convention, derived)
+    where ``derived`` holds the itemised-only lines (gross cap cost etc.) or is empty."""
+    if "msrp" in params:
+        adj, residual, money_factor, n, tax, gross, msrp, price = _lease_itemised(params)
+        derived = {"stated_gross_cap_cost": gross, "stated_adjusted_cap_cost": adj,
+                   "stated_residual_value": residual}
+        if msrp <= 0 or price <= 0:
+            raise SchemaError("msrp and selling price must be positive")
+        conv = _lease_convention(params)
+        if adj <= 0 or residual < 0 or residual > adj or money_factor < 0 or tax < 0:
+            raise SchemaError("invalid lease monetary values")
+        return adj, residual, money_factor, n, tax, conv, derived
     expected = {"adjusted_cap_cost", "residual_value", "money_factor", "tax_rate_pct", "term_months", "rounding_convention"}
     if set(params) != expected:
         raise SchemaError(f"lease params must contain exactly: {sorted(expected)}")
@@ -160,16 +220,21 @@ def _lease_params(params: Mapping[str, object]) -> tuple:
     money_factor = _money(params["money_factor"], "money_factor")
     tax = _money(params["tax_rate_pct"], "tax_rate_pct")
     n = _integer(params["term_months"], "term_months")
-    if params["rounding_convention"] is None:
-        conv = None  # swept: see module docstring
-    else:
-        try:
-            conv = LeaseConvention(params["rounding_convention"])
-        except ValueError as exc:
-            raise SchemaError("invalid rounding_convention") from exc
+    conv = _lease_convention(params)
     if adj <= 0 or residual < 0 or residual > adj or money_factor < 0 or tax < 0:
         raise SchemaError("invalid lease monetary values")
-    return adj, residual, money_factor, n, tax, conv
+    # The reduced form states these two lines directly; gross cap cost is not derivable.
+    return adj, residual, money_factor, n, tax, conv, {
+        "stated_adjusted_cap_cost": adj, "stated_residual_value": residual}
+
+
+def _lease_convention(params: Mapping[str, object]) -> LeaseConvention | None:
+    if params["rounding_convention"] is None:
+        return None  # swept: see module docstring
+    try:
+        return LeaseConvention(params["rounding_convention"])
+    except ValueError as exc:
+        raise SchemaError("invalid rounding_convention") from exc
 
 
 def chain_af(ws: FinanceWorksheet) -> Decimal:
@@ -261,6 +326,10 @@ def _findings(frozen: FrozenClaim, examination: Examination, outcomes: Mapping[s
             continue
         if name not in arithmetic:
             raise ValueError(f"unsupported computed field: {name}")
+        if any(name not in pr.values for pr in examination.points):
+            results.append(Finding(name, Basis.INTERNAL_ARITHMETIC, Status.INDETERMINATE,
+                f"{name} cannot be derived from this worksheet form", reason="not_derivable"))
+            continue
         observed = _money(claimed, f"outcomes.{name}")
         tol = Decimal(frozen.tolerances[name])
         rows = _per_point(examination, name, observed, tol)
@@ -318,10 +387,15 @@ class _BaseQuote:
                        outcomes: Mapping[str, object]) -> Mapping[str, Sequence[PointOutcome]]:
         """Presentation hook: per-grid-point pass/fail for the sensitivity view."""
         return {name: _per_point(examination, name, _money(v, name), Decimal(frozen.tolerances[name]))
-                for name, v in outcomes.items() if name in self.arithmetic_fields}
+                for name, v in outcomes.items() if name in self.arithmetic_fields
+                and all(name in pr.values for pr in examination.points)}
+
+    # Quote req 3.6: $0.01 for payment-derived values, $0.00 for sums and exact lines.
+    exact_fields: frozenset[str] = frozenset()
 
     def tolerances(self, params: Mapping[str, object], outcomes: Mapping[str, object]) -> Mapping[str, str]:
-        return {name: "0.01" if name not in self.external_fields else "0" for name in outcomes}
+        return {name: "0" if name in self.external_fields else ("0.00" if name in self.exact_fields else "0.01")
+                for name in outcomes}
 
     def evidence_requests(self, params: Mapping[str, object]) -> Sequence[EvidenceRequest]:
         return ()
@@ -341,6 +415,7 @@ class FinanceClaimType(_BaseQuote):
     param_fields = frozenset({"selling_price", "addons", "doc_fee", "doc_fee_taxable", "gov_fees", "rebates", "trade_allowance", "trade_payoff", "trade_tax_credit", "cash_down", "stated_tax_rate_pct", "apr_pct", "term_months", "jurisdiction"})
     arithmetic_fields = frozenset({"taxable_base", "sales_tax", "amount_financed", "monthly_payment", "total_of_payments", "finance_charge"})
     external_fields = frozenset({"tax_rate", "doc_fee_cap"})
+    exact_fields = frozenset({"taxable_base", "sales_tax", "amount_financed"})
     outcome_fields = arithmetic_fields | external_fields
 
     assumption_pattern = r"doc_fee_taxable|trade_tax_credit|(addons|gov_fees)\.(0|[1-9][0-9]?)\.taxable"
@@ -385,9 +460,14 @@ class FinanceClaimType(_BaseQuote):
 
 class LeaseClaimType(_BaseQuote):
     type_id = "quote.lease.v1"
-    param_fields = frozenset({"adjusted_cap_cost", "residual_value", "money_factor", "tax_rate_pct", "term_months", "rounding_convention"})
-    arithmetic_fields = frozenset({"depreciation_fee", "rent_charge", "base_payment", "monthly_tax", "total_monthly_payment"})
+    # Two accepted forms: reduced (adjusted_cap_cost, residual_value, ...) and itemised
+    # (quote req 2.1: msrp, selling_price, capitalized_items, cap_cost_reductions, ...).
+    param_fields = frozenset({"adjusted_cap_cost", "residual_value", "money_factor", "tax_rate_pct", "term_months",
+                              "rounding_convention"}) | frozenset(_ITEMISED_BASE | {"residual_pct_of_msrp"})
+    arithmetic_fields = frozenset({"depreciation_fee", "rent_charge", "base_payment", "monthly_tax", "total_monthly_payment",
+                                   "stated_gross_cap_cost", "stated_adjusted_cap_cost", "stated_residual_value"})
     external_fields = frozenset({"tax_rate"})
+    exact_fields = frozenset({"stated_gross_cap_cost", "stated_adjusted_cap_cost", "stated_residual_value"})
     outcome_fields = arithmetic_fields | external_fields
 
     assumption_pattern = r"rounding_convention"
@@ -400,7 +480,7 @@ class LeaseClaimType(_BaseQuote):
         _check_axes(unknown, assumptions)
 
     def examine(self, task: BlindedTask, evidence: EvidenceReader, points: Sequence[Mapping[str, str]]) -> Examination:
-        adj, residual, mf, n, tax, conv = _lease_params(task.params)
+        adj, residual, mf, n, tax, conv, derived = _lease_params(task.params)
         results = []
         for p in points:
             if conv is None:
@@ -413,5 +493,6 @@ class LeaseClaimType(_BaseQuote):
                 point_conv = conv
             calculated = compute(adj, residual, mf, n, tax, point_conv)
             numbers = {f.name: format(getattr(calculated, f.name), "f") for f in fields(calculated)}
+            numbers.update({k: format(v, "f") for k, v in derived.items()})
             results.append(PointResult(dict(p), numbers))
         return Examination(task.spec_hash, {}, tuple(results))

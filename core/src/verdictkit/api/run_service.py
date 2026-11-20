@@ -266,6 +266,13 @@ def build_outcome(*, case_id: str, run_id: str, plugin: ClaimType, raw: Mapping[
                   evidence: Sequence[EvidenceItem] = (), fixture_id: str | None = None,
                   outcomes: Mapping[str, object] | None = None) -> dict[str, object]:
     records, record_ids, point_of_failure = _key_records(frozen.claim_type, findings)
+    hook = getattr(plugin, "illustrative_records", None)
+    if hook is not None:
+        extra = [dict(r) for r in hook(frozen, examination)]
+        if any(r.get("recordRole") != "ILLUSTRATIVE" for r in extra):
+            raise ValueError("plugin illustrative records must be ILLUSTRATIVE")
+        check_key_records(extra, findings)
+        records = records + extra
     body = outcome_response(
         case_id=case_id, run_id=run_id, claim_type=frozen.claim_type, data_mode=data_mode,
         isolation_mode=isolation, findings=findings, blockers=[],

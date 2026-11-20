@@ -52,6 +52,23 @@ async function quote(browser) {
   await page.waitForFunction(() => document.querySelector("[data-testid=headline]")?.textContent?.includes("CONTRADICTED"), null, { timeout: 30000 });
   check((await text(page, "finding-amount_financed")).includes("point of failure"), "quote: padded example marks amount_financed as point of failure");
   check((await text(page, "diagnostics")).includes('"firstBrokenLine": "amount_financed"'), "quote: after-reveal diagnostic localises the packed amount");
+  await page.getByRole("button", { name: "Lease (itemised)" }).click();
+  await form.getByLabel("MSRP", { exact: true }).fill("42000.00");
+  await form.getByLabel("Selling price (lease)").fill("39500.00");
+  await form.getByLabel("Acquisition fee").fill("895.00");
+  await form.getByLabel("Doc fee (capitalised)").fill("150.00");
+  await form.getByLabel("Cash cap-cost reduction").fill("2000.00");
+  await form.getByLabel("Rebate").fill("1000.00");
+  await form.getByLabel("Residual", { exact: true }).fill("58");
+  await form.getByLabel("Money factor (itemised)").fill("0.00125");
+  await form.getByLabel("Tax rate % (itemised)").fill("8.25");
+  await form.getByLabel("State (itemised)").fill("TX");
+  await form.getByLabel("stated adjusted cap cost").fill("37545.00");
+  await form.getByLabel("stated residual value").fill("24360.00");
+  await form.getByRole("button", { name: "Freeze and examine" }).click();
+  await page.waitForFunction(() => /CONSISTENT/.test(document.querySelector("[data-testid=headline]")?.textContent || "")
+    && !!document.querySelector("[data-testid=finding-stated_residual_value]"), null, { timeout: 30000 });
+  check((await text(page, "sensitivity")).includes("rounding_convention"), "quote: itemised lease swept over rounding convention -> CONSISTENT");
   const download = page.waitForEvent("download");
   await page.getByRole("link", { name: "Download .vkb" }).click();
   check((await download).suggestedFilename().endsWith(".vkb"), "quote: bundle downloads");
@@ -67,6 +84,7 @@ async function reel(browser) {
   check((await page.getByTestId("demo-notice").count()) >= 2, "reel demo: demonstration notice on the verdict");
   check((await text(page, "evidence")).includes("SYNTHETIC_FIXTURE"), "reel demo: evidence provenance is labelled synthetic");
   check((await text(page, "sensitivity")).includes("16 grid points"), "reel demo: verified at 16 grid points");
+  check((await text(page, "equity-chart")).includes("ILLUSTRATIVE"), "reel demo: equity chart is labelled illustrative");
   await page.locator("[data-fixture=fx_reel_conditional_sma]").click();
   await page.waitForFunction(() => document.querySelector("[data-testid=headline]")?.textContent?.includes("CONDITIONAL"), null, { timeout: 60000 });
   check(true, "reel demo: conditional fixture -> CONDITIONAL");

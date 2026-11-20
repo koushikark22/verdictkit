@@ -188,7 +188,7 @@ def test_property_status_matches_independent_oracle(tmp_path_factory, price, fee
         oracle[flag] = chain(_finance_worksheet(q)).sales_tax
     stated = {"taxable": oracle[True], "untaxable": oracle[False],
               "neither": oracle[True] + Decimal("5.00")}[pick]
-    matches = sum(abs(stated - v) <= Decimal("0.01") for v in oracle.values())
+    matches = sum(stated == v for v in oracle.values())  # sales_tax tolerance is $0.00 (req 3.6)
     expected = {2: Status.CONSISTENT, 1: Status.CONDITIONAL, 0: Status.CONTRADICTED}[matches]
     case = run(tmp_path_factory.mktemp("p"),
                finance_claim(p, {"sales_tax": format(stated, "f")}, ["doc_fee_taxable"]))

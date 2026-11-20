@@ -259,6 +259,22 @@ class ReelClaimType:
                 out[name] = rows
         return out
 
+    def illustrative_records(self, frozen: FrozenClaim, examination: Examination) -> Sequence[Mapping[str, object]]:
+        """Presentation hook: the equity series at the first (lowest-cost) grid point.
+
+        Always ILLUSTRATIVE (reel req 9.2): a single series never refutes an aggregate claim.
+        """
+        curve = examination.shared.get("equity_curve_first_point")
+        if examination.shared.get("coverage") != "COMPLETE" or not curve or not examination.points:
+            return ()
+        return ({
+            "recordId": "kr_equity_first_point", "findingId": None, "recordRole": "ILLUSTRATIVE",
+            "recordKind": "EQUITY_SERIES",
+            "payload": {"point": dict(examination.points[0].point), "startEquity": "10000",
+                        "equity": list(curve)},
+            "note": "Illustrative equity series at the first grid point (sampled); not a counterexample.",
+        },)
+
     def point_outcomes(self, frozen: FrozenClaim, examination: Examination,
                        outcomes: Mapping[str, object]) -> Mapping[str, Sequence[PointOutcome]]:
         """Presentation hook: per-grid-point pass/fail for the sensitivity view."""

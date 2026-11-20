@@ -20,6 +20,22 @@ export const FINANCE_OUTCOMES = ["taxable_base", "sales_tax", "amount_financed",
   "total_of_payments", "finance_charge"] as const;
 export const LEASE_OUTCOMES = ["depreciation_fee", "rent_charge", "base_payment", "monthly_tax",
   "total_monthly_payment"] as const;
+export const ITEMISED_LEASE_OUTCOMES = ["stated_gross_cap_cost", "stated_adjusted_cap_cost", "stated_residual_value",
+  ...LEASE_OUTCOMES] as const;
+
+/** Itemised lease worksheet (quote req 2.1). */
+export interface ItemisedLeaseForm {
+  msrp: string; selling_price: string; acquisition_fee: string; doc_fee: string; other_items: string;
+  cash_reduction: string; rebate: string; net_trade: string;
+  residual_mode: "pct" | "value"; residual: string; money_factor: string; stated_tax_rate_pct: string;
+  term_months: string; state: string; rounding_convention: "COMPONENT" | "FINAL" | "unknown";
+}
+
+export const emptyItemisedLease = (): ItemisedLeaseForm => ({
+  msrp: "", selling_price: "", acquisition_fee: "", doc_fee: "", other_items: "", cash_reduction: "", rebate: "",
+  net_trade: "", residual_mode: "pct", residual: "", money_factor: "", stated_tax_rate_pct: "", term_months: "36",
+  state: "", rounding_convention: "unknown",
+});
 
 export interface LeaseForm {
   adjusted_cap_cost: string; residual_value: string; money_factor: string; tax_rate_pct: string;
@@ -105,6 +121,29 @@ export function leaseIntake(f: LeaseForm, stated: Record<string, string>): { int
   };
   const assumptions: Record<string, null> = f.rounding_convention === "unknown" ? { rounding_convention: null } : {};
   const out = outcomes(stated, LEASE_OUTCOMES, errors);
+  if (errors.length) return { errors };
+  return { errors, intake: { claimType: "quote.lease.v1", dataMode: "LIVE_EVIDENCE", form: { params, outcomes: out, assumptions } } };
+}
+
+export function itemisedLeaseIntake(f: ItemisedLeaseForm, stated: Record<string, string>): { intake?: IntakeRequest; errors: string[] } {
+  const errors: string[] = [];
+  const term = Number.parseInt(f.term_months, 10);
+  if (!Number.isInteger(term) || term < 1 || term > 60 || String(term) !== f.term_months.trim()) errors.push("term must be 1-60 months");
+  const state = f.state.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(state)) errors.push("state must be a two-letter code");
+  const lines = (pairs: [string, string][]) => pairs.filter(([, v]) => v.trim())
+    .map(([code, v]) => ({ code, amount: money(v, code.toLowerCase().replace(/_/g, " "), errors) }));
+  const params: Record<string, unknown> = {
+    msrp: money(f.msrp, "MSRP", errors), selling_price: money(f.selling_price, "selling price", errors),
+    capitalized_items: lines([["ACQUISITION_FEE", f.acquisition_fee], ["DOC_FEE", f.doc_fee], ["OTHER", f.other_items]]),
+    cap_cost_reductions: lines([["CASH", f.cash_reduction], ["REBATE", f.rebate], ["NET_TRADE", f.net_trade]]),
+    money_factor: money(f.money_factor, "money factor", errors),
+    stated_tax_rate_pct: money(f.stated_tax_rate_pct, "tax rate", errors), term_months: term,
+    jurisdiction: { state }, rounding_convention: f.rounding_convention === "unknown" ? null : f.rounding_convention,
+  };
+  params[f.residual_mode === "pct" ? "residual_pct_of_msrp" : "residual_value"] = money(f.residual, "residual", errors);
+  const assumptions: Record<string, null> = f.rounding_convention === "unknown" ? { rounding_convention: null } : {};
+  const out = outcomes(stated, ITEMISED_LEASE_OUTCOMES, errors);
   if (errors.length) return { errors };
   return { errors, intake: { claimType: "quote.lease.v1", dataMode: "LIVE_EVIDENCE", form: { params, outcomes: out, assumptions } } };
 }

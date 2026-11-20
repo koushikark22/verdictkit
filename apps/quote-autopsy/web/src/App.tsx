@@ -4,8 +4,8 @@ import {
   createClient, describeError, useCaseWorkflow, type Health,
 } from "@verdictkit/ui-kit";
 import {
-  FINANCE_OUTCOMES, LEASE_OUTCOMES, emptyFinance, emptyLease, financeIntake, leaseIntake,
-  type FinanceForm, type LeaseForm, type Tri,
+  FINANCE_OUTCOMES, ITEMISED_LEASE_OUTCOMES, LEASE_OUTCOMES, emptyFinance, emptyItemisedLease, emptyLease,
+  financeIntake, itemisedLeaseIntake, leaseIntake, type FinanceForm, type ItemisedLeaseForm, type LeaseForm, type Tri,
 } from "./intake";
 import examplesFile from "./examples.json";
 
@@ -32,7 +32,8 @@ export function App() {
   const client = useMemo(() => createClient(), []);
   const [health, setHealth] = useState<Health | null>(null);
   const [healthErr, setHealthErr] = useState<string | null>(null);
-  const [kind, setKind] = useState<"finance" | "lease">("finance");
+  const [kind, setKind] = useState<"finance" | "lease" | "itemised">("finance");
+  const [itemised, setItemised] = useState<ItemisedLeaseForm>(emptyItemisedLease);
   const [finance, setFinance] = useState<FinanceForm>(emptyFinance);
   const [lease, setLease] = useState<LeaseForm>(emptyLease);
   const [stated, setStated] = useState<Record<string, string>>({});
@@ -43,12 +44,14 @@ export function App() {
 
   const setF = (k: keyof FinanceForm) => (v: string) => setFinance((f) => ({ ...f, [k]: v }));
   const setL = (k: keyof LeaseForm) => (v: string) => setLease((f) => ({ ...f, [k]: v }));
-  const outcomeNames = kind === "finance" ? FINANCE_OUTCOMES : LEASE_OUTCOMES;
+  const setI = (k: keyof ItemisedLeaseForm) => (v: string) => setItemised((f) => ({ ...f, [k]: v }));
+  const outcomeNames = kind === "finance" ? FINANCE_OUTCOMES : kind === "lease" ? LEASE_OUTCOMES : ITEMISED_LEASE_OUTCOMES;
   const busy = ["intake", "freezing", "evidence", "running"].includes(state.phase);
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const built = kind === "finance" ? financeIntake(finance, stated) : leaseIntake(lease, stated);
+    const built = kind === "finance" ? financeIntake(finance, stated)
+      : kind === "lease" ? leaseIntake(lease, stated) : itemisedLeaseIntake(itemised, stated);
     setFormErrors(built.errors);
     // Claimed figures are write-only: clear them once the server has accepted the case.
     if (built.intake) void submit(built.intake, () => setStated({}));
@@ -63,7 +66,8 @@ export function App() {
 
       <div className="vk-tabs" role="group" aria-label="Worksheet type">
         <button type="button" aria-pressed={kind === "finance"} onClick={() => { setKind("finance"); setStated({}); }}>Finance (retail installment)</button>
-        <button type="button" aria-pressed={kind === "lease"} onClick={() => { setKind("lease"); setStated({}); }}>Lease</button>
+        <button type="button" aria-pressed={kind === "lease"} onClick={() => { setKind("lease"); setStated({}); }}>Lease (cap cost known)</button>
+        <button type="button" aria-pressed={kind === "itemised"} onClick={() => { setKind("itemised"); setStated({}); }}>Lease (itemised)</button>
       </div>
 
       {kind === "finance" ? (
@@ -96,6 +100,26 @@ export function App() {
           <Text label="APR %" value={finance.apr_pct} onChange={setF("apr_pct")} hint="5.90" />
           <Text label="Term (months)" value={finance.term_months} onChange={setF("term_months")} />
           <Text label="State (2 letters)" value={finance.state} onChange={setF("state")} hint="TX" />
+        </> : kind === "itemised" ? <>
+          <Text label="MSRP" value={itemised.msrp} onChange={setI("msrp")} />
+          <Text label="Selling price (lease)" value={itemised.selling_price} onChange={setI("selling_price")} />
+          <Text label="Acquisition fee" value={itemised.acquisition_fee} onChange={setI("acquisition_fee")} />
+          <Text label="Doc fee (capitalised)" value={itemised.doc_fee} onChange={setI("doc_fee")} />
+          <Text label="Other capitalised items" value={itemised.other_items} onChange={setI("other_items")} />
+          <Text label="Cash cap-cost reduction" value={itemised.cash_reduction} onChange={setI("cash_reduction")} />
+          <Text label="Rebate" value={itemised.rebate} onChange={setI("rebate")} />
+          <Text label="Net trade" value={itemised.net_trade} onChange={setI("net_trade")} />
+          <label>Residual given as<select value={itemised.residual_mode} onChange={(e) => setI("residual_mode")(e.target.value)}>
+            <option value="pct">% of MSRP</option><option value="value">amount</option></select></label>
+          <Text label="Residual" value={itemised.residual} onChange={setI("residual")} />
+          <Text label="Money factor (itemised)" value={itemised.money_factor} onChange={setI("money_factor")} hint="0.00125" />
+          <Text label="Tax rate % (itemised)" value={itemised.stated_tax_rate_pct} onChange={setI("stated_tax_rate_pct")} />
+          <Text label="Term (months, itemised)" value={itemised.term_months} onChange={setI("term_months")} />
+          <Text label="State (itemised)" value={itemised.state} onChange={setI("state")} hint="TX" />
+          <label>Rounding convention (itemised)<select value={itemised.rounding_convention}
+            onChange={(e) => setI("rounding_convention")(e.target.value)}>
+            <option value="unknown">Not stated (sweep both)</option><option value="COMPONENT">Round each component</option>
+            <option value="FINAL">Round displayed totals only</option></select></label>
         </> : <>
           <Text label="Adjusted cap cost" value={lease.adjusted_cap_cost} onChange={setL("adjusted_cap_cost")} />
           <Text label="Residual value" value={lease.residual_value} onChange={setL("residual_value")} />
