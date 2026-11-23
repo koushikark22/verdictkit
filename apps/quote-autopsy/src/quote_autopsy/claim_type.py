@@ -29,7 +29,7 @@ from typing import Mapping, Sequence
 from verdictkit.custody.intake import SchemaError
 from verdictkit.model import (
     Assumption, AssumptionKind, Basis, Counterexample, Finding, Origin,
-    Status, FrozenClaim, BlindedTask, EvidenceItem,
+    Status, FrozenClaim, BlindedTask, EvidenceItem, LicenseClass, SourceClass,
 )
 from verdictkit.plugin import (
     EvidencePolicySpec, EvidenceRequest, EvidenceReader,
@@ -37,8 +37,11 @@ from verdictkit.plugin import (
 )
 from verdictkit.sweep import PointOutcome, aggregate, AggregateKind
 
+from pathlib import Path
+
 from .finance import amount_financed, chain, sales_tax, taxable_base
 from .lease import compute
+from .rules import RulesIntegrityError, StateRules, load_rules
 from .money import D
 from .worksheet import (
     Addon, AddonCode, FinanceWorksheet, GovFee, GovFeeCode, Jurisdiction,
@@ -235,6 +238,135 @@ def _lease_convention(params: Mapping[str, object]) -> LeaseConvention | None:
         return LeaseConvention(params["rounding_convention"])
     except ValueError as exc:
         raise SchemaError("invalid rounding_convention") from exc
+
+
+_RULES_DIR = Path(__file__).parent / "rules"
+_SUPPORTED_STATE = "TX"  # decision B7
+
+
+class _RulesAdapter:
+    """External findings (quote req 5) from the hash-verified single-state snapshot.
+
+    Fails closed: any load problem yields INDETERMINATE(evidence_integrity). A SUPPORTED
+    result is scoped to the checked fact only and never asserts overall legal compliance.
+    """
+
+    def __init__(self, rules_dir: Path = _RULES_DIR, state: str = _SUPPORTED_STATE) -> None:
+        self.state = state
+        self._rules: StateRules | None = None
+        try:
+            self._rules = load_rules(rules_dir / f"{state}.json", rules_dir / "MANIFEST.json")
+        except RulesIntegrityError:
+            self._rules = None
+
+    source_id = f"quote.rules.{_SUPPORTED_STATE}"
+
+    def _gate(self, name: str, jurisdiction: Jurisdiction, evidence: frozenset[str]) -> Finding | None:
+        if jurisdiction.state != self.state:
+            return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.INDETERMINATE,
+                           f"No official rules snapshot for jurisdiction {jurisdiction.state}",
+                           reason="unsupported_jurisdiction")
+        # Fail closed: the verified snapshot must also be among the acquired evidence.
+        if self._rules is None or self._rules.snapshot_sha256 not in evidence:
+            return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.INDETERMINATE,
+                           "The official rules snapshot failed its integrity check",
+                           reason="evidence_integrity")
+        return None
+
+    def tax_rate_finding(self, jurisdiction: Jurisdiction, stated: Decimal,
+                         evidence: frozenset[str]) -> Finding:
+        blocked = self._gate("tax_rate", jurisdiction, evidence)
+        if blocked:
+            return blocked
+        rules = self._rules
+        assert rules is not None
+        used = (rules.snapshot_sha256,)
+        combined = (rules.combined_rate(jurisdiction.locality_code)
+                    if jurisdiction.locality_code else None)
+        if combined is not None:  # req 5.2
+            ok = stated == combined
+            return Finding("tax_rate", Basis.EXTERNAL_EVIDENCE,
+                           Status.SUPPORTED if ok else Status.REFUTED,
+                           f"Stated rate {stated}% {'equals' if ok else 'differs from'} the official "
+                           f"{rules.state} combined rate {combined}% for locality {jurisdiction.locality_code}",
+                           evidence_used=used,
+                           counterexamples=() if ok else (Counterexample(
+                               {"locality_code": str(jurisdiction.locality_code)}, str(combined),
+                               str(stated), str(stated - combined), "0"),))
+        lo, hi = rules.rate_range()  # req 5.3; no locality table, so range check
+        if lo <= stated <= hi:
+            return Finding("tax_rate", Basis.EXTERNAL_EVIDENCE, Status.CONDITIONAL,
+                           f"Stated rate {stated}% is within the official {rules.state} combined rate "
+                           f"range [{lo}%, {hi}%]; the exact rate depends on the locality, which is not confirmed",
+                           evidence_used=used,
+                           counterexamples=(
+                               Counterexample({"locality_rate_pct": str(stated - rules.state_rate_pct)},
+                                              str(stated), str(stated), "0", "0",
+                                              "Matches if the transaction's local add-on equals this value"),
+                               Counterexample({"locality_rate_pct": str(rules.local_rate_min_pct)},
+                                              str(lo), str(stated), str(stated - lo), "0",
+                                              "Differs if no local tax applies" if stated != lo
+                                              else "Differs if a local add-on applies"),))
+        edge = lo if stated < lo else hi
+        return Finding("tax_rate", Basis.EXTERNAL_EVIDENCE, Status.REFUTED,
+                       f"Stated rate {stated}% is outside the official {rules.state} combined rate "
+                       f"range [{lo}%, {hi}%]",
+                       evidence_used=used,
+                       counterexamples=(Counterexample({"nearest_official_rate_pct": str(edge)},
+                                                       str(edge), str(stated), str(stated - edge), "0"),))
+
+    def doc_fee_finding(self, jurisdiction: Jurisdiction, doc_fee: Decimal,
+                        evidence: frozenset[str]) -> Finding:
+        blocked = self._gate("doc_fee_cap", jurisdiction, evidence)
+        if blocked:
+            return blocked
+        rules = self._rules
+        assert rules is not None
+        used = (rules.snapshot_sha256,)
+        cap = rules.doc_fee_cap
+        if cap is None:  # req 5.4, second clause
+            return Finding("doc_fee_cap", Basis.EXTERNAL_EVIDENCE, Status.SUPPORTED,
+                           f"No statutory documentary-fee cap in {rules.state} for this transaction. "
+                           "This reports only that no cap exists; it does not assess whether the fee "
+                           "is reasonable or any other requirement.",
+                           evidence_used=used)
+        if doc_fee > cap:
+            return Finding("doc_fee_cap", Basis.EXTERNAL_EVIDENCE, Status.REFUTED,
+                           f"Doc fee {doc_fee} exceeds the statutory cap {cap} in {rules.state}",
+                           evidence_used=used,
+                           counterexamples=(Counterexample({}, str(cap), str(doc_fee),
+                                                           str(doc_fee - cap), "0"),))
+        return Finding("doc_fee_cap", Basis.EXTERNAL_EVIDENCE, Status.SUPPORTED,
+                       f"Doc fee {doc_fee} is within the statutory cap {cap} in {rules.state}. "
+                       "This applies to the doc fee only.", evidence_used=used)
+
+
+class _RulesSnapshotSource:
+    """Local evidence adapter: serves the hash-verified snapshot (no network)."""
+
+    allowed_hosts: frozenset[str] = frozenset()
+    requires_network = False
+    source_class = SourceClass.GOVERNMENT_OFFICIAL
+    license_class = LicenseClass.REDISTRIBUTABLE
+    source_id = _RulesAdapter.source_id
+
+    def __init__(self, rules_dir: Path = _RULES_DIR, state: str = _SUPPORTED_STATE) -> None:
+        self._dir, self._state = rules_dir, state
+
+    def fetch(self, request: EvidenceRequest) -> tuple[bytes, str, str]:
+        path = self._dir / f"{self._state}.json"
+        load_rules(path, self._dir / "MANIFEST.json")  # raises RulesIntegrityError on mismatch
+        return path.read_bytes(), f"urn:verdictkit:quote-rules:{self._state}", "application/json"
+
+
+_ADAPTER: _RulesAdapter | None = None
+
+
+def _rules_adapter() -> _RulesAdapter:
+    global _ADAPTER
+    if _ADAPTER is None:
+        _ADAPTER = _RulesAdapter()
+    return _ADAPTER
 
 
 def chain_af(ws: FinanceWorksheet) -> Decimal:
@@ -434,6 +566,30 @@ class FinanceClaimType(_BaseQuote):
 
     def validate_assumptions(self, params: Mapping[str, object], assumptions: Sequence[Assumption]) -> None:
         _check_axes(_unknown_finance_flags(_finance_worksheet(params)), assumptions)
+
+    def evidence_adapters(self) -> Sequence[_RulesSnapshotSource]:
+        return (_RulesSnapshotSource(),)
+
+    def evidence_requests(self, params: Mapping[str, object]) -> Sequence[EvidenceRequest]:
+        jurisdiction = params.get("jurisdiction")
+        if isinstance(jurisdiction, dict) and str(jurisdiction.get("state", "")).upper() == _SUPPORTED_STATE:
+            return (EvidenceRequest(_RulesAdapter.source_id, {"state": _SUPPORTED_STATE}),)
+        return ()
+
+    def evidence_policy(self) -> EvidencePolicySpec:
+        return EvidencePolicySpec(frozenset({_RulesAdapter.source_id}))
+
+    def findings(self, frozen: FrozenClaim, examination: Examination, outcomes: Mapping[str, object],
+                 evidence: Sequence[EvidenceItem]) -> Sequence[Finding]:
+        base = _findings(frozen, examination, outcomes, self.arithmetic_fields, self.external_fields)
+        ws = _finance_worksheet(frozen.params)
+        adapter = _rules_adapter()
+        have = frozenset(e.sha256 for e in evidence if e.source_id == _RulesAdapter.source_id)
+        external = {
+            "tax_rate": lambda: adapter.tax_rate_finding(ws.jurisdiction, ws.stated_tax_rate_pct, have),
+            "doc_fee_cap": lambda: adapter.doc_fee_finding(ws.jurisdiction, ws.doc_fee, have),
+        }
+        return tuple(external[f.finding_id]() if f.finding_id in external else f for f in base)
 
     def diagnose(self, frozen: FrozenClaim, examination: Examination, outcomes: Mapping[str, object]) -> Mapping[str, object] | None:
         """Post-reveal only (core req 10.4): local checks and payment packing.

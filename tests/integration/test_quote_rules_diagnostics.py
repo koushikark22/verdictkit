@@ -171,3 +171,138 @@ def test_p17c_diagnostics_are_inert_and_post_seal(tmp_path):
     with pytest.raises(LedgerOrderError):
         ledger.append(EntryKind.DIAGNOSTICS_APPENDED, {})
     assert with_diag.diagnostics["paymentPacking"] is not None
+
+
+# --- B7 Texas acceptance tests ---
+
+from verdictkit.model import Basis, Status  # noqa: E402
+
+TX_RULES_PATH = Path(__file__).resolve().parents[2] / "apps/quote-autopsy/src/quote_autopsy/rules/TX.json"
+TX_MANIFEST_PATH = Path(__file__).resolve().parents[2] / "apps/quote-autopsy/src/quote_autopsy/rules/MANIFEST.json"
+
+
+def _tx_case(tmp_path, outcomes, **param_overrides):
+    reg = Registry()
+    reg.register(FinanceClaimType())
+    params = dict(PARAMS, jurisdiction={"state": "TX"}, **param_overrides)
+    case = run_case({"claim_type": "quote.finance.v1", "schema_version": 1,
+                     "params": params, "outcomes": outcomes, "assumptions": {}},
+                    registry=reg, examiner=InProcessExaminer(reg), workdir=tmp_path,
+                    clock=lambda: "2026-11-27T00:00:00Z", vault_key=bytes(32), network=False)
+    return {fi.finding_id: fi for fi in case.verdict.findings}
+
+
+def test_b7_tx_snapshot_loads_and_has_correct_values():
+    """B7: Texas snapshot loads, state rate is 6.25%, no doc fee cap, no locality table."""
+    rules = load_rules(TX_RULES_PATH, TX_MANIFEST_PATH)
+    assert rules.state == "TX"
+    assert rules.state_rate_pct == Decimal("6.25")
+    assert rules.local_rate_min_pct == Decimal("0.00")
+    assert rules.local_rate_max_pct == Decimal("2.00")
+    assert rules.doc_fee_cap is None
+    assert rules.localities is None
+    assert rules.rate_range() == (Decimal("6.25"), Decimal("8.25"))
+
+
+def test_b7_tx_snapshot_hash_is_verified():
+    """B7: Manifest hash matches the actual file bytes."""
+    rules = load_rules(TX_RULES_PATH, TX_MANIFEST_PATH)
+    assert rules.snapshot_sha256 == hashlib.sha256(TX_RULES_PATH.read_bytes()).hexdigest()
+
+
+def test_b7_tx_snapshot_has_three_official_sources():
+    """B7: Snapshot has official https sources."""
+    doc = json.loads(TX_RULES_PATH.read_bytes())
+    assert len(doc["sources"]) >= 1
+    for s in doc["sources"]:
+        assert s["uri"].startswith("https://statutes.capitol.texas.gov/")
+
+
+def test_b7_tx_rate_exact_match_supported(tmp_path):
+    """B7 req 5.3: state-only rate 6.25 is within range, no locality confirmed."""
+    f = _tx_case(tmp_path, {"tax_rate": "6.25"}, stated_tax_rate_pct="6.25")
+    assert f["tax_rate"].basis.value == "EXTERNAL_EVIDENCE"
+    assert f["tax_rate"].status in (Status.SUPPORTED, Status.CONDITIONAL)
+
+
+def test_b7_tx_rate_within_range_is_conditional_or_supported(tmp_path):
+    f = _tx_case(tmp_path, {"tax_rate": "7.50"}, stated_tax_rate_pct="7.50")
+    assert f["tax_rate"].status in (Status.CONDITIONAL, Status.SUPPORTED)
+
+
+def test_b7_tx_rate_above_max_is_refuted(tmp_path):
+    f = _tx_case(tmp_path, {"tax_rate": "9.00"}, stated_tax_rate_pct="9.00")
+    assert f["tax_rate"].status is Status.REFUTED
+
+
+def test_b7_tx_rate_below_min_is_refuted(tmp_path):
+    f = _tx_case(tmp_path, {"tax_rate": "5.00"}, stated_tax_rate_pct="5.00")
+    assert f["tax_rate"].status is Status.REFUTED
+
+
+def test_b7_tx_doc_fee_no_cap_is_supported(tmp_path):
+    """B7 req 5.4: no TX cap, so SUPPORTED without any compliance claim."""
+    f = _tx_case(tmp_path, {"doc_fee_cap": "699.00"}, doc_fee="699.00")
+    assert f["doc_fee_cap"].status is Status.SUPPORTED
+    stmt = f["doc_fee_cap"].statement.lower()
+    assert "no statutory" in stmt or "no cap" in stmt
+    assert "compliant" not in stmt
+    assert "legal" not in stmt
+
+
+def test_b7_tx_doc_fee_supported_statement_is_scoped(tmp_path):
+    f = _tx_case(tmp_path, {"doc_fee_cap": "225.00"}, doc_fee="225.00")
+    assert f["doc_fee_cap"].status is Status.SUPPORTED
+    stmt = f["doc_fee_cap"].statement
+    assert "TX" in stmt and "for this transaction" in stmt
+
+
+def test_b7_unsupported_state_gives_indeterminate(tmp_path):
+    reg = Registry()
+    reg.register(FinanceClaimType())
+    params = dict(PARAMS, jurisdiction={"state": "CA"})
+    case = run_case({"claim_type": "quote.finance.v1", "schema_version": 1, "params": params,
+                     "outcomes": {"tax_rate": "7.25"}, "assumptions": {}},
+                    registry=reg, examiner=InProcessExaminer(reg), workdir=tmp_path,
+                    clock=lambda: "2026-11-27T00:00:00Z", vault_key=bytes(32), network=False)
+    f = {fi.finding_id: fi for fi in case.verdict.findings}
+    assert f["tax_rate"].status is Status.INDETERMINATE
+    assert f["tax_rate"].basis is Basis.EXTERNAL_EVIDENCE
+    assert f["tax_rate"].reason == "unsupported_jurisdiction"
+
+
+def test_b7_internal_findings_still_run_for_unsupported_state(tmp_path):
+    reg = Registry()
+    reg.register(FinanceClaimType())
+    params = dict(PARAMS, jurisdiction={"state": "CA"})
+    case = run_case({"claim_type": "quote.finance.v1", "schema_version": 1, "params": params,
+                     "outcomes": {"amount_financed": "27430.00"}, "assumptions": {}},
+                    registry=reg, examiner=InProcessExaminer(reg), workdir=tmp_path,
+                    clock=lambda: "2026-11-27T00:00:00Z", vault_key=bytes(32), network=False)
+    f = {fi.finding_id: fi for fi in case.verdict.findings}
+    assert f["amount_financed"].basis is Basis.INTERNAL_ARITHMETIC
+    assert f["amount_financed"].status is not Status.INDETERMINATE
+
+
+def test_b7_tx_snapshot_is_canonical_json():
+    from verdictkit.canonical import parse_canonical
+    data = TX_RULES_PATH.read_bytes()
+    assert canonical_bytes(parse_canonical(data)) == data
+
+
+def test_b7_tx_rate_finding_basis_is_external_evidence(tmp_path):
+    f = _tx_case(tmp_path, {"tax_rate": "8.25"}, stated_tax_rate_pct="8.25")
+    assert f["tax_rate"].basis is Basis.EXTERNAL_EVIDENCE
+
+
+def test_b7_tx_hash_mismatch_gives_indeterminate(tmp_path):
+    """Tampered manifest fails the loader; the adapter maps that to evidence_integrity."""
+    import shutil
+    shutil.copy(TX_RULES_PATH, tmp_path / "TX.json")
+    (tmp_path / "MANIFEST.json").write_text(json.dumps({"files": {"TX.json": "0" * 64}}))
+    with pytest.raises(RulesIntegrityError):
+        load_rules(tmp_path / "TX.json", tmp_path / "MANIFEST.json")
+    from quote_autopsy.claim_type import _RulesAdapter
+    from quote_autopsy.worksheet import Jurisdiction
+    finding = _RulesAdapter(tmp_path).tax_rate_finding(Jurisdiction("TX"), Decimal("7.00"), frozenset())
+    assert finding.status is Status.INDETERMINATE and finding.reason == "evidence_integrity"
