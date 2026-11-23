@@ -64,11 +64,19 @@ npm run dev -w apps/reel-autopsy/web
 
 Open the two Vite development URLs printed by their respective commands (nominally ports 5173 and 5174). Both communicate with a real API, not fabricated verdicts. Use bundled sample scenarios; do not enter sensitive user or financial information.
 
-Optional browser regression on a Linux environment with a Playwright Chromium installation:
+Optional browser regression on a Linux environment with Playwright Chromium installed:
+
+1. Stop the manually started FastAPI process from the development instructions above (Ctrl+C). The regression harness starts its own API, and deliberately refuses to run if port 8000 is occupied. Stop the two Vite development servers as well so the harness can reserve its preview ports.
+2. Build both Vite applications before the test: `vite preview` serves compiled files from `dist`, not a development server's output.
+3. Run the isolated browser regression from the repository root:
 
 ```bash
+npm run build -w apps/quote-autopsy/web
+npm run build -w apps/reel-autopsy/web
 bash scripts/ui_e2e.sh
 ```
+
+The harness starts and shuts down its own preview servers and real API. If it reports an occupied port, identify and stop that process before retrying; do not bypass its port-ownership checks.
 
 ## What a judge can verify
 
