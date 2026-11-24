@@ -290,3 +290,97 @@ def test_mcp_verify_claim_tx(monkeypatch):
     assert "error" not in result, result
     f = {x["finding_id"]: x for x in result["verdict"]["findings"]}
     assert f["tax_rate"]["status"] == "SUPPORTED"
+
+
+# ---------------------------------------------------------------------------
+# PR #8 review finding P2: MCP socket-mode evidence root
+# ---------------------------------------------------------------------------
+
+class _WorkerLikeExaminer:
+    """Test double for SocketExaminer that reads evidence only from VK_EVIDENCE_DIR,
+    exactly as examiner/worker.py does."""
+
+    isolation = InProcessExaminer.isolation
+
+    def __init__(self, socket_path, timeout_s=60.0, expected_peer_uid=None):
+        self.socket_path = socket_path
+
+    def examine(self, task):
+        from verdictkit.evidence.store import ReadOnlyEvidence
+        from verdictkit.examiner.client import _EmptyEvidenceReader
+        from verdictkit.examiner.protocol import decode_result, decode_task, encode_result, encode_task
+        from verdictkit.sweep import expand_grid
+
+        task = decode_task(encode_task(task))
+        claim_type = mcp_server._registry().get(task.claim_type)
+        reader = _EmptyEvidenceReader()
+        evidence_dir = os.environ.get("VK_EVIDENCE_DIR")
+        if evidence_dir and task.evidence_refs:
+            reader = ReadOnlyEvidence(Path(evidence_dir), task.evidence_refs)
+        points = list(expand_grid(task.assumptions).points)
+        return decode_result(encode_result(claim_type.examine(task, reader, points)))
+
+
+@pytest.fixture
+def socket_mode(monkeypatch, tmp_path):
+    import verdictkit.examiner.client as client_mod
+    import verdictkit.examiner.identity as identity_mod
+
+    shared = tmp_path / "shared-evidence"
+    shared.mkdir()
+    monkeypatch.setenv("VK_MCP_READONLY", "1")
+    monkeypatch.setenv("VK_EXAMINER_SOCKET", str(tmp_path / "examiner.sock"))
+    monkeypatch.setenv("VK_EVIDENCE_DIR", str(shared))
+    monkeypatch.setattr(client_mod, "SocketExaminer", _WorkerLikeExaminer)
+    monkeypatch.setattr(identity_mod, "resolve_examiner_uid", lambda _name: 0)
+    return shared
+
+
+def test_mcp_socket_mode_preserves_texas_evidence_findings(socket_mode):
+    """PR #8 review P2 (core 9, 12.1; quote 5.1-5.4): in socket mode the acquired TX snapshot
+    is written to the shared VK_EVIDENCE_DIR, so tax_rate and doc_fee_cap stay SUPPORTED."""
+    result = mcp_server.verify_claim(claim(params(doc_fee="150.00"),
+                                           {"tax_rate": "6.25", "doc_fee_cap": "150.00"}))
+    assert "error" not in result, result
+    f = {x["finding_id"]: x for x in result["verdict"]["findings"]}
+    assert f["tax_rate"]["status"] == "SUPPORTED"
+    assert f["doc_fee_cap"]["status"] == "SUPPORTED"
+    assert socket_mode.is_dir()
+    blobs = [p.read_bytes() for p in socket_mode.rglob("*") if p.is_file()]
+    assert TX_BYTES in blobs
+
+
+def test_mcp_socket_mode_499_fee_stays_indeterminate(socket_mode):
+    """PR #8 review P2 (quote 5.4): a 499.00 fee is INDETERMINATE(requires_regulator_filing)
+    in socket mode while tax_rate remains SUPPORTED."""
+    result = mcp_server.verify_claim(claim(params(doc_fee="499.00"),
+                                           {"tax_rate": "6.25", "doc_fee_cap": "499.00"}))
+    assert "error" not in result, result
+    f = {x["finding_id"]: x for x in result["verdict"]["findings"]}
+    assert f["tax_rate"]["status"] == "SUPPORTED"
+    assert f["doc_fee_cap"]["status"] == "INDETERMINATE"
+    assert f["doc_fee_cap"]["reason"] == "requires_regulator_filing"
+
+
+@pytest.mark.parametrize("mode", ["unset", "empty", "relative", "missing", "file"])
+def test_mcp_socket_mode_fails_closed_without_shared_evidence_dir(socket_mode, monkeypatch, tmp_path, mode):
+    """PR #8 review P2 (verdict-integrity rule 4, fail closed): socket mode without a usable
+    absolute VK_EVIDENCE_DIR returns an error and never reaches run_case."""
+    if mode == "unset":
+        monkeypatch.delenv("VK_EVIDENCE_DIR")
+    elif mode == "empty":
+        monkeypatch.setenv("VK_EVIDENCE_DIR", "")
+    elif mode == "relative":
+        monkeypatch.setenv("VK_EVIDENCE_DIR", "relative-evidence")
+    elif mode == "missing":
+        monkeypatch.setenv("VK_EVIDENCE_DIR", str(tmp_path / "does-not-exist"))
+    else:
+        f = tmp_path / "a-file"
+        f.write_text("x")
+        monkeypatch.setenv("VK_EVIDENCE_DIR", str(f))
+    called = []
+    import verdictkit.pipeline as pipeline_mod
+    monkeypatch.setattr(pipeline_mod, "run_case", lambda *a, **k: called.append(1))
+    result = mcp_server.verify_claim(claim(params(), {"tax_rate": "6.25"}))
+    assert "error" in result and "verdict" not in result
+    assert called == []
