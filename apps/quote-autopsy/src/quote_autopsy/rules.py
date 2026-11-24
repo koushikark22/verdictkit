@@ -3,7 +3,8 @@
 Snapshot file ``rules/<STATE>.json`` (canonical JSON):
   {"state", "state_rate_pct", "local_rate_min_pct", "local_rate_max_pct",
    "localities": {code: combined_rate_pct} | null,
-   "doc_fee_cap": "<amount>" | null,
+   "doc_fee": {"kind": "STATUTORY_MAXIMUM" | "PRESUMED_REASONABLE_AMOUNT" | "NO_STATUTORY_LIMIT",
+               "amount": "<decimal string>" | null, "applies_to": "RETAIL_INSTALLMENT_CONTRACT"},
    "sources": [{"uri", "retrieved_at", "sha256_of_source"}]}
 The loader verifies the file's own SHA-256 against ``rules/MANIFEST.json``.
 """
@@ -20,6 +21,8 @@ from verdictkit.canonical import canonical_bytes, parse_canonical
 
 _DECIMAL = re.compile(r"^[0-9]+(\.[0-9]+)?$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+DOC_FEE_KINDS = frozenset({"STATUTORY_MAXIMUM", "PRESUMED_REASONABLE_AMOUNT", "NO_STATUTORY_LIMIT"})
+DOC_FEE_APPLIES_TO = "RETAIL_INSTALLMENT_CONTRACT"
 MAX_SNAPSHOT_BYTES = 1024 * 1024
 
 
@@ -36,7 +39,8 @@ class StateRules:
     local_rate_min_pct: Decimal
     local_rate_max_pct: Decimal
     localities: dict[str, Decimal] | None
-    doc_fee_cap: Decimal | None
+    doc_fee_kind: str
+    doc_fee_amount: Decimal | None
     snapshot_sha256: str
 
     def combined_rate(self, locality_code: str) -> Decimal | None:
@@ -90,7 +94,7 @@ def load_rules(path: Path, manifest: Path) -> StateRules:
     if not isinstance(doc, dict) or canonical_bytes(doc) != data:
         raise RulesIntegrityError("snapshot is not canonical JSON")
     required = {"state", "state_rate_pct", "local_rate_min_pct", "local_rate_max_pct",
-                "localities", "doc_fee_cap", "sources"}
+                "localities", "doc_fee", "sources"}
     if set(doc) != required:
         raise RulesIntegrityError("snapshot fields do not match the schema")
     state = doc["state"]
@@ -105,9 +109,7 @@ def load_rules(path: Path, manifest: Path) -> StateRules:
         if not isinstance(localities, dict):
             raise RulesIntegrityError("localities must be an object or null")
         localities = {str(k): _pct(v, f"localities.{k}") for k, v in localities.items()}
-    cap = doc["doc_fee_cap"]
-    if cap is not None:
-        cap = _money_cap(cap)
+    doc_fee_kind, doc_fee_amount = _doc_fee(doc["doc_fee"])
     sources = doc["sources"]
     if not isinstance(sources, list) or not sources:
         raise RulesIntegrityError("at least one official source is required")
@@ -122,11 +124,24 @@ def load_rules(path: Path, manifest: Path) -> StateRules:
         state=state,
         state_rate_pct=_pct(doc["state_rate_pct"], "state_rate_pct"),
         local_rate_min_pct=lo, local_rate_max_pct=hi,
-        localities=localities, doc_fee_cap=cap, snapshot_sha256=actual,
+        localities=localities, doc_fee_kind=doc_fee_kind, doc_fee_amount=doc_fee_amount,
+        snapshot_sha256=actual,
     )
 
 
-def _money_cap(value: object) -> Decimal:
-    if not isinstance(value, str) or not _DECIMAL.fullmatch(value):
-        raise RulesIntegrityError("doc_fee_cap must be a non-negative decimal string")
-    return Decimal(value)
+def _doc_fee(value: object) -> tuple[str, Decimal | None]:
+    if not isinstance(value, dict) or set(value) != {"kind", "amount", "applies_to"}:
+        raise RulesIntegrityError("doc_fee must be an object with kind, amount and applies_to")
+    kind = value["kind"]
+    if not isinstance(kind, str) or kind not in DOC_FEE_KINDS:
+        raise RulesIntegrityError("doc_fee.kind is not a recognised rule kind")
+    if value["applies_to"] != DOC_FEE_APPLIES_TO:
+        raise RulesIntegrityError("doc_fee.applies_to must be RETAIL_INSTALLMENT_CONTRACT")
+    amount = value["amount"]
+    if kind == "NO_STATUTORY_LIMIT":
+        if amount is not None:
+            raise RulesIntegrityError("doc_fee.amount must be null when there is no statutory limit")
+        return kind, None
+    if not isinstance(amount, str) or not _DECIMAL.fullmatch(amount):
+        raise RulesIntegrityError("doc_fee.amount must be a non-negative decimal string")
+    return kind, Decimal(amount)

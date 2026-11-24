@@ -1,8 +1,8 @@
 """Quote rules snapshot loader (quote task 4.1, req 5.1) and post-reveal diagnostics
 (quote task 6.1, req 6.1-6.4; property P17c).
 
-The snapshot below is a constructed test fixture, not official tax data: decision B7
-(which state) is still open, so no real rules file is committed.
+The snapshot below is a constructed test fixture, not official tax data. The packaged
+official Texas snapshot (decision B7) is covered by its own acceptance tests.
 """
 from __future__ import annotations
 
@@ -30,7 +30,9 @@ from verdictkit.plugin import Registry
 
 CONSTRUCTED = {
     "state": "ZZ", "state_rate_pct": "6.00", "local_rate_min_pct": "0.00",
-    "local_rate_max_pct": "2.00", "localities": {"L1": "7.50"}, "doc_fee_cap": "150.00",
+    "local_rate_max_pct": "2.00", "localities": {"L1": "7.50"},
+    "doc_fee": {"kind": "STATUTORY_MAXIMUM", "amount": "150.00",
+                "applies_to": "RETAIL_INSTALLMENT_CONTRACT"},
     "sources": [{"uri": "https://example.invalid/constructed-test-fixture",
                  "retrieved_at": "2026-11-19", "sha256_of_source": "0" * 64}],
 }
@@ -51,7 +53,8 @@ def test_loader_verifies_hash_and_exposes_rates(tmp_path):
     assert rules.combined_rate("L1") == Decimal("7.50")
     assert rules.combined_rate("unknown") is None
     assert rules.rate_range() == (Decimal("6.00"), Decimal("8.00"))
-    assert rules.doc_fee_cap == Decimal("150.00")
+    assert rules.doc_fee_kind == "STATUTORY_MAXIMUM"
+    assert rules.doc_fee_amount == Decimal("150.00")
     assert rules.snapshot_sha256 == hashlib.sha256(canonical_bytes(CONSTRUCTED)).hexdigest()
 
 
@@ -62,7 +65,7 @@ def test_loader_verifies_hash_and_exposes_rates(tmp_path):
     lambda d: d["sources"][0].update(uri="http://insecure.invalid"),
     lambda d: d.update(extra="x"),
     lambda d: d.update(state="zz"),
-    lambda d: d.update(doc_fee_cap="-1"),
+    lambda d: d["doc_fee"].update(amount="-1"),
 ])
 def test_loader_rejects_malformed_snapshots(tmp_path, mutate):
     doc = copy.deepcopy(CONSTRUCTED)
