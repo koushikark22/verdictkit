@@ -15,18 +15,20 @@ Window: Nov 27–29 (Thanksgiving buffer). State decision (B7) closed by Nov 26.
   - [x] 3.2 Property test P17 — contract: `test_quote_contract.py::test_lease_identity`
   - _Requirements: 4.1–4.4_
 
-- [ ] 4. State rules snapshot (`rules.py`, `rules/<state>.json`)
-  - [ ] 4.1 Snapshot of official sources with URI, retrieval date, SHA-256; loader verifies hash
+- [x] 4. State rules snapshot (`rules.py`, `rules/<state>.json`)
+  - [x] 4.1 Snapshot of official sources with URI, retrieval date, SHA-256; loader verifies hash
     - Loader done (`rules.py`, hash + canonical + schema checks, tests in
       `tests/integration/test_quote_rules_diagnostics.py`). Decision B7 = Texas (TX). Loader moves to the `doc_fee` object schema
       (`docs/B7_TEXAS_SPEC.md` §4); `rules/TX.json` and `rules/MANIFEST.json` come from fetched, hashed official pages.
+      Done (Kiro task execution, commit `bb78aad`; tests `test_quote_rules_diagnostics.py`, `test_quote_b7_texas.py`).
   - _Requirements: 5.1_
 
-- [ ] 5. Claim types (`claim_type.py`)
-  - [ ] 5.1 Schemas, taxability-flag sweeps, rounding-convention sweep, internal + external findings
+- [x] 5. Claim types (`claim_type.py`)
+  - [x] 5.1 Schemas, taxability-flag sweeps, rounding-convention sweep, internal + external findings
     - Done: schemas, internal findings, taxability-flag and rounding-convention sweeps (CONDITIONAL).
       External findings (B7 = TX, `docs/B7_TEXAS_SPEC.md` §5–6): `TexasRulesAdapter`, tax-rate and doc-fee findings
       (doc fee above $225 is INDETERMINATE `requires_regulator_filing`, never REFUTED), lease TX reason `not_applicable_lease_tax_model`.
+      Done (Kiro task execution, commits `779bdfd`, `4effb3a`; tests `test_quote_b7_texas.py`, `test_http_run_lifecycle.py`).
   - _Requirements: 3.6, 5.2–5.6_
 
 - [x] 6. Diagnostics (`diagnostics.py`)
