@@ -52,7 +52,7 @@ Include actual Quote and synthetic Reel UI runs, actual enforced container gate,
 - Live demo URL: [not currently asserted; use reproducible Docker build or provide a verified hosted link]
 
 ## Third-party and safety disclosure
-The synthetic market fixture is not exchange market data or proof of real returns. Real OHLCV rights are unresolved (B1). External tax/fee verification is unresolved (B7). The app is a demonstration; bundles are unsigned, and deployment beyond judge mode lacks production access control and shared state.
+The synthetic market fixture is not exchange market data or proof of real returns. Real OHLCV rights are unresolved (B1). External tax/fee verification covers Texas only (B7): a point-in-time snapshot retrieved 2026-11-24 that does not track later rule changes, no lease tax check, no doc-fee taxability check, and OCCC filings for fees above $225 cannot be verified. The app is a demonstration; bundles are unsigned, and deployment beyond judge mode lacks production access control and shared state.
 
 ## Pre-submit checklist
 - [ ] Capture authentic Kiro execution evidence and accurately update `docs/KIRO_USAGE.md`.

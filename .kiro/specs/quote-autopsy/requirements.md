@@ -61,13 +61,16 @@ Two kinds of finding are kept strictly apart:
 
 ### Requirement 5: External rate and fee checks
 
+Decision B7: the single supported state is Texas (TX).
+
 #### Acceptance Criteria
 
-1. THE claim type SHALL use one supported state's rules snapshot, containing the state rate, the official range of local add-on rates (or a locality table), whether a statutory doc-fee cap exists and its amount, each with source URI, retrieval date and SHA-256 of the fetched source.
-2. WHEN a locality code is given THE finding on the stated tax rate SHALL be `SUPPORTED` if it equals the official combined rate and `REFUTED` otherwise.
-3. WHEN no locality is given THE finding SHALL be `CONDITIONAL` if the stated rate lies within the official combined range and `REFUTED` if outside it.
-4. WHEN the state has a statutory doc-fee cap THE finding SHALL be `REFUTED` if the doc fee exceeds it, else `SUPPORTED`; WHEN the state has no cap THE finding SHALL be `SUPPORTED` with statement "no statutory cap in <state>".
-5. IF the jurisdiction is not the supported state THEN external findings SHALL be `INDETERMINATE(unsupported_jurisdiction)`; internal findings SHALL still run.
+1. THE claim type SHALL use one supported state's rules snapshot, containing the state rate, the official range of local add-on rates (or a locality table), and a `doc_fee` rule, each with source URI, retrieval date and SHA-256 of the fetched source. THE `doc_fee` rule SHALL have a `kind` in {`STATUTORY_MAXIMUM`, `PRESUMED_REASONABLE_AMOUNT`, `NO_STATUTORY_LIMIT`}, an `amount` (a decimal string, or null only for `NO_STATUTORY_LIMIT`) and `applies_to` = `RETAIL_INSTALLMENT_CONTRACT`.
+2. WHEN a locality code is given AND the snapshot has a locality table THE finding on the stated tax rate SHALL be `SUPPORTED` if it equals the official combined rate and `REFUTED` otherwise. WHEN the snapshot has no locality table (Texas has no local motor-vehicle tax) THE locality code SHALL be ignored and criterion 3 SHALL apply.
+3. WHEN no locality applies THE finding on the stated tax rate SHALL be `CONDITIONAL` if the official combined range is not degenerate and the stated rate lies within it, and `REFUTED` if outside it. WHEN the range is degenerate (minimum equals maximum) THE finding SHALL be `SUPPORTED` if the stated rate equals it (Decimal equality) and `REFUTED` otherwise, never `CONDITIONAL`.
+4. WHEN the doc-fee `kind` is `STATUTORY_MAXIMUM` THE finding SHALL be `REFUTED` if the doc fee exceeds `amount`, else `SUPPORTED`. WHEN the kind is `NO_STATUTORY_LIMIT` THE finding SHALL be `SUPPORTED` with statement "no statutory cap in <state>". WHEN the kind is `PRESUMED_REASONABLE_AMOUNT` (Texas, $225.00) THE finding SHALL be `SUPPORTED` if the doc fee is at or below `amount`, with a statement scoped to the retail installment contract that does not claim overall compliance, and `INDETERMINATE(requires_regulator_filing)` if above it. A doc fee above a presumed-reasonable amount SHALL NEVER be `REFUTED`, because a dealer may lawfully charge more after notifying the regulator and filing a cost analysis, which cannot be verified.
+5. IF the jurisdiction is not the supported state THEN external findings SHALL be `INDETERMINATE(unsupported_jurisdiction)`; internal findings SHALL still run. IF the supported state's snapshot cannot be acquired or fails its integrity check THEN external findings SHALL be `INDETERMINATE(evidence_unavailable)`; internal findings SHALL be unchanged.
+6. IF the claim type is `quote.lease.v1` AND the state is TX THEN the external `tax_rate` finding SHALL be `INDETERMINATE(not_applicable_lease_tax_model)`, because Texas does not tax lease payments as a rate on each payment.
 
 ### Requirement 6: Post-reveal diagnostics
 

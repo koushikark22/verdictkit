@@ -48,7 +48,7 @@ def _registry():
     return _load_registry()
 
 
-def _examiner(registry):
+def _examiner(registry, evidence_root: Path | None = None):
     """Same rule as the CLI: an authenticated socket worker or an UNENFORCED in-process
     examiner. An environment flag alone never yields ENFORCED."""
     from verdictkit.examiner.client import InProcessExaminer, SocketExaminer
@@ -56,7 +56,21 @@ def _examiner(registry):
     if socket_path:
         from verdictkit.examiner.identity import resolve_examiner_uid
         return SocketExaminer(socket_path, expected_peer_uid=resolve_examiner_uid(""))
-    return InProcessExaminer(registry)
+    return InProcessExaminer(registry, evidence_root=None if evidence_root is None else str(evidence_root))
+
+
+def _shared_evidence_dir(work: Path) -> Path | None:
+    """VK_EVIDENCE_DIR if it is an existing absolute directory outside ``work``, else None."""
+    raw = os.environ.get("VK_EVIDENCE_DIR", "")
+    if not raw or "\x00" in raw:
+        return None
+    p = Path(raw)
+    if not p.is_absolute() or not p.is_dir():
+        return None
+    resolved, scratch = p.resolve(), work.resolve()
+    if resolved == scratch or scratch in resolved.parents:
+        return None
+    return p
 
 
 def _bundle_path(path: str) -> Path:
@@ -98,20 +112,30 @@ def verify_claim(claim: dict[str, Any]) -> dict[str, Any]:
         return {"error": "claim is not canonical JSON (decimals must be strings)"}
 
     registry = _registry()
-    try:
-        examiner = _examiner(registry)
-    except Exception:
-        return {"error": "isolated examiner is configured but could not be authenticated"}
     case_id = uuid.uuid4().hex
     root = _workdir()
     work = root / f"case-{case_id}"
+    # One evidence root for both acquisition (run_case) and examination. Socket mode uses
+    # the shared VK_EVIDENCE_DIR, the only place the worker reads evidence from, and fails
+    # closed without it. In-process mode keeps the private scratch directory.
+    if os.environ.get("VK_EXAMINER_SOCKET"):
+        evidence_root = _shared_evidence_dir(work)
+        if evidence_root is None:
+            return {"error": "isolated examiner requires VK_EVIDENCE_DIR (shared evidence directory)"}
+    else:
+        evidence_root = work / "evidence"
+    try:
+        examiner = _examiner(registry, evidence_root)
+    except Exception:
+        return {"error": "isolated examiner is configured but could not be authenticated"}
 
     def clock() -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     try:
         case = run_case(claim, registry=registry, examiner=examiner, workdir=work,
-                        clock=clock, case_id=case_id, network=not _readonly())
+                        clock=clock, case_id=case_id, network=not _readonly(),
+                        evidence_root=evidence_root)
         bundle = write_bundle(case, root / f"{case_id}.vkb", clock=clock)
     except Exception as exc:
         return {"error": f"verification failed ({type(exc).__name__})"}

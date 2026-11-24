@@ -46,3 +46,12 @@ Kiro's spec workflow, and record each run here with its commit SHA.
 Architecture, interface stubs and the contract tests were drafted with reviewer AIs
 (Claude, ChatGPT) and Muse before implementation. Implementation commits are by the
 repository owner and by Claude sessions as shown in `git log`.
+
+## B7 Texas rules snapshot (2026-11-24, partly Kiro)
+Reviewer AIs (Claude, ChatGPT) wrote `docs/B7_TEXAS_SPEC.md` and `docs/KIRO_B7_PROMPT.md`; the implementation below is what was run in Kiro.
+* The Kiro orchestrator ran in spec task-execution mode and dispatched `spec-task-execution` sub-agents for quote tasks 4.1 and 5.1.
+* First attempt: the two spec documents were not in this checkout, so the orchestrator improvised a spec and produced commit `7d33b66` (`doc_fee_cap: null`, with hashes of identical JavaScript app shells). The owner rejected it. It is kept on branch `backup/b7-incorrect-7d33b66` and reverted in `7029dbc`.
+* The spec documents were then copied in from the owner's other checkout (`KIROWEEN\verdictkit`). Task 4.1 (commits `3a11a86`, `bb78aad`) fetched and hashed four official sources on 2026-11-24 UTC. No Kiro hook output was observed in task 4.1.
+* Task 5.1 (sub-agent): commits `779bdfd` (adapter, external findings, and a one-line MCP examiner evidence-root fix) and `4effb3a` (14 acceptance tests; `test_external_only_claim_is_indeterminate` moved to CA; `test_quote_sweeps.py` helper gets an evidence root). No hook output was observed.
+* MCP check: the `verdictkit` MCP tools were not exposed to the sub-agent, so no Kiro MCP tool call was made. As a labelled fallback outside Kiro's MCP integration, a throwaway Python stdio client (not committed) started `python -m verdictkit.mcp_server` with `VK_MCP_READONLY=1` and called `list_claim_types` and `verify_claim`. Doc fee 150.00 gave `tax_rate` SUPPORTED and `doc_fee_cap` SUPPORTED; doc fee 499.00 gave `doc_fee_cap` INDETERMINATE (`requires_regulator_filing`) and `tax_rate` SUPPORTED. Raw responses were saved to `%TEMP%\vk-b7-mcp\`.
+* Not run: browser E2E (`scripts/ui_e2e.sh`, no `uv` or `node` inside the available WSL bash) and the Docker gate (`docker` is not installed).

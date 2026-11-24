@@ -13,9 +13,14 @@ module and a state-rules snapshot. Pure `Decimal` evaluators; no network in eval
 | `finance.py` | `taxable_base(ws, flags)`, `sales_tax(base, rate_pct)`, `amount_financed(ws, tax)`, `monthly_payment(af, apr_pct, n)`, `annuity_factor(apr_pct, n)`, `implied_amount_financed(payment, apr_pct, n)`, `chain(ws, flags) -> FinanceChain` |
 | `lease.py` | `chain(ws, convention) -> LeaseChain` |
 | `worksheet.py` | `FinanceWorksheet`, `LeaseWorksheet`, item dataclasses, `TaxFlags` |
-| `rules.py` | `StateRules` snapshot loader (hash-verified), `combined_rate(locality)`, `rate_range()`, `doc_fee_cap()` |
+| `rules.py` | `StateRules` snapshot loader (hash-verified), `combined_rate(locality)`, `rate_range()`, `doc_fee_kind`, `doc_fee_amount` (`doc_fee` object: `STATUTORY_MAXIMUM` / `PRESUMED_REASONABLE_AMOUNT` / `NO_STATUTORY_LIMIT`, `applies_to`) |
+| `sources.py` | `TexasRulesAdapter` (`tx-rules-snapshot-v1`): local, no-network `GOVERNMENT_OFFICIAL` / `REDISTRIBUTABLE` evidence adapter serving the hash-verified `rules/TX.json`; raises if `load_rules` fails, so no bytes are served |
 | `claim_type.py` | `FinanceClaimType`, `LeaseClaimType` |
 | `diagnostics.py` | `local_checks(ws, stated) -> list[LocalCheck]`, `payment_packing(stated, ws) -> PackingDiagnostic` (post-reveal only) |
+
+## External evidence (decision B7 = Texas)
+
+`FinanceClaimType` requests the `tx-rules-snapshot-v1` evidence only when `jurisdiction.state == "TX"`. The examiner reads the snapshot from the evidence broker and puts rule values in `Examination.shared`; it never sees outcomes. Texas rate 6.25 % with no local motor-vehicle tax gives a degenerate range, so the rate finding is SUPPORTED or REFUTED. Sources are hash-pinned in `rules/TX.json`; `rules/MANIFEST.json` pins the snapshot itself.
 
 ## Verdict-matrix change (core)
 
@@ -56,8 +61,11 @@ propagated lines are `ILLUSTRATIVE`; post-reveal local checks are `LOCAL_CHECK`
 
 ## Error Handling
 * Negative amount financed or residual > adjusted cap cost ⇒ intake rejection with message.
-* Unsupported jurisdiction ⇒ external findings INDETERMINATE; internal still run.
-* Rules snapshot hash mismatch ⇒ external findings INDETERMINATE(`evidence_integrity`).
+* Unsupported jurisdiction ⇒ external findings INDETERMINATE(`unsupported_jurisdiction`); internal still run.
+* Rules snapshot hash mismatch or acquisition failure ⇒ external findings INDETERMINATE(`evidence_unavailable`); internal findings unchanged.
+* Texas doc fee above the presumed-reasonable $225 ⇒ INDETERMINATE(`requires_regulator_filing`), never REFUTED.
+* Texas lease `tax_rate` ⇒ INDETERMINATE(`not_applicable_lease_tax_model`).
+* The outcome key `doc_fee_cap` is kept so API contract 1.1.0 is unchanged; it evaluates the worksheet `doc_fee` against the snapshot `doc_fee` rule.
 
 ## UI evidence of genuine behaviour (for Muse's storyboard)
 * Worksheet "dissection table": each line shows stated vs recomputed with a live diff.
