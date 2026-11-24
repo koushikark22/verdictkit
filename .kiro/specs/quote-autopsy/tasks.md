@@ -18,14 +18,16 @@ Window: Nov 27–29 (Thanksgiving buffer). State decision (B7) closed by Nov 26.
 - [ ] 4. State rules snapshot (`rules.py`, `rules/<state>.json`)
   - [ ] 4.1 Snapshot of official sources with URI, retrieval date, SHA-256; loader verifies hash
     - Loader done (`rules.py`, hash + canonical + schema checks, tests in
-      `tests/integration/test_quote_rules_diagnostics.py`). Blocked: no official snapshot until decision B7.
+      `tests/integration/test_quote_rules_diagnostics.py`). Decision B7 = Texas (TX). Loader moves to the `doc_fee` object schema
+      (`docs/B7_TEXAS_SPEC.md` §4); `rules/TX.json` and `rules/MANIFEST.json` come from fetched, hashed official pages.
   - _Requirements: 5.1_
 
 - [ ] 5. Claim types (`claim_type.py`)
   - [ ] 5.1 Schemas, taxability-flag sweeps, rounding-convention sweep, internal + external findings
     - Done: schemas, internal findings, taxability-flag and rounding-convention sweeps (CONDITIONAL).
-      Blocked: external findings (B7).
-  - _Requirements: 3.6, 5.2–5.5_
+      External findings (B7 = TX, `docs/B7_TEXAS_SPEC.md` §5–6): `TexasRulesAdapter`, tax-rate and doc-fee findings
+      (doc fee above $225 is INDETERMINATE `requires_regulator_filing`, never REFUTED), lease TX reason `not_applicable_lease_tax_model`.
+  - _Requirements: 3.6, 5.2–5.6_
 
 - [x] 6. Diagnostics (`diagnostics.py`)
   - [x] 6.1 Local checks; payment-packing with inversion bound; registered as post-reveal
