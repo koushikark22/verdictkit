@@ -7,7 +7,7 @@ Submission deadline: 2026-12-04 14:00 Pacific / 16:00 Central.
 
 ## Category and positioning
 
-**Skeleton Crew** is the intended category to verify on the submission form: one reusable, forensic claim-verification core with **two distinct application folders** (`apps/reel-autopsy` and `apps/quote-autopsy`). Do not claim a live trading-data integration or external tax-rate verification.
+**Skeleton Crew** is the intended category to verify on the submission form: one reusable, forensic claim-verification core with **two distinct application folders** (`apps/reel-autopsy` and `apps/quote-autopsy`). Do not claim a live trading-data integration, or external tax/fee verification beyond the Texas-only snapshot described below.
 
 **One-sentence description:** VerdictKit verifies assertions without first exposing the asserted answer to its examiner: it freezes inputs, seals outcomes, evaluates policy-permitted evidence in an isolated process, then issues a deterministic verdict bundle that can be replayed offline.
 

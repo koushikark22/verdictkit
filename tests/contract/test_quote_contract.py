@@ -4,7 +4,7 @@ tests test_bundle_replay.py::test_diagnostics_are_inert and the ledger order tes
 from decimal import Decimal
 from fractions import Fraction
 
-from hypothesis import assume, given
+from hypothesis import assume, example, given
 from hypothesis import strategies as st
 
 from contract.oracles import (
@@ -117,6 +117,11 @@ def worksheets(draw):
 
 
 @given(worksheets())
+@example(FinanceWorksheet(  # trade credit exceeds price: taxable base floors at 0 (req 3.1)
+    selling_price=Decimal("5000.00"), addons=(), doc_fee=Decimal("0.00"), doc_fee_taxable=False,
+    gov_fees=(), rebates=(), trade_allowance=Decimal("5000.01"), trade_payoff=Decimal("0.02"),
+    trade_tax_credit=True, cash_down=Decimal("0.00"), stated_tax_rate_pct=Decimal("0.00"),
+    apr_pct=Decimal("0.000"), term_months=12, jurisdiction=Jurisdiction("XX")))
 def test_finance_chain_matches_oracle(ws):
     """Req 3.1–3.5: every line of the blind chain equals the independent Fraction oracle."""
     exp = finance_chain_oracle(ws)

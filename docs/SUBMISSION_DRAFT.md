@@ -16,7 +16,7 @@ Claims can bias evaluations when the alleged outcome is visible to the evaluator
 
 The same core powers two distinctly packaged applications:
 
-- **Quote Autopsy** checks internally consistent vehicle purchase and lease worksheets, explores missing assumptions, and displays post-verdict diagnostics. Without official state rule snapshots, it does **not** claim authoritative tax-rate or fee-law conclusions.
+- **Quote Autopsy** checks internally consistent vehicle purchase and lease worksheets, explores missing assumptions, and displays post-verdict diagnostics. External tax-rate and doc-fee checks cover Texas finance worksheets only, against a hash-pinned snapshot of official Texas sources; for other states it does **not** claim tax-rate or fee-law conclusions.
 - **Reel Autopsy** tests mechanically specified trading-performance assertions over clearly labelled synthetic data. It renders an illustrative equity chart. Real market-performance claims remain blocked until authorized licensed evidence is available.
 
 ## Technical implementation

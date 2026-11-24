@@ -1,1 +1,3 @@
 apps/quote-autopsy/src/quote_autopsy/rules/*.json -text
+apps/reel-autopsy/src/reel_autopsy/sources/synthetic_ohlcv_v1.csv text eol=lf
+*.sh text eol=lf

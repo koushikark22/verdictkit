@@ -11,6 +11,7 @@ import copy
 import io
 import json
 import os
+import struct
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -288,6 +289,31 @@ def test_tampered_or_hostile_replays_are_unverifiable(client):
     assert r.json()["integrity"]["status"] == "FAILED"
     too_big = client.post("/api/v1/replays", content=b"x" * (8 * 1024 * 1024 + 1))
     assert too_big.status_code == 413
+
+
+def _corrupt_entry(bundle: bytes, name: str) -> bytes:
+    """Flip one byte inside the stored data of ``name`` (CRC / inflate failure)."""
+    info = zipfile.ZipFile(io.BytesIO(bundle)).getinfo(name)
+    fname_len, extra_len = struct.unpack("<HH", bundle[info.header_offset + 26:info.header_offset + 30])
+    start = info.header_offset + 30 + fname_len + extra_len
+    out = bytearray(bundle)
+    out[start + info.compress_size // 2] ^= 0xFF
+    return bytes(out)
+
+
+def test_corrupt_zip_entries_are_unverifiable_not_errors(client):
+    case_id = _to_evidence(client, {"sales_tax": "1830.00"})
+    client.post(f"/api/v1/cases/{case_id}/runs")
+    original = client.get(f"/api/v1/cases/{case_id}/bundle").content
+    names = zipfile.ZipFile(io.BytesIO(original)).namelist()
+    assert "ledger/ledger.jsonl" in names and "manifest.json" in names
+    for name in names:
+        r = client.post("/api/v1/replays", content=_corrupt_entry(original, name),
+                        headers={"content-type": "application/zip"})
+        assert r.status_code == 200, (name, r.text)
+        check("ReplayReport", r.json())
+        assert r.json()["reproducibility"]["status"] == "UNVERIFIABLE", name
+        assert r.json()["reproducibility"]["replayedVerdictHash"] is None
 
 
 def test_zip_bomb_is_refused_before_decompression(client):

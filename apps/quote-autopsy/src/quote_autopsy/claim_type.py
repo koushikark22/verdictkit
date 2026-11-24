@@ -1,7 +1,9 @@
 """VerdictKit adapters for mechanical quote arithmetic.
 
-Boundary: examination never reads claimed outcomes. External legal/rule claims are
-INDETERMINATE until an independent evidence provider is configured.
+Boundary: examination never reads claimed outcomes. External rule claims (tax_rate,
+doc_fee_cap) are examined only for TX finance worksheets, against the hash-verified rules
+snapshot supplied as case evidence; other states and missing or unverified evidence give
+INDETERMINATE.
 
 Internal input is intentionally explicit; it is not the frozen HTTP DTO.
 Finance params: selling_price, doc_fee, trade_allowance, trade_payoff,
