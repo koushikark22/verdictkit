@@ -189,6 +189,14 @@ def test_generator_reproduces_committed_fixture_and_digest():
     assert synthetic.load().startswith(b"# SYNTHETIC OHLCV - generated test data, NOT market data")
 
 
+def test_fixture_line_endings_are_pinned_to_lf():
+    # A CRLF checkout (core.autocrlf=true) would change the bytes and break PINNED_SHA256.
+    assert b"\r" not in synthetic.load()
+    attrs = (Path(__file__).resolve().parents[2] / ".gitattributes").read_text(encoding="utf-8")
+    rule = f"apps/reel-autopsy/src/reel_autopsy/sources/{synthetic.FILE_NAME} text eol=lf"
+    assert rule in attrs.splitlines()
+
+
 def test_adapter_refuses_tampered_fixture_and_other_instruments(monkeypatch):
     adapter = synthetic.SyntheticFixtureAdapter()
     with pytest.raises(ValueError):
