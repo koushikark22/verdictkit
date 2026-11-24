@@ -422,7 +422,11 @@ def test_reel_paste_is_transient_spanned_and_write_only(tmp_path):
             assert r.status_code == 201, r.text
             body = r.json()
             check("DraftCase", body)
-            assert "340" not in r.text  # extracted outcome is write-only
+            # Check outcome-bearing response fields, not the random case ID: a UUID
+            # can coincidentally contain "340" without revealing the sealed outcome.
+            assert "return +340%" not in r.text  # claimant text is discarded
+            assert all("340" not in json.dumps(entry) for entry in body["parameterLedger"])
+            assert all("340" not in json.dumps(entry) for entry in body["outcomeFields"])
             ledger = {e["name"]: e for e in body["parameterLedger"]}
             assert ledger["template"]["basis"] == "CLAIMANT_TEXT"
             span = ledger["template"]["sourceSpan"]
