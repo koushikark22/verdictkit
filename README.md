@@ -12,8 +12,8 @@ Two applications on one core:
 Status (2026-11-20): the core custody pipeline, CLI, MCP server, the full HTTP API
 (contract 1.1.0) and both web UIs are implemented and tested. Quote Autopsy runs
 document-internal arithmetic, sweeps facts the worksheet does not show, and adds
-post-reveal diagnostics; external tax/fee checks await an official state snapshot
-(decision B7). Reel Autopsy runs its full evaluator on labelled synthetic demo data;
+post-reveal diagnostics; external tax-rate and doc-fee checks use a hash-pinned Texas rules snapshot
+(decision B7 = TX). Reel Autopsy runs its full evaluator on labelled synthetic demo data;
 real claims are fail-closed (BLOCKED) until a licensed OHLCV source exists (decision B1).
 Per-requirement status: `docs/TRACEABILITY.md`.
 

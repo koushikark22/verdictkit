@@ -31,7 +31,7 @@ Submission deadline: 2026-12-04 14:00 Pacific / 16:00 Central.
 ## Current release boundaries
 
 - Core/Quote/Reel functional CI evidence is in `docs/TRACEABILITY.md`, `docs/RELEASE_READINESS.md`, and GitHub Actions.
-- Quote Autopsy validates document-internal arithmetic and assumption sweeps. External state tax and dealer-fee adjudication waits for decision B7 and a verified official source snapshot.
+- Quote Autopsy validates document-internal arithmetic and assumption sweeps. External checks cover Texas only (decision B7): the stated tax rate and the documentary fee against a hash-pinned snapshot of Texas Comptroller and OCCC publications. A Texas doc fee above $225 is never refuted (INDETERMINATE, `requires_regulator_filing`); lease tax rate is not checked; other states are INDETERMINATE.
 - Reel Autopsy runs on clearly labelled synthetic historical-looking observations. Live financial-performance claims are intentionally BLOCKED pending a documented rights basis and real source adapter (B1).
 - Bundles are deterministic but not cryptographically signed. Do not assert authenticated origin or production-grade chain of custody.
 - The demo is not a production SaaS: no general-user authentication, no distributed rate limiter, and SQLite is single-process.
@@ -69,5 +69,5 @@ Use `docs/JUDGE_DEMO.md`. All container checks should run with `--network none`.
 
 ## Remaining work ownership
 
-- **Owner action required:** real Kiro execution, video recording and YouTube upload, submission form, licensing decisions B1/B7 if live verification is desired.
+- **Owner action required:** real Kiro execution, video recording and YouTube upload, submission form, licensing decision B1 if live market verification is desired.
 - **Optional production track:** bundle signing, multi-tenant auth, shared rate limits/datastore, storage retention and quotas. This track is not a prerequisite to the synthetic demonstration.
