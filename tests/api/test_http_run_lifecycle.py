@@ -194,15 +194,7 @@ def test_consistent_claim_and_state_conflicts(client):
 
 
 def test_external_only_claim_is_indeterminate(client):
-    # Unsupported jurisdiction (B7 supports TX only): external findings stay INDETERMINATE.
-    created = client.post("/api/v1/cases", json={
-        **intake({"tax_rate": "6.00"}),
-        "form": {"params": {**copy.deepcopy(PARAMS), "jurisdiction": {"state": "CA"}},
-                 "outcomes": {"tax_rate": "6.00"}}})
-    assert created.status_code == 201, created.text
-    case_id = created.json()["caseId"]
-    client.post(f"/api/v1/cases/{case_id}/freeze")
-    client.post(f"/api/v1/cases/{case_id}/evidence")
+    case_id = _to_evidence(client, {"tax_rate": "6.00"})
     run = client.post(f"/api/v1/cases/{case_id}/runs")
     assert run.json()["state"] == "INDETERMINATE"
     body = client.get(f"/api/v1/cases/{case_id}/outcome").json()
