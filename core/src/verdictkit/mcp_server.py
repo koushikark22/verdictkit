@@ -48,7 +48,7 @@ def _registry():
     return _load_registry()
 
 
-def _examiner(registry):
+def _examiner(registry, evidence_root: Path | None = None):
     """Same rule as the CLI: an authenticated socket worker or an UNENFORCED in-process
     examiner. An environment flag alone never yields ENFORCED."""
     from verdictkit.examiner.client import InProcessExaminer, SocketExaminer
@@ -56,7 +56,7 @@ def _examiner(registry):
     if socket_path:
         from verdictkit.examiner.identity import resolve_examiner_uid
         return SocketExaminer(socket_path, expected_peer_uid=resolve_examiner_uid(""))
-    return InProcessExaminer(registry)
+    return InProcessExaminer(registry, evidence_root=None if evidence_root is None else str(evidence_root))
 
 
 def _bundle_path(path: str) -> Path:
@@ -98,13 +98,15 @@ def verify_claim(claim: dict[str, Any]) -> dict[str, Any]:
         return {"error": "claim is not canonical JSON (decimals must be strings)"}
 
     registry = _registry()
-    try:
-        examiner = _examiner(registry)
-    except Exception:
-        return {"error": "isolated examiner is configured but could not be authenticated"}
     case_id = uuid.uuid4().hex
     root = _workdir()
     work = root / f"case-{case_id}"
+    try:
+        # run_case stores acquired evidence under <workdir>/evidence; the in-process
+        # examiner reads it from there.
+        examiner = _examiner(registry, work / "evidence")
+    except Exception:
+        return {"error": "isolated examiner is configured but could not be authenticated"}
 
     def clock() -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

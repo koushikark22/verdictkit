@@ -26,6 +26,7 @@ from dataclasses import fields
 from decimal import Decimal
 from typing import Mapping, Sequence
 
+from verdictkit.canonical import parse_canonical
 from verdictkit.custody.intake import SchemaError
 from verdictkit.model import (
     Assumption, AssumptionKind, Basis, Counterexample, Finding, Origin,
@@ -40,6 +41,7 @@ from verdictkit.sweep import PointOutcome, aggregate, AggregateKind
 from .finance import amount_financed, chain, sales_tax, taxable_base
 from .lease import compute
 from .money import D
+from .sources import SOURCE_ID as TX_SOURCE_ID, TexasRulesAdapter
 from .worksheet import (
     Addon, AddonCode, FinanceWorksheet, GovFee, GovFeeCode, Jurisdiction,
     Rebate, RebateTiming, LeaseConvention,
@@ -365,6 +367,78 @@ def _findings(frozen: FrozenClaim, examination: Examination, outcomes: Mapping[s
     return tuple(results)
 
 
+def _unavailable(name: str, reason: str, statement: str) -> Finding:
+    return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.INDETERMINATE, statement, reason=reason)
+
+
+def _numbers(expected: Decimal, observed: Decimal) -> dict[str, str]:
+    return {"expected": format(expected, "f"), "observed": format(observed, "f"),
+            "difference": format(observed - expected, "f"), "tolerance": "0"}
+
+
+def _finance_external(name: str, claimed: object, frozen: FrozenClaim, examination: Examination,
+                      evidence: Sequence[EvidenceItem], state: str) -> Finding:
+    if state != "TX":
+        return _unavailable(name, "unsupported_jurisdiction",
+                            f"No rules snapshot is available for {state}; only TX is supported")
+    shared = examination.shared
+    sha = shared.get("rules_snapshot_sha256")
+    if (not shared or not isinstance(sha, str) or shared.get("rules_state") != "TX"
+            or sha not in {e.sha256 for e in evidence}):
+        return _unavailable(name, "evidence_unavailable",
+                            f"The Texas rules snapshot is unavailable for {name}")
+    observed = _money(claimed, f"outcomes.{name}")
+    if name == "tax_rate":
+        lo = Decimal(str(shared["official_rate_min_pct"]))
+        hi = Decimal(str(shared["official_rate_max_pct"]))
+        if lo != hi:
+            raise ValueError("Texas snapshot rate range must be degenerate")
+        numbers = _numbers(lo, observed)
+        if observed == lo:
+            return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.SUPPORTED,
+                           "Stated rate equals the Texas motor vehicle sales tax rate; Texas has no "
+                           "local motor vehicle tax, so any locality code is irrelevant",
+                           evidence_used=(sha,), numbers=numbers)
+        cex = Counterexample({}, numbers["expected"], numbers["observed"], numbers["difference"],
+                             "0", "Stated rate differs from the Texas motor vehicle sales tax rate")
+        return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.REFUTED,
+                       "Stated rate differs from the Texas motor vehicle sales tax rate; Texas has no "
+                       "local motor vehicle tax, so any locality code is irrelevant",
+                       evidence_used=(sha,), counterexamples=(cex,), numbers=numbers)
+    if name != "doc_fee_cap":
+        raise ValueError(f"unsupported external field: {name}")
+    fee = _finance_worksheet(frozen.params).doc_fee
+    kind = shared["doc_fee_kind"]
+    if kind == "NO_STATUTORY_LIMIT":
+        return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.SUPPORTED,
+                       f"no statutory cap in {state}", evidence_used=(sha,))
+    limit = Decimal(str(shared["doc_fee_amount"]))
+    numbers = _numbers(limit, fee)
+    if kind == "STATUTORY_MAXIMUM":
+        if fee <= limit:
+            return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.SUPPORTED,
+                           "Documentary fee is at or below the statutory maximum",
+                           evidence_used=(sha,), numbers=numbers)
+        cex = Counterexample({}, numbers["expected"], numbers["observed"], numbers["difference"],
+                             "0", "Documentary fee exceeds the statutory maximum")
+        return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.REFUTED,
+                       "Documentary fee exceeds the statutory maximum",
+                       evidence_used=(sha,), counterexamples=(cex,), numbers=numbers)
+    if kind != "PRESUMED_REASONABLE_AMOUNT":
+        raise ValueError(f"unsupported doc fee rule kind: {kind}")
+    if fee <= limit:
+        return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.SUPPORTED,
+                       f"The documentary fee on the retail installment contract is at or below the "
+                       f"${format(limit, 'f')} documentary fee presumed reasonable under 7 TAC "
+                       "\u00a784.205; no OCCC filing required. This is not a finding that the dealer "
+                       "complies overall.",
+                       evidence_used=(sha,), numbers=numbers)
+    return Finding(name, Basis.EXTERNAL_EVIDENCE, Status.INDETERMINATE,
+                   f"The documentary fee is above ${format(limit, 'f')}; permitted only if the dealer "
+                   "notified the OCCC and filed a cost analysis, which VerdictKit cannot verify",
+                   reason="requires_regulator_filing", evidence_used=(sha,), numbers=numbers)
+
+
 class _BaseQuote:
     schema_version = 1
     param_fields = frozenset()
@@ -455,7 +529,57 @@ class FinanceClaimType(_BaseQuote):
             calculated = chain(_resolve_finance(ws, p))
             vals = {f.name: format(getattr(calculated, f.name), "f") for f in fields(calculated)}
             results.append(PointResult(dict(p), vals))
-        return Examination(task.spec_hash, {}, tuple(results))
+        shared: dict[str, object] = {}
+        if task.evidence_refs and evidence is not None:
+            # The broker store is hash-verified and the adapter checked the manifest at
+            # acquisition; the examiner only reads the pinned bytes.
+            try:
+                doc = parse_canonical(evidence.read(task.evidence_refs[0]))
+            except (KeyError, OSError, ValueError):
+                doc = None  # unreadable evidence: external findings fail closed
+        else:
+            doc = None
+        if doc is not None:
+            fee = doc["doc_fee"]
+            shared = {
+                "rules_state": doc["state"],
+                "rules_snapshot_sha256": task.evidence_refs[0],
+                "official_rate_min_pct": format(
+                    Decimal(doc["state_rate_pct"]) + Decimal(doc["local_rate_min_pct"]), "f"),
+                "official_rate_max_pct": format(
+                    Decimal(doc["state_rate_pct"]) + Decimal(doc["local_rate_max_pct"]), "f"),
+                "official_rate_by_locality": doc["localities"],
+                "doc_fee_kind": fee["kind"],
+                "doc_fee_amount": fee["amount"],
+                "doc_fee_charged": format(ws.doc_fee, "f"),
+            }
+        return Examination(task.spec_hash, shared, tuple(results))
+
+    def evidence_requests(self, params: Mapping[str, object]) -> Sequence[EvidenceRequest]:
+        jurisdiction = params.get("jurisdiction")
+        if isinstance(jurisdiction, Mapping) and str(jurisdiction.get("state", "")).upper() == "TX":
+            return (EvidenceRequest(TX_SOURCE_ID, {"state": "TX"}),)
+        return ()
+
+    def evidence_policy(self) -> EvidencePolicySpec:
+        return EvidencePolicySpec(frozenset({TX_SOURCE_ID}))
+
+    def evidence_adapters(self):
+        return (TexasRulesAdapter(),)
+
+    def findings(self, frozen: FrozenClaim, examination: Examination, outcomes: Mapping[str, object],
+                 evidence: Sequence[EvidenceItem]) -> Sequence[Finding]:
+        internal = {k: v for k, v in outcomes.items() if k not in self.external_fields}
+        done = {f.finding_id: f for f in
+                _findings(frozen, examination, internal, self.arithmetic_fields, frozenset())}
+        state = str(frozen.params["jurisdiction"]["state"]).upper()
+        result = []
+        for name, claimed in outcomes.items():
+            if name in done:
+                result.append(done[name])
+            else:
+                result.append(_finance_external(name, claimed, frozen, examination, evidence, state))
+        return tuple(result)
 
 
 class LeaseClaimType(_BaseQuote):
@@ -471,6 +595,26 @@ class LeaseClaimType(_BaseQuote):
     outcome_fields = arithmetic_fields | external_fields
 
     assumption_pattern = r"rounding_convention"
+
+    def findings(self, frozen: FrozenClaim, examination: Examination, outcomes: Mapping[str, object],
+                 evidence: Sequence[EvidenceItem]) -> Sequence[Finding]:
+        jurisdiction = frozen.params.get("jurisdiction")
+        state = str(jurisdiction.get("state", "")).upper() if isinstance(jurisdiction, Mapping) else ""
+        internal = {k: v for k, v in outcomes.items() if k not in self.external_fields}
+        done = {f.finding_id: f for f in
+                _findings(frozen, examination, internal, self.arithmetic_fields, frozenset())}
+        result = []
+        for name in outcomes:
+            if name in done:
+                result.append(done[name])
+            elif state == "TX":
+                result.append(_unavailable(name, "not_applicable_lease_tax_model",
+                    "Texas does not tax lease payments as a rate on each payment; the lessor pays "
+                    "motor vehicle tax on its purchase, so a per-payment tax rate is not checked"))
+            else:
+                result.append(_unavailable(name, "evidence_unavailable",
+                    f"Independent evidence is unavailable for {name}"))
+        return tuple(result)
 
     def validate_params(self, params: Mapping[str, object]) -> None:
         _lease_params(params)
