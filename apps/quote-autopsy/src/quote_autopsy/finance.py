@@ -21,7 +21,7 @@ def _check_flags(ws: FinanceWorksheet) -> None:
 
 
 def taxable_base(ws: FinanceWorksheet) -> Decimal:
-    """Price plus taxable charges, less pre-tax rebates and eligible trade credit."""
+    """Price plus taxable charges, less pre-tax rebates and eligible trade credit, floored at 0 (req 3.1)."""
     _check_flags(ws)
     base = ws.selling_price
     base += sum((item.amount for item in ws.addons if item.taxable), _ZERO)
@@ -31,7 +31,7 @@ def taxable_base(ws: FinanceWorksheet) -> Decimal:
     base -= sum((rebate.amount for rebate in ws.rebates if rebate.applied == RebateTiming.PRE_TAX), _ZERO)
     if ws.trade_tax_credit:
         base -= ws.trade_allowance
-    return base
+    return max(base, _ZERO)
 
 
 def sales_tax(base: Decimal, rate_pct: Decimal) -> Decimal:
