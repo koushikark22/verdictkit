@@ -97,8 +97,9 @@ the quote-contract command failed: `taxable_base` was not floored at 0 (quote
 requirement 3.1) when a trade credit exceeded the price. The derandomised CI Hypothesis
 profile had not generated that case. The floor was added in `finance.py` and the case
 pinned as an explicit example. The same pass made corrupt ZIP entries in an uploaded
-bundle replay as UNVERIFIABLE instead of raising, pinned the synthetic Reel CSV to LF
-line endings, and corrected the Texas description in the Quote UI and docs.
+bundle replay as UNVERIFIABLE instead of raising, pinned the synthetic Reel CSV and the
+shell scripts to LF line endings (a `core.autocrlf=true` checkout broke the CSV digest
+and the bash scripts), and corrected the Texas description in the Quote UI and docs.
 
 ## Open items
 
