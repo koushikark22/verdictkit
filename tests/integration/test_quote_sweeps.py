@@ -60,7 +60,8 @@ def registry():
 
 def run(tmp_path, claim, case_id="c" * 32):
     reg = registry()
-    return run_case(claim, registry=reg, examiner=InProcessExaminer(reg), workdir=tmp_path,
+    return run_case(claim, registry=reg, workdir=tmp_path,
+                    examiner=InProcessExaminer(reg, evidence_root=str(tmp_path / "evidence")),
                     clock=lambda: "2026-11-20T00:00:00Z", case_id=case_id,
                     vault_key=bytes(32), network=False)
 

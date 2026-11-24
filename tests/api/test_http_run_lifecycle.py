@@ -52,9 +52,12 @@ PARAMS = {
 SECRET = "27999.99"
 
 
-def intake(outcomes: dict) -> dict:
+def intake(outcomes: dict, state: str | None = None) -> dict:
+    params = copy.deepcopy(PARAMS)
+    if state is not None:
+        params["jurisdiction"] = {"state": state}
     return {"claimType": "quote.finance.v1", "dataMode": "LIVE_EVIDENCE",
-            "form": {"params": copy.deepcopy(PARAMS), "outcomes": outcomes}}
+            "form": {"params": params, "outcomes": outcomes}}
 
 
 @pytest.fixture()
@@ -66,8 +69,8 @@ def client(tmp_path):
             yield c
 
 
-def _to_evidence(client, outcomes) -> str:
-    created = client.post("/api/v1/cases", json=intake(outcomes))
+def _to_evidence(client, outcomes, state: str | None = None) -> str:
+    created = client.post("/api/v1/cases", json=intake(outcomes, state))
     assert created.status_code == 201, created.text
     check("DraftCase", created.json())
     assert SECRET not in created.text
@@ -194,7 +197,7 @@ def test_consistent_claim_and_state_conflicts(client):
 
 
 def test_external_only_claim_is_indeterminate(client):
-    case_id = _to_evidence(client, {"tax_rate": "6.00"})
+    case_id = _to_evidence(client, {"tax_rate": "6.00"}, state="CA")
     run = client.post(f"/api/v1/cases/{case_id}/runs")
     assert run.json()["state"] == "INDETERMINATE"
     body = client.get(f"/api/v1/cases/{case_id}/outcome").json()
