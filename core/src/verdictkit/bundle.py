@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+import zlib
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import Enum
@@ -295,8 +296,12 @@ def _check_zip_safety(zf: zipfile.ZipFile) -> set[str]:
 
 
 def _read_bounded(zf: zipfile.ZipFile, name: str) -> bytes:
-    with zf.open(name) as fh:
-        data = fh.read(MAX_ENTRY_UNCOMPRESSED + 1)
+    try:
+        with zf.open(name) as fh:
+            data = fh.read(MAX_ENTRY_UNCOMPRESSED + 1)
+    except (zipfile.BadZipFile, zlib.error, EOFError, NotImplementedError) as exc:
+        # Corrupt entry (bad CRC, broken deflate stream, unsupported method).
+        raise BundleFormatError("bundle entry is corrupt") from exc
     if len(data) > MAX_ENTRY_UNCOMPRESSED:
         raise BundleFormatError("bundle entry too large")
     return data
