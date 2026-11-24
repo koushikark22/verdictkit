@@ -142,8 +142,12 @@ export function App() {
         </fieldset>
         <p className="vk-muted vk-span-all">
           Conventions: monthly periods, first payment one period after contract, ROUND_HALF_UP to cents, no odd final
-          payment. Lease: APR ≈ money factor × 2400 is a convention, not an identity. External tax-rate and doc-fee
-          checks are not available until an official state rules snapshot is adopted; those findings stay INDETERMINATE.
+          payment. Lease: APR ≈ money factor × 2400 is a convention, not an identity. External checks cover Texas
+          finance worksheets only, against a hash-pinned snapshot of Texas Comptroller and OCCC sources retrieved
+          2026-11-24: the stated tax rate is SUPPORTED or REFUTED against the 6.25% motor vehicle rate (no local
+          tax), and a doc fee at or below $225 is SUPPORTED as presumed reasonable; above $225 it is INDETERMINATE
+          because an OCCC filing cannot be verified. Texas lease tax rate is not checked. Other states stay
+          INDETERMINATE.
         </p>
         <div className="vk-span-all"><button type="submit" disabled={busy}>{busy ? "Examining…" : "Freeze and examine"}</button></div>
         {formErrors.length ? <ul className="vk-span-all vk-error">{formErrors.map((e) => <li key={e}>{e}</li>)}</ul> : null}

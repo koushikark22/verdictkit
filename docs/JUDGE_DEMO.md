@@ -81,7 +81,7 @@ The harness starts and shuts down its own preview servers and real API. If it re
 ## What a judge can verify
 
 1. **Reusable core**: canonical JSON, answer blinding, sealed commitment, deterministic evaluation, bounded assumption sweeps.
-2. **Quote Autopsy**: sample document-internal finance/lease arithmetic, scenario sensitivity, and post-verdict diagnostic separation. External tax-rate and dealer-fee findings remain INDETERMINATE without an authoritative rules snapshot.
+2. **Quote Autopsy**: sample document-internal finance/lease arithmetic, scenario sensitivity, and post-verdict diagnostic separation. External tax-rate and doc-fee findings are examined for Texas finance worksheets only, against a hash-pinned Texas Comptroller/OCCC snapshot; a doc fee above $225, the Texas lease tax rate and all other states stay INDETERMINATE.
 3. **Reel Autopsy**: synthetic OHLCV evaluation and illustrative equity chart. These are not live prices or independently verified real returns.
 4. **Isolation boundary**: examiner IPC identity verified by Linux peer credentials; only container mode can legitimately claim ENFORCED.
 5. **Offline replay**: bundle integrity and verdict reproducibility; authenticity is NOT_ESTABLISHED absent signatures.
