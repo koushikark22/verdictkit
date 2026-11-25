@@ -38,6 +38,18 @@ Status words. DECIDED: a maintainer decision is recorded. DESIGNED: written in `
 | Public security profile propagated and validated in custodian and examiner | AM-D6-4 (D6.11), closes G-D6-1 | 7.19 | DECIDED, DESIGNED |
 | Minimal judge UI compatibility changes on the Phase_Branch, frozen references immutable | AM-D5-13 (D5.13), confirms AM-D5-11 | 1.8, 10.35 | DECIDED, DESIGNED |
 
+## Final maintainer decisions (recorded 2026-11-25)
+
+Recorded in `design.md` section D10.10, which governs the earlier text it names (D10.2, rows 23 to 27). Status words as above. Each decision is DECIDED and DESIGNED. Nothing is implemented, and no Execution_Record exists for any of them (Requirement 3). The tasks that carry them are in `tasks.md`.
+
+| Decision | Record | Criteria | Status |
+|---|---|---|---|
+| Evidence commits reference the exact tested Release_Candidate SHA. A different commit is not automatically the same tested candidate. | OD-D9-1 (D10.10) | 14.16, 14.21 | DECIDED, DESIGNED |
+| Manifest integrity, signature authenticity and complete archive-byte integrity are three separate results. Exact archive-byte verification requires an external trusted digest. | OD-D10-4 (D10.10) | 10.36 (new), 13.5(a), 14.24 | DECIDED, DESIGNED, AMENDED |
+| The initial failed-authentication threshold is five attempts per 15 minutes per source and account, configurable and bounded. | OD-D10-1 (D10.10) | 7.24 | DECIDED, DESIGNED |
+| The five-second recording target of 3.2 is retained. A recording failure is visible and cannot create a successful evidence claim. | OD-D10-2 (D10.10) | 3.2 | DECIDED, DESIGNED |
+| A failed rollback blocks the release and requires recovery to a verified checkpoint (blocker RB-18). | OD-D10-3 (D10.10) | 4.6, 14.10 | DECIDED, DESIGNED |
+
 ## Requirement gaps and contradictions resolved
 
 | Item | Resolution |
@@ -67,5 +79,4 @@ Status words. DECIDED: a maintainer decision is recorded. DESIGNED: written in `
 | B-D8-1 | Linux_Docker_Host full-checkout runs (BE-2 Linux leg, Linux security cases) | Owner |
 | B-D8-2 | External_Review_Record | Owner or independent reviewer |
 | B-D8-3 | Dedicated VM or restricted account for hook evidence | Owner |
-| OD-D9-1 | Whether docs-only evidence commits after the Release_Candidate keep it the same commit | Maintainer |
 | D2 B-1, B-6, B-8, hosting, domain, certificate, budget | Public deployment readiness. Not authorized by this work | Owner |

@@ -2,7 +2,7 @@
 
 ## Document status
 
-This design is complete in text. It has the seven canonical sections (Overview, Architecture, Components and Interfaces, Data Models, Correctness Properties, Error Handling and Testing Strategy), the foundations D0, the track designs D1 to D9 and the reconciliation D10. D1 (P0 UI/UX, decisions in D1.16), D2 (P1 secure public deployment, D2.12), D3 (P2 agent hooks and Windows compatibility, D3.13), D4 (P3 MCP, D4.12 and D4.13), D5 (P4 signing, D5.12 and D5.13), D6 (P5 plugin SDK, D6.11) and D7 (P6 regulatory verification, D7.11) are conditionally approved by the maintainer. D8 (P7 security and property testing, open decisions in D8.15) and D9 (P8 release verification, open decisions in D9.10) are written and await maintainer review. D10 and the canonical sections are the last part to be written and also await maintainer review. Nothing is IMPLEMENTED or VERIFIED: every statement about the future in this file is DESIGNED or DECIDED. The open decisions and the blockers that only the owner can clear are summarized in D10.8. The table of contents at the end of this file gives the status of every section.
+This design is complete in text. It has the seven canonical sections (Overview, Architecture, Components and Interfaces, Data Models, Correctness Properties, Error Handling and Testing Strategy), the foundations D0, the track designs D1 to D9 and the reconciliation D10. D1 (P0 UI/UX, decisions in D1.16), D2 (P1 secure public deployment, D2.12), D3 (P2 agent hooks and Windows compatibility, D3.13), D4 (P3 MCP, D4.12 and D4.13), D5 (P4 signing, D5.12 and D5.13), D6 (P5 plugin SDK, D6.11) and D7 (P6 regulatory verification, D7.11) are conditionally approved by the maintainer. D8 (P7 security and property testing, open decisions in D8.15) and D9 (P8 release verification, open decisions in D9.10) are written and await maintainer review. D10 and the canonical sections are the last part to be written and also await maintainer review. Nothing is IMPLEMENTED or VERIFIED: every statement about the future in this file is DESIGNED or DECIDED. The open decisions and the blockers that only the owner can clear are summarized in D10.8. The table of contents at the end of this file gives the status of every section. The final maintainer decisions of 2026-11-25 (OD-D9-1 and OD-D10-1 to OD-D10-4) are recorded in D10.10.
 
 ## Overview
 
@@ -4081,10 +4081,15 @@ A later record governs the earlier text it names. The earlier text is not edited
 | 20 | D1.15 and D1.16 OD-6 ("`requirements.md` is not edited") | RC-7 (D10.3) | 5.8 and 6.9 now carry the sealed-field exception that DD-9 reads |
 | 21 | The gap tables of D2.10, D2.12 ("still missing") and D3.11, and the "proposed for D10" statements in D2.10, D3.1 and D3.11 | D10.4 | G-1 to G-4 are criteria 7.23 to 7.26. G-5 and G-6 stay code gaps. G-7 to G-13 are the amended 8.x criteria. |
 | 22 | D3.12 "D4 to D10 are not written" | The Document status | It described the authoring stage of D3. D4 to D10 are written. |
+| 23 | OD-D9-1 (D9.10) and RC-20 (D10.3) | D10.10 | Evidence commits reference S. A different commit is not automatically S. |
+| 24 | OD-D10-1, and the words "value chosen at implementation" in D10-AC-2 and D10.5 | D10.10 | 5 failed attempts per 15 minutes per source and account, configurable and bounded |
+| 25 | OD-D10-2 and the gap noted in D10.5 for 3.2 | D10.10 | The 5 s target stays. A recording failure is visible and never `SUCCEEDED`. |
+| 26 | OD-D10-3, the gap noted in D10.5 for 4.6, and the blocker list of D9.6 | D10.10 | A failed rollback is blocker RB-18 and needs recovery to a verified checkpoint |
+| 27 | OD-D10-4, RC-22, CP-29 and the reading of 13.5(a) | D10.10 and requirements 10.36, 13.5(a), 14.24 | Three separate results. Exact archive-byte verification needs an external trusted digest. |
 
 ### D10.3 Requirement reconciliation
 
-The final round of amendments is in `requirements.md` as of the checkpoint `1cb3e48`, and D10 does not edit it. The numbering of existing criteria is unchanged. Each row records one change that the design reads, with its reason and source. RC-20 to RC-23 are readings and not text changes.
+The final round of amendments is in `requirements.md` as of the checkpoint `1cb3e48`, and D10 does not edit it. The numbering of existing criteria is unchanged. Each row records one change that the design reads, with its reason and source. RC-20, RC-21 and RC-23 are readings and not text changes. RC-20 is decided by OD-D9-1 and RC-22 by OD-D10-4 (D10.10), and RC-22 is reconciled in `requirements.md` by 10.36, 13.5(a) and 14.24. After the maintainer's final decisions of 2026-11-25, `requirements.md` was amended again as D10.10 lists: criterion 10.36 was appended, and criteria 13.5(a) and 14.24 were changed in place.
 
 | RC | Requirement | Change | Reason | Source |
 |---|---|---|---|---|
@@ -4107,9 +4112,9 @@ The final round of amendments is in `requirements.md` as of the checkpoint `1cb3
 | RC-17 | 2.11, 8.13, 13.11 | The three statements are consistent. The platform branch is not a skip, the POSIX text is unchanged, and 8.13 constrains hook configuration only while BE-1 is open. | The BE-1 contradiction | M-4, D8.5 |
 | RC-18 | 1.14 | Byte-for-byte preservation applies to the Private_Original. The published file is the Sanitized_Copy. | The original rule forbade private publication | H-1, DD8-9 |
 | RC-19 | 12.23, 13.22, 14.24 | `REPRODUCED` is required only for a bundle replayed in the image that wrote it. A legacy bundle gives `REPRODUCED` or `REPRODUCED_ACROSS_ENV` with an equal verdict hash. `DIVERGED` and `UNVERIFIABLE` stay forbidden. | The lock hash differs once 9.22 changes `uv.lock`, so `REPRODUCED_ACROSS_ENV` is the likely status | F9-7, OD-D9-2 |
-| RC-20 | 14.16, 14.21 | Reading, open. The ledger and the release report are in the repository, so they can only be committed after S. The reading is that S stays the Release_Candidate while the commits after S change only `docs/next-phase/**` and the spec `tasks.md`, and any other change is a new Release_Candidate. The literal text says "any new commit". | Without a decision the literal text applies, and each evidence commit would start a new Release_Candidate | OD-D9-1, DD9-2 |
+| RC-20 | 14.16, 14.21 | Reading, decided (OD-D9-1, D10.10). The ledger and the release report are in the repository, so they can only be committed after S. The reading is that S stays the Release_Candidate while the commits after S change only `docs/next-phase/**` and the spec `tasks.md`, and any other change is a new Release_Candidate. The literal text says "any new commit". | Without a decision the literal text applies, and each evidence commit would start a new Release_Candidate | OD-D9-1, DD9-2 |
 | RC-21 | 14.1 | Reading. Step E-025a and E-025b ran in an invalid environment, because the image has no `ui/`. Its valid form, a Linux full-checkout `-rA` run, is the step that is rerun. | The invalid step cannot be repeated as it was | F8-13, D9.4 |
-| RC-22 | 13.5(a), 10.15 | Reading, open. "Changing any single byte of a Bundle never yields REPRODUCED" cannot hold for bytes of the zip container that no check covers (timestamps, attributes, comments, extra fields). The property is tested over the manifest, the manifest-listed members and the signature envelope. | F5-2 and R-D5-4 say the container bytes are covered by nothing, and D5-AC-16 already says "signed region" | OD-D10-4, CP-29 |
+| RC-22 | 13.5(a), 10.15 | Reading, decided (OD-D10-4, D10.10), reconciled in `requirements.md`. "Changing any single byte of a Bundle never yields REPRODUCED" cannot hold for bytes of the zip container that no check covers (timestamps, attributes, comments, extra fields). The property is tested over the manifest, the manifest-listed members and the signature envelope. | F5-2 and R-D5-4 say the container bytes are covered by nothing, and D5-AC-16 already says "signed region" | OD-D10-4, CP-29 |
 | RC-23 | 7.5, 7.7 | Reading. The baseline `serve` prints no `VK_STARTUP_OK`, and the 429, 413 and 400 early returns carry no security headers. The criteria stand, and the two items are code gaps tracked by D2 rows. | G-5, G-6 | D2.2 (F-2, F-5), D2-AC-2, D2-AC-5 |
 
 ### D10.4 Gap resolution
@@ -4183,7 +4188,7 @@ Each entry reads `n.m: sections; rows`. A section is where the design handles th
 | 7.24 | Stored only as a hash | D2.12 (AM-7), D2.5 (DD2-8) | D10-AC-1 | Row added |
 | 7.24 | Label, expiry inside the demonstration window, revocation flag | D2.12 (AM-7) | D10-AC-1 | Row added |
 | 7.24 | Revocation without a redeploy within a documented bound, other credentials stay valid | D2.12 (AM-7) | D2-AC-26 (60 s, ASSUMED) | Covered |
-| 7.24 | Failed attempts are rate limited | D2.12 (AM-7). No value is set (OD-D10-1). | D10-AC-2 | Row added, value open |
+| 7.24 | Failed attempts are rate limited | D2.12 (AM-7). Initial value set by OD-D10-1 (D10.10). | D10-AC-2 | Row added, value decided |
 | 7.24 | No credential value in logs | D2.12 (AM-7), D2.5 (DD2-9) | D2-AC-26, D2-AC-12 | Covered |
 | 7.24 | No HTTP administrative route that lists, decrypts or deletes cases | D2.5 (DD2-3 tier A), D2.11 (OD-D2-6) | D10-AC-3 | Row added |
 | 7.26 | An internal liveness check with no public route, for the loopback answer and both children | D2.6 | D10-AC-4 | Row added |
@@ -4200,14 +4205,14 @@ Each entry reads `n.m: sections; rows`. A section is where the design handles th
 | 10.34 | Tolerant client, strict validator and mutual refusal naming both versions | D5.13 (AM-D5-12) | D10-AC-7 | Row added |
 | 10.34 | Bundles written under 1.1.0 keep verifying and replaying | D5.13 (AM-D5-12) | D5-AC-1, D9-AC-8 | Covered |
 
-Two criteria are mapped to rows that test only part of them, and the gap is recorded and not closed: the 5 s recording bound of 3.2 (OD-D10-2) and the handling of a rollback that does not complete in 4.6 (OD-D10-3).
+Two criteria were mapped to rows that test only part of them: the 5 s recording bound of 3.2 (OD-D10-2) and the handling of a rollback that does not complete in 4.6 (OD-D10-3). Both gaps are closed by decision in D10.10, and `tasks.md` carries the tests.
 
 **Gap-closing rows.** All rows are UNVERIFIED until an Execution_Record exists.
 
 | ID | Criterion | Method | Pass threshold | Req | Host |
 |---|---|---|---|---|---|
 | D10-AC-1 | Invitation credential record | Issue 3 credentials with the issuing procedure. Inspect the issued values and the stored records (the edge secret or the API-side table). Send a value that was never issued. | Each issued value carries at least 16 random bytes from the operating-system CSPRNG (length checked by test, source checked by code review). Each stored record holds a hash and no credential value, a label, an expiry no later than the end of the demonstration window and a revocation flag. A search of the stored records, the container output and the logs for each issued value finds 0 matches. The never-issued value gets 401 before any body byte is read. | 7.24 | CI or VM |
-| D10-AC-2 | Failed-attempt limit | Send failed credential attempts from one client address faster than the documented limit, then a valid credential from another client address | The attempt over the limit gets 429 `RATE_LIMITED` with `Retry-After`. The valid credential from the other client still works. The limit and its window are documented (value chosen at implementation, OD-D10-1). 0 credential values appear in logs. | 7.24 | CI or VM |
+| D10-AC-2 | Failed-attempt limit | Send failed credential attempts from one client address faster than the documented limit, then a valid credential from another client address | The attempt over the limit gets 429 `RATE_LIMITED` with `Retry-After`. The valid credential from the other client still works. The limit is 5 failed attempts per 15 minutes per source and account (OD-D10-1), configurable within documented bounds, and the limit and its window are documented. 0 credential values appear in logs. | 7.24 | CI or VM |
 | D10-AC-3 | No administrative route | Enumerate every application and edge route and compare it with the contract paths and the static paths of D2.3 | 0 routes list cases, decrypt a case or delete a case. A route added in a copy for one of those purposes makes the check fail. | 7.24 | CI or VM |
 | D10-AC-4 | Liveness | Run the internal liveness probe with both children alive, with the examiner stopped and with the custodian stopped. Request every public path for a liveness route. | The probe exits 0 only when the API answers on loopback and both processes exist, and non-zero in the other two cases. 0 public liveness routes. | 7.26 | CI or VM |
 | D10-AC-5 | Readiness checks | Fail each of the four checks in turn: replace the examiner socket with a non-examiner uid, make the custody store unopenable, fill the data volume below the threshold, wedge the run-slot accounting. Repeat a request inside 5 s and after 5 s. | Each failure gives 503 with the key set of the 200 body, `status` `unavailable` and `isolationMode` unchanged. A `POST /runs` is refused while a check fails. The body never names the failed check. A repeat inside 5 s does not run the check again, and one after 5 s does. | 7.26 | CI or VM |
@@ -4277,17 +4282,17 @@ Each row names who decides or acts. No blocker is an agent action.
 | D6 | OD-D6-1, OD-D6-3, OD-D6-6, OD-D6-7, R-D6-1 to R-D6-4 | OD-D6-2 (AM-D6-1), OD-D6-4 and OD-D6-5 (AM-D6-2), G-D6-1 (AM-D6-4) | Maintainer |
 | D7 | OD-D7-2, OD-D7-4, OD-D7-6, OD-D7-7, OD-D7-8, OD-D7-9 (carrier of the Examination_Semantics id), B-D7-2 (review pending), R-D7-1 to R-D7-4 | B-D7-1 (AM-D7-1), OD-D7-1 (AM-D7-4), OD-D7-5 (AM-D7-3), OD-D7-3 and G-D7-1 (AM-D5-12) | Maintainer, reviewer |
 | D8 | OD-D8-1 to OD-D8-9, R-D8-1 to R-D8-5 | None | Maintainer, owner |
-| D9 | OD-D9-1, OD-D9-3 to OD-D9-7, R-D9-1 to R-D9-8 | OD-D9-2 (the requirement amendment) | Maintainer, owner |
-| D10 | OD-D10-1 to OD-D10-4 | None | Maintainer |
+| D9 | OD-D9-3 to OD-D9-7, R-D9-1 to R-D9-8 | OD-D9-1 (D10.10), OD-D9-2 (the requirement amendment) | Maintainer, owner |
+| D10 | None | OD-D10-1 to OD-D10-4 (D10.10) | Maintainer |
 
 **Open decisions found while writing D10.**
 
 | ID | Item | Options | Recommendation |
 |---|---|---|---|
-| OD-D10-1 | The limit and window for failed credential attempts (7.24). AM-7 requires a rate limit and D2 sets no value. | A fixed value now, or a value chosen at implementation from the D2-AC-14 measurement | Choose at implementation, record it as ASSUMED, and test it by D10-AC-2 |
-| OD-D10-2 | The 5 s bound of 3.2. D9 records start and end times (DD9-1) and no record time, so the bound has no mechanical check. | A reviewed process rule, or a `recorded_utc` field in the Execution_Record checked by `report-lint` | Add the field and the check |
-| OD-D10-3 | A rollback that does not complete (4.6). D9.7 gives a confirmation for each row and no wording for the per-track record. | The RP row is FAILED, the track line says incomplete and earlier rows stay unchanged (3.5), or a separate status | The first option |
-| OD-D10-4 | The reading of 13.5(a) and P-a over bytes of the zip container that no check covers (RC-22, CP-29) | Read the property over the manifest, the listed members and the envelope and state the limit in `docs/SIGNING.md`, or extend integrity to the container (a format change, outside this phase) | The first option, with the maintainer's confirmation |
+| OD-D10-1 | The limit and window for failed credential attempts (7.24). AM-7 requires a rate limit and D2 sets no value. | A fixed value now, or a value chosen at implementation from the D2-AC-14 measurement | DECIDED (D10.10): 5 failed attempts per 15 minutes per source and account, configurable and bounded. |
+| OD-D10-2 | The 5 s bound of 3.2. D9 records start and end times (DD9-1) and no record time, so the bound has no mechanical check. | A reviewed process rule, or a `recorded_utc` field in the Execution_Record checked by `report-lint` | DECIDED (D10.10): keep the 5 s target. Recording failures are visible and never `SUCCEEDED`. |
+| OD-D10-3 | A rollback that does not complete (4.6). D9.7 gives a confirmation for each row and no wording for the per-track record. | The RP row is FAILED, the track line says incomplete and earlier rows stay unchanged (3.5), or a separate status | DECIDED (D10.10): a failed rollback blocks the release and needs recovery to a verified checkpoint. |
+| OD-D10-4 | The reading of 13.5(a) and P-a over bytes of the zip container that no check covers (RC-22, CP-29) | Read the property over the manifest, the listed members and the envelope and state the limit in `docs/SIGNING.md`, or extend integrity to the container (a format change, outside this phase) | DECIDED (D10.10): three separate results. Exact archive-byte verification needs an external trusted digest. |
 
 **Blockers.** The release blockers RB-1 to RB-17 and their levels are in D9.6.
 
@@ -4296,13 +4301,13 @@ Each row names who decides or acts. No blocker is an agent action.
 | B-D8-1 | A Linux_Docker_Host full-checkout run: the BE-2 Linux leg, the Linux per-test baseline and every row marked for a Linux host | Owner |
 | B-D8-2 | An External_Review_Record | Owner or an independent reviewer |
 | B-D8-3 | A dedicated VM or a restricted account for the Contained_Hook_Environment, and the Kiro captures that need it (B-H2) | Owner |
-| OD-D9-1 | Whether evidence commits after S keep it the Release_Candidate (RC-20) | Maintainer |
+| OD-D9-1 | DECIDED (D10.10): evidence commits reference the exact tested Release_Candidate SHA. A different commit is not automatically the same tested candidate. | Closed |
 | D2 B-1, B-6, B-8, hosting, domain, certificate, budget, monitoring and the go decision | Public_Deployment_Readiness. Not authorized by this design. | Owner |
 | Review | Maintainer review of D8, D9, D10 and the canonical sections | Maintainer |
 
 ### D10.9 Files for implementation
 
-No `tasks.md` exists. When it is written, every task cites at least one criterion (4.3, D10-AC-8). The file lists of each track are in the sections named below, and none of these files is changed now.
+`tasks.md` was written after the final decisions of 2026-11-25. Every task cites at least one criterion (4.3, D10-AC-8). The file lists of each track are in the sections named below, and none of these files is changed now.
 
 | Track | New or changed | Not changed | Section |
 |---|---|---|---|
@@ -4315,6 +4320,18 @@ No `tasks.md` exists. When it is written, every task cites at least one criterio
 | P6 | `rules_v2.py`, `sources_v2.py`, `claim_type.py`, `scripts/rules_snapshot.py`, `rules/v2/`, `.gitattributes`, `docs/REGULATORY_SNAPSHOTS.md`, tests, the `CA` to `ZZ` fixture hunks | `TX.json`, `rules/MANIFEST.json`, `rules.py`, `sources.py`, `docs/B7_TEXAS_SPEC.md` | D7.10, D7.11 |
 | P7 | `deploy/entrypoint.sh` (key file), `examiner/worker.py`, `examiner/client.py`, `api/server.py`, `mcp_server.py`, the provenance loader check, `docs/next-phase/THREAT_MODEL.md`, tests under `tests/security`, `tests/adversarial` and `tests/contract`. `docs/next-phase/EVIDENCE_REDACTION.md` is already in the repository. | Existing passing tests, except the approved hunks | D8.15 |
 | P8 | `scripts/gate_e2e.py` with `gate-e2e`, `scripts/release_verify.py`, `tests/release/`, `.github/workflows/p0-integration.yml`, `scripts/gate_nov22.sh`, `RELEASE_REPORT.md`, `REPRODUCING_VERIFICATION.md`, `TEST_INVENTORY.*.txt` | `scripts/gate_http.py`, existing tests, `m3b-api-checks.yml`, the Frozen_Release refs | D9.10 |
+
+### D10.10 Final maintainer decisions
+
+Recorded 2026-11-25. These five decisions close OD-D9-1 and OD-D10-1 to OD-D10-4. Each is DECIDED and DESIGNED. None is implemented, and no Execution_Record exists for any of them. Where a decision differs from earlier text, this section governs (D10.2, rows 23 to 27).
+
+| ID | Decision | Criteria | Effect | Carried by |
+|---|---|---|---|---|
+| OD-D9-1 | Evidence commits reference the exact tested Release_Candidate SHA. A different commit is not automatically the same tested candidate. | 14.16, 14.21 | Every Execution_Record of the release run and every evidence commit names the full 40-character SHA S of the tested Release_Candidate. A later commit is a different commit. It counts as the same tested candidate only when the DD9-2 check (`git diff --name-only <S> <tip>` confined to `docs/next-phase/**` and the spec `tasks.md`) is recorded, and the release report then names both SHAs. Any other change is a new Release_Candidate. 14.21 stands as written. | tasks.md, Phase 7 |
+| OD-D10-4 | Manifest integrity, signature authenticity and complete archive-byte integrity are three separate results. Exact archive-byte verification requires an external trusted digest. | 10.14, 10.15, 10.36, 13.5(a), 14.24 | Property P-a (CP-29, D5-AC-16) is stated over the verified region: the canonical manifest, every manifest-listed member, the signature envelope and the embedded public key. A byte of the zip container outside that region is covered by no check in the Bundle (F5-2, R-D5-4). No format change and no new input is added. `docs/SIGNING.md` states the limit. No document, UI text, API field, CLI output or MCP result says or implies that a Bundle is byte-for-byte intact. `requirements.md` is reconciled by 10.36 (new), 13.5(a) and 14.24 (in place). | tasks.md, Phase 3 and Phase 5 |
+| OD-D10-1 | The initial failed-authentication threshold is five attempts per 15 minutes per source and account. The threshold is configurable and bounded. | 7.24 | D10-AC-2 tests this value. The bounds and the setting names are chosen at implementation and recorded as ASSUMED. A value outside the bounds is rejected at start-up and is not clamped (2.4). No credential value appears in logs. | tasks.md, Phase 5 |
+| OD-D10-2 | The five-second recording target of 3.2 is retained. A recording failure is visible and cannot create a successful evidence claim. | 3.2, 3.4, 3.5, 3.9 | Each Execution_Record carries the UTC time at which it was written, and `report-lint` compares it with the end time of the command (the mechanism recommended in the open decision). A record written more than 5 s after the command ended, or with either time missing or unreadable, is listed in the lint output and in the release report as a recording failure. It never becomes `SUCCEEDED`: the capability it would support stays `UNVERIFIED` until a valid record exists, and the late record stays in the ledger (3.5). | tasks.md, Phase 1 and Phase 7 |
+| OD-D10-3 | A rollback that does not complete blocks the release and requires recovery to a verified checkpoint. | 4.6, 14.10, 14.26 | 4.6 stands: the RP row is `FAILED`, the track line says incomplete and earlier rows stay unchanged (3.5). In addition, release blocker RB-18 (level LOCAL) is open until the Phase_Branch is recovered to a verified checkpoint, which is a commit whose phase regression set has a `SUCCEEDED` Execution_Record. The recovery is a new commit that restores that commit's tree, and the regression set is rerun after it. No history reset, no force push and no change to `master` or a tag (D9.7). | tasks.md, Phase 7 and each phase checkpoint |
 
 ## Table of contents
 

@@ -44,3 +44,23 @@ The Private_Original of `records.jsonl` is kept under `baseline/private-original
 ## Open item
 
 OD-D8-8: whether to publish sanitized copies of the logs. Not decided. The existing pattern (hash published, file private) stays.
+
+## Pre-commit scan, task-plan checkpoint (2026-11-25)
+
+Status: design-time observation, UNVERIFIED for Requirement 3. It is not an Execution_Record. The scan was an unstored one-off script, so its exact command text is not available. The permanent scan is task PH1-03 of `tasks.md`. Counts only, never matched values (3.14).
+
+Scope: the lines added by this checkpoint to `requirements.md`, `design.md`, `EXECUTION_EVIDENCE.md` and `REVIEW_REMEDIATION_REGISTER.md`, plus the whole of `tasks.md` (1,301 lines).
+
+| Class | Count |
+|---|---|
+| User-profile path | 0 |
+| Repository-root path | 0 |
+| User name (account, version-control and hosting identities) | 0 |
+| Host name | 0 |
+| E-mail address | 0 |
+| Non-loopback network address (IPv4 and IPv6) | 0 |
+| Secret assignment or token | 0 |
+| Key block | 0 |
+| Long encoded run other than a hexadecimal hash | 0 |
+
+A whole-file scan of `design.md` also finds 7 user-profile-path matches. They are the constructed example paths of the hook-matcher fixtures named in "Not redacted, and why". They are present at `aea7d06d11cf32f9f5abba7cbd3f33a3472c935a` and lie outside the changes of this checkpoint.

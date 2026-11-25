@@ -70,6 +70,33 @@ These entries were reported by the maintainer when D3 was conditionally approved
 
 The deduplication key is the request identifier. A credit figure that belongs to a duplicate identifier is counted once. The figures are not attributed to a track, to hooks or to D3 (16.3), and no cost per task, test or requirement is derived from them (16.5).
 
+## Phase_Branch pushes and remote ref check (Requirement 14.13)
+
+PUSH-001 to PUSH-003 record every push of the Phase_Branch that the local reflog of the remote-tracking ref shows (`update by push` entries, remote `origin`). The local reflogs of all other remote-tracking refs show no push. A row is an observation of a ref update and not a command execution: the original push command text and exit code were not captured in this ledger, so both are NOT_AVAILABLE and the row carries no Outcome_Class. The time is the reflog timestamp converted to UTC. It is the time at which the local tracking ref was updated after the push, and it is not a server timestamp.
+
+| Record | Ref | Before | After | Updated (UTC) | Owner authorization |
+|---|---|---|---|---|---|
+| PUSH-001 | `refs/heads/feature/kiro-next-phase` | none (the reflog old value is the all-zero id, so the ref was created) | `c29d2fee95cd0cbc0d59e89111b0d80af1b19d8a` | 2026-11-25 04:31:16 | Not stated in this record. UNVERIFIED. |
+| PUSH-002 | `refs/heads/feature/kiro-next-phase` | `c29d2fee95cd0cbc0d59e89111b0d80af1b19d8a` | `1cb3e481439cf31d2a7ba45a1b98129e095a02fd` | 2026-11-25 20:06:03 | Not stated in this record. UNVERIFIED. |
+| PUSH-003 | `refs/heads/feature/kiro-next-phase` | `1cb3e481439cf31d2a7ba45a1b98129e095a02fd` | `aea7d06d11cf32f9f5abba7cbd3f33a3472c935a` | 2026-11-25 21:38:28 | Stated by the repository owner as authorized, in the request of 2026-11-25 that asked for this record. The text of the original authorization is not stored in this repository. |
+
+A push of the commit that contains this section is recorded by the first ledger update after it, because a commit cannot contain its own id.
+
+| Record | Step | Command | Working directory | Commit | Host | Start (UTC) | Seconds | Exit | Recorded (UTC) | Class |
+|---|---|---|---|---|---|---|---|---|---|---|
+| E-200 | Remote ref check | `git ls-remote origin refs/heads/feature/kiro-next-phase refs/heads/master refs/tags/v1.0.0-submission refs/tags/v1.0.0-submission^{} refs/tags/verified-quote-e2e-20261118` | repository root | `aea7d06d11cf32f9f5abba7cbd3f33a3472c935a` | Windows (PowerShell) | 2026-11-25 23:39:11 | 1.1 | 0 | 2026-11-25 23:39:13 | SUCCEEDED |
+
+E-200 output, in full (5 lines, no pipe, exit code read directly). Execution_Index id: not applicable, because the index covers the baseline run only.
+
+```text
+aea7d06d11cf32f9f5abba7cbd3f33a3472c935a  refs/heads/feature/kiro-next-phase
+84df25c68198e496889b5892a03555ec7d2d860a  refs/heads/master
+e9ca8d2bac4a65483f3a7357e00600a1210a6f4f  refs/tags/v1.0.0-submission
+84df25c68198e496889b5892a03555ec7d2d860a  refs/tags/v1.0.0-submission^{}
+407478be97a8979a8e3555bba3b3ab302229f91d  refs/tags/verified-quote-e2e-20261118
+```
+
+Reading. The Phase_Branch value equals the After value of PUSH-003. The four Frozen_Release values equal those of Requirement 1.2 (tag object, peeled commit, `master`, `verified-quote-e2e-20261118`). This is a check at the time of the record. The end-of-phase check of 14.14 is task PH7-15.
 ## Capability register
 
 | Capability | Status |
