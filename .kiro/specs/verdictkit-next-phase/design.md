@@ -2,7 +2,7 @@
 
 ## Document status
 
-This design is written in sections. Sections D0 (foundations), D1 (P0 UI/UX, conditionally approved, decisions in D1.16), D2 (P1 secure public deployment, conditionally approved, decisions in D2.12) and D3 (P2 agent hooks and Windows compatibility, conditionally approved, decisions in D3.13) are written. Sections D4 to D10 are listed in the table of contents at the end of this file and are PENDING. This file is not a complete design and must not be accepted as one.
+This design is written in sections. Sections D0 (foundations), D1 (P0 UI/UX, conditionally approved, decisions in D1.16), D2 (P1 secure public deployment, conditionally approved, decisions in D2.12), D3 (P2 agent hooks and Windows compatibility, conditionally approved, decisions in D3.13), D4 (P3 MCP, conditionally approved, decisions in D4.12) and D5 (P4 signing, conditionally approved, decisions in D5.12) are written. Sections D6 (P5 plugin SDK) and D7 (P6 regulatory verification) are written and await maintainer review (open decisions in D6.10 and D7.10). Sections D8 to D10 are listed in the table of contents at the end of this file and are PENDING. This file is not a complete design and must not be accepted as one.
 
 ## D0. Foundations
 
@@ -1821,19 +1821,1470 @@ The maintainer approved D3 conditionally. Each decision below is DECIDED and DES
 | D3-AC-26 | Closed environment allowlist | The canary test of D3-AC-5, extended | A canary variable with a benign name that is not on the list is absent in the child. A canary named like a secret is absent and is listed by name only. Every list entry has a recorded reason. 0 variable values appear in records, stdout or stderr other than values the runner set. The list hash equals the reviewed hash. | 8.18 | Windows host, Linux CI |
 | D3-AC-27 | Renewed review trigger | The HM-T5 hash check on a temporary copy of the tree | A one-byte change in each pinned file, a new hook file, a removed hook file and a changed `enabled` value each fail with renewed review required. A Windows (CRLF) checkout and a Linux (LF) checkout give the same hashes. The unchanged tree passes. | 8.17 | Windows host, Linux CI |
 
+## D4. P3 MCP interoperability and diagnostics
+
+### D4.1 Scope and status
+
+**Covers.** Requirement 9 (criteria 9.1 to 9.20): error signalling, size and read-only limits, diagnostics, schemas, the real-stdio client test, compatibility with existing clients and the verification of calls made from inside Kiro. It also covers the MCP side of invariants 2.3, 2.4 and 2.8.
+
+**Does not cover.** Signing and signer trust (D5 owns the fields that 9.8 reports). The contract-version value (D5.8). The BE-1 edit to `tests/contract/test_mcp_server.py` (D3.9). The hash re-pin and renewed review of `.kiro/settings/mcp.json` (D3, AM-D3-7). Any transport other than stdio.
+
+**Status.** Everything in D4 is DESIGNED. Nothing is IMPLEMENTED or VERIFIED. Facts marked OBSERVED come from a read-only stdio probe run while writing this design (Windows host, 2026-11-24, `mcp` 2.3.0). The probe is not an Execution_Record, so those facts are UNVERIFIED for Requirement 3 until a record exists. The notes are in `docs/next-phase/D4_D5_WORKING_NOTES.md`.
+
+### D4.2 Inspected baseline and findings
+
+Files read or searched at commit `c29d2fe`. `git diff --stat 84df25c c29d2fe` over `core`, `api`, `apps`, `tests`, `scripts`, `deploy`, `ui-kit`, `examples` and `.kiro/settings` is empty, so the code is the baseline code. Read: `core/src/verdictkit/mcp_server.py`, `tests/contract/test_mcp_server.py`, `.kiro/settings/mcp.json`, `core/pyproject.toml`, `uv.lock`, `pipeline.py`, `evidence/broker.py`, `examiner/client.py`, `bundle.py`, the `SchemaError` sites of both claim types, `docs/KIRO_USAGE.md`, `docs/TRACEABILITY.md`, the uses of `mcp_server` in `tests/integration/test_quote_b7_texas.py`, and the installed SDK files `server/mcpserver/{server.py,tools/base.py,utilities/func_metadata.py,exceptions.py}` and `client/{client.py,session.py}`.
+
+| # | Finding | Requirement |
+|---|---|---|
+| F4-1 | Tool failures are plain dicts `{"error": "<string>"}` returned as normal results. OBSERVED: `replay_bundle` on a missing path gives `isError` false. | 9.13, 9.19 |
+| F4-2 | SDK argument-validation failures do set `isError` true, but the text is the raw pydantic message, which includes `input_value=` (OBSERVED: a canary claim string was echoed) and a documentation URL. There is no structured object. An unknown tool name is echoed. | 9.3, 9.14, 2.3 |
+| F4-3 | `SchemaError` is caught by `except Exception` and reported as `verification failed (SchemaError)`, so the field name is lost. | 9.14 |
+| F4-4 | OBSERVED: `allow_refetch: "yes"` is accepted as true. Unknown extra arguments are ignored. A `claim` sent as a JSON string is parsed by the SDK before the tool runs. | 9.16, 9.6 |
+| F4-5 | The version `"0.1.0"` and the contract version `"1.1.0"` are string literals. They equal the package metadata only by coincidence. | 9.2, 9.18 |
+| F4-6 | `core/pyproject.toml` declares `mcp>=1.2`. The code imports `mcp.server.mcpserver`, which exists only in mcp 2.x (the 2.x `fastmcp` module raises `ModuleNotFoundError` on purpose). The lock holds 2.3.0. A fresh install can resolve to 1.x and fail at import. | 9.1 |
+| F4-7 | `test_sdk_registers_exactly_the_four_tools` asserts exactly four tools. The tests assert only that the key `"error"` is present. `test_quote_b7_texas.py` asserts `"error" in result and "verdict" not in result` and calls the private `_registry` and `_workdir`. | 9.1, 9.13 |
+| F4-8 | With `VK_MCP_READONLY=1`, `verify_claim` runs with `network=False`. The broker raises `EvidenceUnavailable`, `run_case` swallows it, and the findings become `INDETERMINATE` with reason `evidence_missing`. A verdict is returned, not an error. | 9.6, 9.19 |
+| F4-9 | `autoApprove` is `list_claim_types` and `explain_verdict`. `explain_verdict` accepts any local path. "bundle not found" and "bundle exceeds 8 MiB" differ, which tells a caller that a large file exists. | 9.9 |
+| F4-10 | `docs/KIRO_USAGE.md` records that no MCP call was made from inside Kiro in the B7 session. The historical export holds 23 Kiro MCP calls (E-101, historical, not counted for this Release_Candidate, 3.9). | 9.11, 9.12 |
+| F4-11 | OBSERVED: the SDK writes one stderr line per rejected call with field names only. For an unexpected exception it calls `logger.exception`, which writes a traceback to stderr. Kiro shows server stderr in its MCP log. | 9.3, 9.5 |
+| F4-12 | OBSERVED: `initialize` echoes protocol `2025-06-18`. `tools/list` returns four tools without annotations. The dict tools publish a permissive output schema. `list_claim_types` publishes `{"result": [...]}` and sends one content block per claim type. | 9.1 |
+
+### D4.3 Compatibility with existing clients
+
+**Frozen surface (DESIGNED).** A snapshot is captured from the unmodified server before the first D4 change and stored as test data (D4-AC-1). It holds the four tool names, the `inputSchema` of each tool, the top-level field names of each success result (`verify_claim`: `case_id`, `isolation_mode`, `verdict`, `bundle_path`; `replay_bundle`: `contractVersion`, `integrity`, `reproducibility`, `authenticity`, `notes`; `explain_verdict`: `integrity`, `headline`, `verdict_hash`, `summary`; `list_claim_types`: `type_id`, `schema_version`, `outcome_fields`) and the wire form of `list_claim_types`. The plain functions in `mcp_server.py` keep their names, parameters and return shapes, because the existing tests call them directly. Error signalling is applied where the tools are registered and by a small change to how the functions build the `error` value (D4.4).
+
+| Change | Class | Effect on an existing client | Control |
+|---|---|---|---|
+| `isError` true for execution errors | Behaviour fix | A client that ignored `isError` and read `error` keeps working. A client that checks `isError` now sees failures. | D4-AC-3 |
+| `error` becomes an object `{code, message, tool}` | Shape change, required by 9.3 | A client that treats `error` as a string breaks. The tests assert only that the key exists (F4-7). Documented in `docs/MCP_SERVER.md`. | D4-AC-2 |
+| Argument errors lose the pydantic text | Behaviour fix | Messages change. Codes are stable. | D4-AC-4 |
+| `serverInfo.version` read from package metadata | None today | Same value now. | D4-AC-5 |
+| `contractVersion` value follows D5 (1.2.0) | Value change, field name kept | A client that pins `"1.1.0"` breaks. This is the one intended value change. | D5.8 lockstep check |
+| Optional tool `server_diagnostics` | Additive | The default tool list stays exactly four. | D4-AC-1 |
+| `allow_refetch` must be a JSON boolean, unknown arguments rejected | Stricter input (OD-D4-4) | A client that sends `"true"` or extra fields breaks. | D4-AC-11 |
+| `mcp` bound changes to `>=2.3,<3` (OD-D4-5) | Dependency | Closes F4-6. | D4-AC-18 |
+
+### D4.4 Execution-error model
+
+**Rule E1 (DESIGNED).** A call is an execution error when the tool cannot produce its documented success object because of the input, a limit, the mode, the environment or an internal fault. A call is a result when the documented success object is produced, whatever it says. Every claim verdict (`CONSISTENT`, `SUPPORTED`, `CONDITIONAL`, `INDETERMINATE`, `CONTRADICTED`, `REFUTED`, `IMPOSSIBLE`, and `BLOCKED` where a claim type produces it) is a result. So are `DIVERGED` and `UNVERIFIABLE` for a bundle whose integrity is `VERIFIED`. `isError` is derived only from the presence of the `error` object. No code reads `headline`, `status` or `verdict` to decide it (9.19, D0.4).
+
+**Error object (9.3).** `{"error": {"code", "message", "tool"}}`. `code` comes from the closed list below. `message` has at most 500 characters. `tool` is the registered tool name. `INTERNAL_ERROR` also carries `incidentId` (8 random hex characters), which also appears in the stderr receipt. `BUNDLE_INTEGRITY_FAILED` keeps the baseline `integrity` object at the top level, so a client that reads `result["integrity"]["status"]` still works. A failure leaves stored evidence and bundles unchanged. Nothing is written before validation succeeds.
+
+| Code | When | Message source |
+|---|---|---|
+| `INVALID_ARGUMENT` | Wrong type, missing or unknown argument, `allow_refetch` not a boolean, empty or NUL-containing path | Fixed text plus the argument names |
+| `UNKNOWN_TOOL` | The SDK reports an unknown tool | Fixed text, no echo of the name |
+| `CLAIM_NOT_CANONICAL` | Claim is not an object, has floats, NaN or duplicate keys, or is not canonical | Fixed text |
+| `CLAIM_INVALID` | `SchemaError`, or an unregistered claim type | The claim type's own message after the sanitizer (9.14). An unregistered claim type gets a fixed text. |
+| `SIZE_LIMIT_EXCEEDED` | Claim over 262,144 bytes or bundle over 8,388,608 bytes | Fixed text with the cap, never the input size or path |
+| `READ_ONLY_MODE` | `allow_refetch` true while `VK_MCP_READONLY=1` | Fixed text |
+| `BUNDLE_NOT_FOUND` | Path is not a readable file. One message for missing and unreadable. | Fixed text |
+| `BUNDLE_INTEGRITY_FAILED` | The file is not an intact bundle (not a zip, unsafe entries, hash or chain mismatch) | Fixed text |
+| `ISOLATION_UNAVAILABLE` | Socket configured but not authenticated, or `VK_EVIDENCE_DIR` missing in socket mode | Fixed text |
+| `INTERNAL_ERROR` | Any other exception | Fixed text plus `incidentId`. No exception class, no text. |
+
+**Sanitizer (9.3, 9.14).** A `SchemaError` message passes only if it has at most 500 characters, no control character, no path-like token (drive letter, leading slash or backslash, `..`), and contains no leaf string value of the submitted claim. Otherwise the message is `claim validation failed` and the field is not named. A claim-type author rule backs this up: messages are built from fixed text and field names only. The canary test in D4-AC-4 enforces it for every registered claim type.
+
+**Mechanism (DESIGNED).** `build_server` returns a subclass of `MCPServer` that overrides the public `call_tool`. It (1) checks the raw arguments before the SDK coerces them: unknown names, non-boolean `allow_refetch`, wrong types. Missing `arguments` means `{}`, so `list_claim_types` is unaffected by a client that drops empty objects. (2) It calls the SDK. (3) It converts `ToolError` into the error object, dropping the SDK text. (4) It returns `CallToolResult(is_error=True, structured_content=error_result, content=[canonical JSON text])` when the result holds an `error` object, and the unchanged dict otherwise, so success results stay identical on the wire. (5) It catches every other exception as `INTERNAL_ERROR` and never calls `logger.exception` or sets `exc_info`. The tools are registered through `functools.wraps` wrappers, so the published `inputSchema` is derived from the unchanged signatures. The override is used instead of the SDK middleware because the middleware API is marked provisional.
+
+**Output schemas.** The dict tools publish a permissive object schema, so an error body validates. `list_claim_types` publishes a wrapped `result` array, so its error body would not validate in a client that validates `structuredContent` even when `isError` is true. The Python SDK client skips validation for `isError` results (read in `client.py`). The TypeScript client is UNVERIFIED (R-D4-1). The failure is visible either way.
+
+**Tampered and malformed bundles (OD-D4-2).** Recommended: `explain_verdict` and `replay_bundle` return `BUNDLE_INTEGRITY_FAILED` with `isError` true whenever the integrity result is `FAILED`. A client that checks only `isError` then cannot treat a tampered bundle as replayed. `explain_verdict` already refuses in the baseline. The alternative keeps every `ReplayReport` a result, like `POST /replays`, and relies on the client to read `integrity.status`.
+
+### D4.5 Inputs, schemas, limits and read-only mode
+
+- **Documented schemas (9.10).** `docs/mcp/schemas/` holds the `tools/list` snapshot, one success schema and one error schema per tool, and the diagnostics schema (JSON Schema 2020-12). The error schema has `additionalProperties` false, the fields `code`, `message` and `tool` (plus `incidentId` for `INTERNAL_ERROR` only) and `error.code` limited to the list in D4.4. A test compares the files with the live `tools/list`, so drift fails. `jsonschema` is already a development dependency.
+- **Size limits (9.7).** A claim is measured as the UTF-8 length of `json.dumps(claim, allow_nan=False)`. A bundle is measured by file size. A file of exactly the cap is accepted and one byte more is rejected. The checks run before any parsing. The zip limits of `bundle.py` (4,096 entries, 16 MiB per entry, 64 MiB uncompressed) stay.
+- **Read-only mode (9.6).** F4-8 shows that the baseline refuses network acquisition by disabling it, and the verdict is returned. OD-D4-3 recommends keeping that: `allow_refetch` true gives `READ_ONLY_MODE`, and `verify_claim` returns its result with `INDETERMINATE` findings. A failure object for `verify_claim` would turn a legitimate `INDETERMINATE` into an error (9.19) and would contradict `test_readonly_refuses_refetch`. The refusal is checked by a socket guard (D4-AC-8).
+- **Claim validation (9.16).** The server never turns a string into a boolean, never treats a missing list as empty and never fills a default. Claim validation stays exactly as the claim type defines it. The one pre-validation step the SDK performs, parsing a `claim` that arrives as a JSON string into an object, is kept for client compatibility. The parsed object then goes through the same validation as any object.
+- **`autoApprove` (9.9).** Each tool has an effect class in a test fixture. `list_claim_types` and `explain_verdict` are NO_WRITE_NO_NETWORK. `replay_bundle` writes a private replay directory and uses the network only with `allow_refetch`. `verify_claim` writes a bundle and uses the network when not read-only. `server_diagnostics` is NO_WRITE and connects only to the configured Unix socket. `autoApprove` stays `list_claim_types` and `explain_verdict`. `server_diagnostics` is not added, so approval is requested for it. Tool annotations (`readOnlyHint`, `openWorldHint`) are published for clients and are never used as proof.
+- **Path handling.** `path` is read, never written, never echoed. All path failures return one message (F4-9). The size check follows the existence check, so a large file is still distinguishable from a missing one. This is residual risk R-D4-3.
+
+### D4.6 Diagnostics and privacy
+
+**Tool `server_diagnostics` (9.2, 9.4, 9.5).** It takes no arguments. It is registered only when `VK_MCP_DIAGNOSTICS=1`, so the default `build_server()` still lists exactly four tools and `test_sdk_registers_exactly_the_four_tools` passes unmodified (OD-D4-1). The result has exactly these fields, with `additionalProperties` false:
+
+| Field | Value |
+|---|---|
+| `serverVersion` | `importlib.metadata.version("verdictkit")`. If the metadata is missing the server exits with code 3 and writes `VK_MCP_STARTUP_ERROR=VERSION_UNAVAILABLE`. The same value goes into `serverInfo.version`. |
+| `contractVersion` | The shared constant (D5.8). No literal remains in `mcp_server.py`. |
+| `isolationMode` | `ENFORCED` only when the socket is configured, accepts a connection and passes the same owner check as `SocketExaminer(expected_peer_uid=...)`. Otherwise `UNENFORCED`. It is always `UNENFORCED` on Windows. |
+| `readOnly` | Boolean for `VK_MCP_READONLY=1` |
+| `examinerSocketConfigured` | Boolean |
+| `examinerSocketReachable` | `true` only if a configured socket accepted a connection within 2 seconds. The probe connects, sends nothing and closes. `false` when not configured. |
+| `evidenceDirValid` | Boolean, by the existing `_shared_evidence_dir` rule |
+
+The tool writes no file and opens no connection except the Unix socket. The result never contains an environment value, the vault key or path, the socket path, a uid, or any path.
+
+**Logging policy.** Stderr is the Kiro MCP log. The server writes one receipt line per call: `VKMCP v1 tool=<name> argsSha256=<16 hex> bytes=<n> outcome=ok|error code=<CODE|-> ms=<n> incident=<id|->`. The hash is the SHA-256 of the canonical JSON of the arguments. A log filter removes `exc_info` from records of the `mcp` logger. No argument value, path, exception text or traceback is logged. The tool name in a receipt is checked against the registry, so a client cannot inject text into the log.
+
+### D4.7 stdio transport and the client test
+
+**Harness (9.10, 9.17, 9.20).** The test starts `sys.executable -m verdictkit.mcp_server` as a real subprocess with an allowlisted environment (no host secrets). It uses the official SDK stdio client for the main cases and a raw JSON-RPC line client for framing cases. Each call has a 30 second limit, and a stall is a failure. The server must exit with code 0 within 5 seconds after stdin closes.
+
+**Cases.** (1) `initialize`: `serverInfo.version` equals the metadata version, otherwise the test fails (9.18). (2) `tools/list` is the four names by default and five with `VK_MCP_DIAGNOSTICS=1`. (3) Each tool gets one valid and one invalid call, and every result is validated against the documented schema. (4) The negative paths of 9.20: invalid input, claim of 262,145 bytes, bundle of 8,388,609 bytes, read-only refusal, missing bundle and tampered bundle, each with the `isError` value that D4.4 defines. (5) A legitimate `INDETERMINATE`: the Texas finance claim with doc fee 499.00 under `VK_MCP_READONLY=1` returns `isError` false (the B7 record says `doc_fee_cap` is `INDETERMINATE`). (6) A finance claim with boolean fields and non-empty `addons`, `gov_fees` and `rebates` returns a `SUPPORTED` `tax_rate` finding (9.17). (7) Stdout hygiene: every stdout line is one JSON-RPC message, with no banner and no `print`. A non-ASCII statement (`§`, `—`) round-trips identically on Windows and Linux. (8) A garbage line and a `tools/call` without `arguments` leave the server answering later requests. The behaviour is recorded, not assumed.
+
+**Client matrix.** Official Python SDK client: covered by this test. Raw JSON-RPC: covered. Kiro: D4.8. MCP Inspector, TypeScript SDK clients and Claude Desktop: UNVERIFIED, listed in the release notes as not tested. At least `2025-06-18` and the newest version that the SDK client offers are negotiated.
+
+**Start-up.** The configured command is `uv run python -m verdictkit.mcp_server`. `uv run` can sync the environment before the server starts. The test measures time to the first `initialize` response with that exact command and fails above 30 seconds (9.10). The command is not changed by D4.
+
+### D4.8 Verification of calls made from inside Kiro (9.11, 9.12)
+
+This is owner-run (14.13). The agent records what the maintainer captured and cannot attest a call. It uses the disposable checkout of D3.8 (no credential or key in it, 8.18). Before the calls, the maintainer records the commit SHA, the LF-normalized SHA-256 of `.kiro/settings/mcp.json`, the Kiro version if shown, the Python and `uv` versions, the host and the date. The Kiro MCP panel must show `verdictkit` connected with its tools. A capture of the panel is kept.
+
+| Call | Purpose | Expected |
+|---|---|---|
+| KM-1 `list_claim_types` | Server reachable. Arguments empty or dropped. | Success. The registered claim types (4 at design time) |
+| KM-2 `verify_claim`, stub claim | Basic pass-through | Success, a bundle path |
+| KM-3 `verify_claim`, finance claim with non-empty lists and booleans | The example given in the documentation | `tax_rate` `SUPPORTED` |
+| KM-4 `verify_claim`, same claim with empty `addons`, `gov_fees` and `rebates` | Records the reported dropping of empty arrays (9.15) | Either success or `CLAIM_INVALID` naming the field. Both are recorded as observed. |
+| KM-5 `replay_bundle` on the KM-2 bundle | Replay | `integrity` `VERIFIED` |
+| KM-6 `explain_verdict` on the KM-2 bundle | Explanation | `NOT_ESTABLISHED` in the summary |
+| KM-7 `replay_bundle`, missing path | Error signalling | `isError` true, `BUNDLE_NOT_FOUND` |
+| KM-8 `server_diagnostics` (if enabled) | Diagnostics | Exact field set |
+
+For each call the maintainer copies, from the Kiro tool-call display or export, the tool name, the arguments, the result and the date and time in ISO 8601. The capture file is stored under `docs/next-phase/kiro-mcp/` and its SHA-256 goes into the ledger row. Three hashes are recorded: the intended arguments, the arguments as captured from Kiro and the `argsSha256` of the server receipt in the Kiro MCP log. Captured and receipt hashes must be equal. A difference between intended and captured arguments is the observed dropping of arguments, and it is recorded as a finding.
+
+**Outcome class.** SUCCEEDED requires, for every call, a matching tool name, equal captured and receipt hashes, a result that validates against the documented schema and the expected `isError`. FAILED applies if a call ran and any condition fails. UNVERIFIED applies if the tools are not exposed to the session, as in the B7 session, or if the calls were not made. The ledger then also records any stdio result and labels it "obtained outside Kiro" (9.12). Rows are added in the ledger numbering. The historical 23 calls stay historical (E-101).
+
+**Documentation (9.15).** `docs/MCP_SERVER.md` states that the Kiro tool-call path was reported to drop empty arrays and empty objects. It names the affected `verify_claim` fields (finance `addons`, `gov_fees` and `rebates`) and gives a finance example with non-empty lists. It says "expected to pass through Kiro" until KM-3 is SUCCEEDED. The server does not accept the dropped form (9.16).
+
+### D4.9 Threats and controls
+
+| # | Threat | Control | Check |
+|---|---|---|---|
+| T-M1 | An injected agent reads arbitrary local files through an auto-approved tool | `explain_verdict` only parses bundles, never echoes content except verified bundle fields, one message for every path failure, size cap. Residual R-D4-3. | D4-AC-4, D4-AC-7 |
+| T-M2 | Claimed figures or secrets leak through errors, stderr or diagnostics | Fixed messages, sanitizer, receipts without values, no `exc_info`, no env values | D4-AC-4, D4-AC-6 |
+| T-M3 | A failure is read as success by an agent (fail-open) | `isError` and closed codes. Tampered bundles are errors (OD-D4-2). | D4-AC-3 |
+| T-M4 | Refetch or network use in read-only mode | Strict boolean, `READ_ONLY_MODE`, socket guard | D4-AC-8, D4-AC-11 |
+| T-M5 | A zip bomb through `path` | 8 MiB file cap and the existing entry, size and uncompressed limits | D4-AC-7 |
+| T-M6 | `mcp.json` changed to run another command or auto-approve a write tool | HM-T5 hash check (AM-D3-7) and the `autoApprove` test | D4-AC-12 |
+| T-M7 | Protocol corruption by output on stdout, or log injection | Hygiene test, receipt fields from a fixed charset | D4-AC-13 |
+| T-M8 | SDK or dependency drift | Bound `>=2.3,<3`, snapshot test, `uv lock --check` | D4-AC-1, D4-AC-18 |
+
+### D4.10 Acceptance criteria
+
+All rows are UNVERIFIED until an Execution_Record exists. "Linux" means the container or CI host (the socket cases need Linux peer credentials).
+
+| ID | Check | Method | Pass threshold | Req | Host |
+|---|---|---|---|---|---|
+| D4-AC-1 | Frozen surface | Compare `tools/list` and the success key sets with the baseline snapshot (default environment) | 4 tool names, 0 `inputSchema` differences, 0 key-set differences | 9.1 | Both |
+| D4-AC-2 | Existing tests untouched | `git diff 84df25c -- tests/contract/test_mcp_server.py tests/integration/test_quote_b7_texas.py` | 0 changed lines except the BE-1 hunk of D3.9, whose AST guard BE1-5 passes. All existing MCP tests pass. | 9.1, 9.13 | Both |
+| D4-AC-3 | Signalling | Stdio matrix: every execution error of D4.4, and every verdict headline | 100% of error cases have `isError` true, a code in the list, the right `tool` and a message of at most 500 characters. 0 verdict results have `isError` true. `INDETERMINATE` has `isError` false. | 9.3, 9.13, 9.19, 9.20 | Both |
+| D4-AC-4 | No leakage | 20 canary injections (claim leaves, paths, argument names, env values) into every tool, plus a Hypothesis property on the sanitizer | 0 canary occurrences in text, `structuredContent` and stderr. 0 path-like tokens. Sanitizer output at most 500 characters. | 9.3, 9.5, 9.14, 2.3 | Both |
+| D4-AC-5 | Version | Compare `serverInfo.version` with `importlib.metadata`. A double that reports another version must fail the same comparison. | Equal. The negative control fails. | 9.2, 9.18 | Both |
+| D4-AC-6 | Diagnostics | Exact field set. Directory snapshots before and after. Connection guard. A reachable and a stalled socket. | Exact 7 fields, 0 files written, 0 non-Unix connections, `examinerSocketReachable` true within 2 s and false within 2.5 s for the stalled socket, 0 secrets | 9.4, 9.5 | Linux (socket cases), Windows (rest) |
+| D4-AC-7 | Size limits | Boundary cases | 262,144 and 8,388,608 accepted. 262,145 and 8,388,609 give `SIZE_LIMIT_EXCEEDED`. | 9.7 | Both |
+| D4-AC-8 | Read-only | Launcher that fails any non-Unix `connect` | `READ_ONLY_MODE` for refetch. `verify_claim` returns `INDETERMINATE` findings. 0 outbound connections. | 9.6 | Both |
+| D4-AC-9 | `SchemaError` message | Remove or corrupt each required field of every registered claim type | `CLAIM_INVALID`, message names the field, 0 exception text, 0 paths, 0 input values | 9.14 | Both |
+| D4-AC-10 | No relaxation | Mutations on the finance claim: string for a boolean, missing `addons`, `gov_fees` or `rebates` | 0 accepted. Each gives `CLAIM_INVALID`. | 9.16 | Both |
+| D4-AC-11 | Strict arguments (if OD-D4-4 is accepted) | `allow_refetch` as `"yes"`, `"true"`, 1. An unknown argument. A tool call without `arguments`. | First two groups give `INVALID_ARGUMENT`. `list_claim_types` without `arguments` succeeds. | 9.16, 9.6 | Both |
+| D4-AC-12 | `autoApprove` | Parse `.kiro/settings/mcp.json` against the effect table. Negative control on a copy that adds `verify_claim`. | Every entry is NO_WRITE_NO_NETWORK. The control fails. | 9.9 | Both |
+| D4-AC-13 | stdio hygiene | Raw client over the full matrix | 0 non-protocol stdout lines. `§` and `—` identical on both hosts. Exit code 0 within 5 s of EOF. | 9.10 | Both |
+| D4-AC-14 | Timeouts | A test double that stalls | Each call returns within 30 s. The stall is reported as a failure at 30 s. | 9.10 | Both |
+| D4-AC-15 | Finance claim over stdio | Case (6) of D4.7 | `tax_rate` `SUPPORTED` | 9.17 | Both |
+| D4-AC-16 | Kiro verification | Owner-run KM-1 to KM-8 | One ledger row per call with tool name, three hashes, result, ISO 8601 date and the "captured from Kiro" label. Outcome class by the rule in D4.8. | 9.11, 9.12 | Owner (Kiro) |
+| D4-AC-17 | Documentation | A test extracts the finance example from `docs/MCP_SERVER.md` and runs it over stdio | `SUPPORTED`. The empty-array statement, the affected fields and the code list are present. | 9.15 | Both |
+| D4-AC-18 | Dependency bound | Inspect `core/pyproject.toml` and the lock. Import `mcp.server.mcpserver`. | The specifier excludes 1.x and 3.x. The lock resolves inside it. | 9.1 | Both |
+| D4-AC-19 | Signature fields (joint with D5) | `replay_bundle` and `explain_verdict` over stdio on a signed bundle | `signatureValidity` and `signerTrust` present as D5.3 defines | 9.8 | Both |
+
+### D4.11 Open decisions, risks and traceability
+
+| ID | Decision | Options | Recommendation |
+|---|---|---|---|
+| OD-D4-1 | How `server_diagnostics` is exposed given the exact-four-tools test | Opt-in by `VK_MCP_DIAGNOSTICS=1`. Always on (needs an edit to a contract test that 9.13 forbids). A CLI mode instead of a tool (not a tool, so not 9.4). | Opt-in. The Kiro workspace enables it in `mcp.json`, which needs the renewed review of AM-D3-7. |
+| OD-D4-2 | Tampered or malformed bundle: error or result | Error for both tools. Result for `replay_bundle`, error for `explain_verdict`. | Error for both (fail-closed, D4.4). |
+| OD-D4-3 | Reading of 9.6 for `verify_claim` in read-only mode | Disabled network with a verdict. A failure object. | Disabled network with a verdict (F4-8, 9.19). |
+| OD-D4-4 | Strict arguments | Reject unknown arguments and non-boolean `allow_refetch`. Keep the SDK behaviour. | Reject. Risk: a client that sends extras. |
+| OD-D4-5 | `mcp` bound | `>=2.3,<3`. `>=2.3,<2.4`. | `>=2.3,<3`. Only 2.3.0 is exercised. The lowest bound is UNVERIFIED. |
+| R-D4-1 | A strict TypeScript client may reject an error body for `list_claim_types` against its wrapped schema | UNVERIFIED. Failure stays visible. | Test when such a client is available. |
+| R-D4-2 | Kiro behaviours (argument dropping, display of `structuredContent`, approval prompts) are unknown | UNVERIFIED until D4-AC-16 | Owner-run |
+| R-D4-3 | `explain_verdict` is auto-approved, accepts any path and reveals whether a file over 8 MiB exists | Accepted residual. An opt-in bundle root is possible later. | Recorded for D8. |
+| R-D4-4 | The provisional SDK middleware API is not used. `call_tool` is public, but a 2.x change could still affect it. | Snapshot test and bound | D4-AC-1, D4-AC-18 |
+
+**Files for implementation (not changed now).** `core/src/verdictkit/mcp_server.py`; a dependency-free module for the contract-version constant (D5.8); `core/pyproject.toml`; `.kiro/settings/mcp.json` (environment flag, renewed review); new tests and schema snapshots; `docs/MCP_SERVER.md`; `docs/mcp/schemas/`; the Kiro capture folder.
+
+**Traceability.** 9.1: D4.3, AC-1, AC-2, AC-18. 9.2: D4.6, AC-5. 9.3: D4.4, AC-3, AC-4. 9.4: D4.6, AC-6. 9.5: D4.6, AC-4, AC-6. 9.6: D4.5, AC-8. 9.7: D4.5, AC-7. 9.8: D4.3, AC-19 with D5. 9.9: D4.5, AC-12. 9.10: D4.7, AC-3, AC-13, AC-14. 9.11, 9.12: D4.8, AC-16. 9.13: D4.3, D4.4, AC-2, AC-3. 9.14: D4.4, AC-9. 9.15: D4.8, AC-17. 9.16: D4.5, AC-10, AC-11. 9.17: D4.7, AC-15. 9.18: D4.7, AC-5. 9.19: D4.4, AC-3. 9.20: D4.7, AC-3. Every criterion of Requirement 9 maps to at least one D4 section and one acceptance row.
+
+### D4.12 Maintainer decisions on open items (conditional approval)
+
+The maintainer approved D4 conditionally. Each decision below is DECIDED and DESIGNED. None is implemented and no test was run for D4. Text in D4.1 to D4.11 is unchanged. Where a decision here differs from that text, this section governs.
+
+| ID | Decision | Effect on D4 text |
+|---|---|---|
+| AM-D4-1 | Diagnostics are opt-in and disabled by default. `server_diagnostics` is registered only when `VK_MCP_DIAGNOSTICS=1`. | OD-D4-1 decided as recommended. No change to `.kiro/settings/mcp.json` is made or implied. Setting the flag there is a separate change that needs the renewed review of AM-D3-7. |
+| AM-D4-2 | The four existing default tools are preserved: names, `inputSchema`, success key sets and the wire form of `list_claim_types`. | D4.3, D4-AC-1 and D4-AC-2 stand. `test_sdk_registers_exactly_the_four_tools` passes unmodified. |
+| AM-D4-3 | A tampered bundle (integrity `FAILED`) returns `isError` true with `BUNDLE_INTEGRITY_FAILED`, from `explain_verdict` and from `replay_bundle`. | OD-D4-2 decided as recommended. A malformed bundle stays an execution error under Rule E1. |
+| AM-D4-4 | A legitimate verdict, including `INDETERMINATE`, is a successful result with `isError` false. | Rule E1 and D4-AC-3 stand. No code derives `isError` from `headline`, `status` or `verdict`. |
+| AM-D4-5 | Arguments are validated strictly. An unknown argument, and an `allow_refetch` that is not a JSON boolean (`"yes"`, `"true"`, `1`), return `INVALID_ARGUMENT`. | OD-D4-4 decided: reject. D4-AC-11 no longer depends on "if OD-D4-4 is accepted". `docs/MCP_SERVER.md` states the stricter behaviour. Other argument handling in D4.5 is unchanged. |
+| AM-D4-6 | The `mcp` dependency range is a tested 2.x range, and the lock file pins one exact version. A bound is claimed only if a recorded D4 run covers it. | OD-D4-5 decided differently from the recommendation. Only 2.3.0 is exercised, so the specifier is `>=2.3,<2.4`. It widens only after a recorded stdio run on the new upper version. The text `>=2.3,<3` in D4.3, T-M8 and D4-AC-18 is superseded. D4-AC-18 also requires `uv lock --check` to pass and the image build to use `uv sync --frozen`. |
+| AM-D4-7 | Every error is structured and sanitised, and no sensitive input is echoed. | D4.4 and D4-AC-4 stand. The rule covers errors that the SDK raises before a tool runs: the D4 probe saw validation text that repeats `input_value`, and an unknown tool name echoed (working notes). The canaries of D4-AC-4 include those paths. |
+
+**Not decided in this review.** OD-D4-3 (reading of 9.6 for `verify_claim` in read-only mode) and the risks R-D4-1 to R-D4-4 stay open with the recommendations of D4.11.
+
+**Traceability.** AM-D4-1: 9.4, 9.1. AM-D4-2: 9.1, 9.13. AM-D4-3: 9.3, 9.19. AM-D4-4: 9.19, 9.20. AM-D4-5: 9.16, 9.6. AM-D4-6: 9.1. AM-D4-7: 9.3, 9.5, 9.14, 2.3.
+
+### D4.13 Maintainer decision recorded with the D6 and D7 review (MCP bound)
+
+The maintainer's D6 and D7 review also recorded this decision for D4. It is DECIDED and DESIGNED. Nothing is implemented and no test was run for D4. Text in D4.1 to D4.12 is unchanged. Where this decision differs from that text, this section governs.
+
+| ID | Decision | Effect on D4 text |
+|---|---|---|
+| AM-D4-8 | The `mcp` dependency keeps the range `>=2.3,<2.4` with exactly one version pinned in `uv.lock` (`2.3.0` at design time). Confirms AM-D4-6. | D4.3's table row, T-M8 and the OD-D4-5 recommendation still read `>=2.3,<3`; that text is superseded. D4-AC-18 is amended: it now also requires the `core/pyproject.toml` specifier to equal the string above, `uv.lock` to hold exactly one `mcp` entry inside the range, the installed version to equal the locked version, `uv lock --check` to pass, and the image build to use `uv sync --frozen`. The range widens only after a recorded stdio client run on the new upper version. |
+
+**Not decided in this review.** D4.11's open items and risks (OD-D4-3, R-D4-1 to R-D4-4) stay open with the recommendations of D4.11.
+
+**Traceability.** AM-D4-8: 9.1, 9.22.
+
+## D5. P4 Signed evidence bundles and signer trust
+
+### D5.1 Scope and status
+
+**Covers.** Requirement 10 (10.1 to 10.33): the signature envelope and signing protocol, creation of signed bundles, verification and replay, the Trust_Store, key provisioning, rotation and revocation, the four separate results, the single contract-version event that D2 handed to D5 (AM-10, OD-D2-3), the authenticity display rules that D1 left open (OD-7), adversarial tests and deterministic replay. It also supplies the fields that D4 reports through MCP (9.8).
+
+**Does not cover.** Hardware or cloud key custody, trusted timestamps, transparency logs, signing individual evidence blobs, signing by the MCP server (OD-D5-4), and dual-version serving of two contract versions.
+
+**Status.** Everything in D5 is DESIGNED. Nothing is IMPLEMENTED or VERIFIED. Facts marked OBSERVED come from a read-only probe of the locked `cryptography` 50.0.2 (OpenSSL 4.0.3) run while writing this design (Windows host, 2026-11-24). It is not an Execution_Record, so it is UNVERIFIED for Requirement 3 until a record exists. The evidence ledger entries U-001 to U-005 that D3 refers to exist in `docs/next-phase/EXECUTION_EVIDENCE.md` (lines 65 to 69). No ledger change is made for D5.
+
+### D5.2 Inspected baseline and findings
+
+Read at commit `c29d2fe` (code identical to `84df25c`): `core/src/verdictkit/bundle.py` (all), `canonical.py`, `mcp_server.py`, `cli.py` (replay), `api/server.py` (metadata and replay handlers), `api/run_service.py` (bundle write), `api/openapi.yaml` (authenticity, integrity, replay and health schemas), `docs/API_CONTRACT.md`, `core/pyproject.toml`, `uv.lock`, `tests/contract/test_bundle_replay.py`, `tests/integration/test_bundle_evidence_and_golden.py` and the D1, D2 and D3 contract notes.
+
+| # | Finding | Requirement |
+|---|---|---|
+| F5-1 | No signing code exists. `bundle.py` holds the constant `AUTHENTICITY` with status `NOT_ESTABLISHED`. `cryptography` is declared `>=43`, locked at 50.0.2, so Ed25519 needs no new dependency. | 10.3 |
+| F5-2 | The manifest has `engine_version`, `env_fingerprint`, `isolation_mode`, `data_mode`, `case_id`, `verdict_hash`, `files` (SHA-256 of every other member) and `written_at`. It has no format version. Signing the manifest bytes therefore binds every listed member. Container-level bytes (zip timestamps, attributes, comments, extra fields, compressed form, bytes before or after the archive) are not covered by anything. | 10.1, 10.29 |
+| F5-3 | `_integrity` treats `names - listed - {"manifest.json"}` as a failure, so any new member fails integrity today. `_check_zip_safety` rejects duplicate names, `..`, backslashes, directories, a leading slash and more than 4,096 entries, but it tests `ZipInfo.filename`, which Python has already sanitised: truncated at a NUL byte and, on Windows, with `\` rewritten to `/`. `orig_filename` keeps the raw name. OBSERVED on Windows (Python 3.12.10): a member stored as `signature\envelope.json` reports `filename` `signature/envelope.json`, so the backslash test cannot fire there while it fires on Linux, and a raw name made of the envelope name, a NUL byte and more text reports the plain envelope name on both hosts. The same archive can pass on one host and fail on the other. | 10.30, 10.31, 2.2 |
+| F5-4 | `write_bundle` is called by `cli.py`, `mcp_server.py` and `api/run_service.py`. `verify_bundle_integrity` is called by `api/server.py` (metadata) and `mcp_server.py` (explain). `replay_report_dict` serves the API, the CLI and MCP. The API metadata and the CLI print `NOT_ESTABLISHED` from a constant or a literal string. | 10.20, 9.8 |
+| F5-5 | OpenAPI `AuthenticityReport` has `status` as the constant `NOT_ESTABLISHED` and `additionalProperties` false. `ui-kit/src/types.ts` mirrors the literal. `docs/API_CONTRACT.md`: any schema change requires a version bump, and the frontend refuses unknown versions. | 10.21 |
+| F5-6 | OBSERVED: Ed25519 signing is deterministic (two signatures of one message are identical, 64 bytes). A signature with `S+L` is rejected. Small-order public keys (the identity point and 32 zero bytes) load, and a universal signature (R = identity, S = 0) VERIFIES for any message. An RSA PEM loads as an RSA key. An encrypted PEM without a password raises `TypeError`. | 10.2, 10.24, 10.30 |
+| F5-7 | The value `1.1.0` is pinned in `api/openapi.yaml` (twice), `api/server.py` (`VERSION`), `api/presenter.py` (`CONTRACT_VERSION`), `mcp_server.py`, 10 of the 13 files in `api/examples/`, `ui-kit/src/api.ts` (line 11) and `ui-kit/src/api.test.ts`, `ui/judge/app.js` and `ui/judge/index.html`, `docs/API_CONTRACT.md` and tests such as `tests/api/test_m3b_http_drafts.py`. `RELEASE_READINESS.md`, `SUBMISSION_*.md` and `README.md` state 1.1.0 for the frozen release and are not edited (1.2, 1.8). | 10.21 |
+| F5-8 | `examples/stub_claimtype/golden.vkb` is a committed, unsigned bundle that already replays in CI. It is the compatibility fixture. | 10.32 |
+
+### D5.3 Separate results and the authenticity rule
+
+| Result | Values | Says | Does not say |
+|---|---|---|---|
+| `integrity` (unchanged) | `VERIFIED`, `FAILED` | Members match the manifest, ledger chain, commitment and spec hash | Who wrote it |
+| `reproducibility` (unchanged) | `REPRODUCED`, `REPRODUCED_ACROSS_ENV`, `DIVERGED`, `UNVERIFIABLE`, `NOT_RUN` | Re-execution gives the same verdict hash | That the verdict is correct about the world |
+| `signatureValidity` | `UNSIGNED`, `VALID`, `INVALID`, `UNSUPPORTED_ALGORITHM` | The holder of key K signed these exact manifest bytes under this protocol | That K is trusted, or that the claim is true |
+| `signerTrust` | `NOT_EVALUATED`, `TRUSTED`, `UNTRUSTED_SIGNER` | This operator's Trust_Store accepts K at the evaluation time | That K was not compromised |
+| `authenticity` | `NOT_ESTABLISHED`, `ESTABLISHED` | `VALID` and `TRUSTED` and integrity `VERIFIED` all hold | That the verdict is correct (10.33) |
+
+**Derivation (pure).** `signerTrust` is computed only when `signatureValidity` is `VALID` and the Trust_Store loaded. Otherwise it is `NOT_EVALUATED`. `authenticity` is `ESTABLISHED` for exactly one combination: `VALID`, `TRUSTED`, integrity `VERIFIED`. Every other combination, including every unsigned bundle, is `NOT_ESTABLISHED`. "Verdict correctness" is not a field. It stays visible as `reproducibility`, and the `note` of every `ESTABLISHED` result carries the 10.23 disclaimer.
+
+**Reason codes (closed list, sorted in the output).** Validity: `NO_ENVELOPE`, `ARCHIVE_UNREADABLE`, `DUPLICATE_ARCHIVE_PATH`, `UNKNOWN_SIGNATURE_MEMBER`, `ENVELOPE_LISTED_IN_MANIFEST`, `ENVELOPE_TOO_LARGE`, `ENVELOPE_MALFORMED`, `ENVELOPE_NON_CANONICAL`, `ALGORITHM_UNSUPPORTED`, `PROTOCOL_UNSUPPORTED`, `BUNDLE_FORMAT_UNSUPPORTED`, `KEY_ID_MISMATCH`, `PUBLIC_KEY_SMALL_ORDER`, `SIGNATURE_MALFORMED`, `MANIFEST_HASH_MISMATCH`, `SIGNATURE_MISMATCH`. Trust: `TRUST_STORE_NOT_CONFIGURED`, `TRUST_STORE_UNREADABLE`, `TRUST_STORE_INVALID`, `TRUST_STORE_UNSUPPORTED_VERSION`, `TRUST_STORE_HASH_MISMATCH`, `KEY_NOT_IN_TRUST_STORE`, `KEY_REVOKED`, `KEY_ROTATED`, `KEY_NOT_YET_VALID`, `KEY_EXPIRED`. Authenticity: `INTEGRITY_NOT_VERIFIED`. Notes are fixed strings chosen by the tuple of results. They never hold input text.
+
+**Display rules (answers D1 OD-7).** `VALID` pass, check. `INVALID` fail, cross. `UNSIGNED` neutral, dash. `UNSUPPORTED_ALGORITHM` warn, triangle. `TRUSTED` pass. `UNTRUSTED_SIGNER` fail when the reason is `KEY_REVOKED`, `KEY_EXPIRED` or `KEY_NOT_YET_VALID`, otherwise warn. `NOT_EVALUATED` neutral, dash. `ESTABLISHED` pass, check, with the label text "ESTABLISHED" and the note. `NOT_ESTABLISHED` stays neutral-warn. Each result is its own badge with its own label. The signer fingerprint (the `keyId`) is shown when the signature is `VALID` (10.20). An unknown value renders `UNRECOGNISED` (DD-5). No text calls an unsigned bundle authenticated, signed, verified or trusted (10.32).
+
+### D5.4 Envelope and signing protocol
+
+One new archive member, `signature/envelope.json`, is the only name exempt from the unlisted-member rule (10.31). It is never listed in the manifest (OD-D5-2 explains why there is one member).
+
+| Envelope field | Value |
+|---|---|
+| `alg` | `ed25519` (exact, lowercase) |
+| `bundle_format` | `vkb/1`: the layout in `docs/ARCHITECTURE.md` section 7 at `84df25c`. It is a constant of the protocol, not a manifest field, because the manifest of an unsigned bundle must not change (10.5). |
+| `key_id` | SHA-256 of the 32 raw public-key bytes, lowercase hex. This value is also the signer fingerprint. There is one definition (10.26). |
+| `manifest_sha256` | SHA-256 of the exact bytes of `manifest.json` |
+| `protocol`, `protocol_version` | `vk-bundle-sig`, `1` |
+| `public_key` | 32 raw bytes as 64 lowercase hex characters. Not signed directly. It is bound through `key_id`. |
+| `signature` | 64 bytes as 128 lowercase hex characters |
+
+The envelope is canonical JSON (`canonical_bytes`) with exactly these eight keys and at most 2,048 bytes. **Signing input** (10.29): the ASCII tag `VerdictKit bundle signature v1`, one NUL byte, then `canonical_bytes` of an object that holds the six signed fields (`alg`, `bundle_format`, `key_id`, `manifest_sha256`, `protocol`, `protocol_version`). Canonical JSON is unique for an object, so the encoding is injective. The tag separates this use of the key from any other. Ed25519 signs the message directly. Signing is deterministic (F5-6), so the same case, clock and key give identical bundle bytes (10.7). The verdict hash does not read the signature member (10.6).
+
+**What the signature covers.** The manifest bytes, and through its `files` map every other member. It does not cover container bytes (F5-2). The `.vkb` file hash that the API shows stays a separate fact, and consumers must treat the verified member bytes as the signed object.
+
+### D5.5 Creating signed bundles and provisioning keys
+
+- **Signing is enabled** when `VK_SIGNING_KEY_FILE` is set in the environment of a Custodian entry point (`verdictkit run` and the API run service). Unset means unsigned, with the code path of `84df25c`. **Set but unusable is an error, never an unsigned bundle** (no silent downgrade).
+- **Key source (10.2, 10.25).** The variable holds a path, never key bytes, so the key stays out of process listings and the environment dump. The file is an unencrypted PKCS#8 PEM Ed25519 key of at most 4,096 bytes. It must be a regular file and not a symlink. On POSIX it must have no group or other permission bits. On Windows no permission check is made, which is R-D5-1. Anything that loads as another key type, an encrypted key, an empty file or a directory is refused. The code never generates, stores, logs or commits a production key. Tests generate throwaway keys in a temporary directory.
+- **Errors (10.2).** `SIGNING_KEY_MISSING`, `SIGNING_KEY_UNREADABLE`, `SIGNING_KEY_UNSUPPORTED`, `SIGNING_KEY_PERMISSIONS`. The message is a fixed text. It never holds key bytes, exception text or, in the API and MCP, a path.
+- **Order of work.** The key is loaded and checked before the ledger entry `BUNDLE_WRITTEN` is appended and before any file is created. The signature is built in memory after the manifest bytes exist. A failure leaves no `.vkb`, no `.tmp` and no ledger change. In the API run service the run fails with a fixed code and no unsigned bundle is stored.
+- **Start-up.** A judge-mode or public start with `VK_SIGNING_KEY_FILE` set and unusable stops with exit 2 and `VK_STARTUP_ERROR=CONFIG_INVALID:VK_SIGNING_KEY_FILE`, like the existing pattern.
+- **Custodian only (10.18).** The container entrypoint passes `VK_SIGNING_KEY_FILE` to the custodian environment only. The examiner environment allowlist (D0.7, `as_examiner` in `deploy/entrypoint.sh`) does not contain it, and only `as_custodian` gains `VK_SIGNING_KEY_FILE` and `VK_TRUST_STORE_FILE`. The key file belongs to `vk-custodian` with mode 0600, so the examiner uid cannot read it (container gate). The MCP server does not sign (OD-D5-4), because it examines in the same process and because `.kiro/settings/mcp.json` is committed and hash-pinned.
+- **Isolation.** The manifest already records `isolation_mode`, so a signature from an `UNENFORCED` run shows that fact. The CLI prints a warning when it signs with `UNENFORCED` (OD-D5-9).
+
+### D5.6 Verification and replay
+
+Verification is offline and a pure function of the member bytes, the Trust_Store bytes and an evaluation time `as_of` that the caller passes from its clock (10.19). It reads only `manifest.json`, the envelope and the list of member names, and it is independent of the integrity checks. Steps, in order, each stopping at its result:
+
+1. **Archive.** The existing hardened reader, with every name test applied to the raw name (`orig_filename`) so that the result is the same on Windows and Linux. A raw name that contains NUL or `\`, starts with `/`, or has an empty, `.` or `..` segment makes the archive unsafe. A duplicate is judged on both the raw and the sanitised name. A structural failure gives `INVALID` (`ARCHIVE_UNREADABLE` or `DUPLICATE_ARCHIVE_PATH`) when the raw or sanitised form of any name falls in the reserved namespace, otherwise `UNSIGNED`. Integrity is `FAILED` in both cases. This tightens reading on Windows only. No baseline bundle is affected, because `write_bundle` emits fixed names, and `golden.vkb` with D5-AC-1 checks it.
+2. **Reserved namespace.** Any name whose NFKC, case-folded form starts with `signature`, other than the exact envelope name, gives `INVALID` (`UNKNOWN_SIGNATURE_MEMBER`). This is detection, not exemption. A manifest that lists the envelope name or any reserved name gives `INVALID` (`ENVELOPE_LISTED_IN_MANIFEST`).
+3. **No envelope.** `UNSIGNED`, `NO_ENVELOPE`.
+4. **Envelope shape.** Size at most 2,048 bytes. `parse_canonical`. Exactly the eight keys with string values. Hex fields match `^[0-9a-f]{64}$` or `^[0-9a-f]{128}$`. Violations give `INVALID`. Then `alg` must equal `ed25519`, `protocol` and `protocol_version` must equal `vk-bundle-sig` and `1`, and `bundle_format` must equal `vkb/1`. A mismatch gives `UNSUPPORTED_ALGORITHM` with the matching reason (OD-D5-7). There is no fallback to another algorithm.
+5. **Key binding.** SHA-256 of the embedded key equals `key_id`. The key is not on the small-order list (the eight small-order points and their non-canonical encodings, which F5-6 shows the library will not reject). Violations give `INVALID`.
+6. **Manifest binding.** `manifest_sha256` equals the SHA-256 of the member bytes (constant-time compare).
+7. **Math.** Ed25519 verify over the signing input. Failure gives `INVALID` (`SIGNATURE_MISMATCH`). Success gives `VALID`.
+8. **Trust** (D5.7), then the derivation of D5.3.
+
+**Integration with `bundle.py`.** The unlisted-member test becomes `names - listed - {"manifest.json", SIGNATURE_MEMBER}` where `SIGNATURE_MEMBER` is the one exact string. `IntegrityResult` and `ReplayReport` keep their fields. Signature data travels in a new result next to them, so existing constructors and tests are unaffected. A signature that is `INVALID` does not stop a replay whose integrity is `VERIFIED`. An integrity failure still stops re-execution, as in the baseline, and the signature result is still reported. All three consumers (API replay, API metadata, CLI and MCP) call one `authenticity_dict(...)`, which replaces the constant and the CLI literal.
+
+**Report shape (camelCase, contract 1.2.0).** `authenticity`: `status`, `note`, `signatureValidity`, `signerTrust`, `reasonCodes` (sorted array), `signer` (`{keyId, algorithm}` when `VALID`, otherwise `null`) and `trustStore` (`{formatVersion, serial, sha256, evaluatedAt}` when a store was read successfully and the signature is `VALID`, otherwise `null`). A report for an unsigned bundle holds no timestamp, so it is byte-stable. The existing `status` and `note` fields stay, so every existing field is preserved (10.21). The MCP `explain_verdict` summary line is generated from this object. For an unsigned bundle it still contains `NOT_ESTABLISHED`, so the existing assertion holds.
+
+### D5.7 Trust_Store, rotation and revocation
+
+- **Location (10.16).** `VK_TRUST_STORE_FILE`, or `--trust-store` on the CLI. An optional `VK_TRUST_STORE_SHA256` pins the file. **No API parameter, MCP argument, bundle member or evidence item selects or changes the store.** An embedded public key is never trusted by itself.
+- **Format (10.27).** UTF-8 JSON, at most 262,144 bytes, no BOM, duplicate keys and floats rejected, closed schema. `{"format":"vk-trust-store","format_version":1,"serial":<integer at least 1>,"keys":[{"key_id","public_key","status","not_before","not_after","note"?}]}` with at most 1,024 keys. `status` is `ACTIVE`, `ROTATED` or `REVOKED`. The times are `YYYY-MM-DDTHH:MM:SSZ` with `not_before` earlier than `not_after`. At load, `key_id` must equal the SHA-256 of `public_key`, a `key_id` may appear once, and small-order keys are refused. An unknown field, an unknown status or an unknown `format_version` makes the whole store unusable. The file is read at each verification, so a change takes effect without a restart.
+- **Evaluation (10.10 to 10.13, 10.28).** No store: `NOT_EVALUATED`, `TRUST_STORE_NOT_CONFIGURED`. A store that cannot be read, parsed or validated, or whose hash differs from the pin: `NOT_EVALUATED` with the matching reason, never `TRUSTED`, and the validity and integrity results stay as computed (10.17). Entry found by `key_id`: `REVOKED` gives `UNTRUSTED_SIGNER` and `KEY_REVOKED` at any time. Otherwise the interval `[not_before, not_after]` (both inclusive) is checked against `as_of`: outside gives `UNTRUSTED_SIGNER` with `KEY_NOT_YET_VALID` or `KEY_EXPIRED`. `ACTIVE` inside the interval gives `TRUSTED`. `ROTATED` inside the interval gives `TRUSTED` with `KEY_ROTATED`. No entry gives `UNTRUSTED_SIGNER` with `KEY_NOT_IN_TRUST_STORE`.
+- **Which time (OD-D5-3).** `as_of` is the verifier's clock. The manifest's `written_at` is chosen by the signer, so a holder of an expired or revoked key could back-date it. Verifier time means a bundle signed legitimately stays `TRUSTED` only while the operator keeps the key inside its interval.
+- **Rotation.** The operator adds the new key as `ACTIVE`, raises `serial`, distributes the file, then marks the old key `ROTATED`. Both stay trusted inside their intervals. A rotated key used after the rotation cannot be told from an earlier use without a trusted timestamp (R-D5-2). A key that may be compromised is marked `REVOKED`, never `ROTATED`.
+- **Revocation.** There is no online revocation (10.19). Revocation is a new store file with a higher `serial`. Every report shows the store `serial` and `sha256`, so an audit can see which store decided. Operators should pin the hash in deployment configuration. A stale store is R-D5-3.
+
+### D5.8 Contract, versioning and compatibility (resolves OD-D2-3, AM-10, OD-7)
+
+**Decision (OD-D5-1).** One minor event, **contract 1.2.0**, joint for the P4 fields and every contract-visible D2 change, in line with the rule of `docs/API_CONTRACT.md` (any schema change bumps the version) and with 10.21 (every existing field preserved). OD-D2-3 is decided: the owner cookie is documented and joins this event, because the info text "Judge mode requires no authentication" would otherwise stay false.
+
+| # | Change | Compatibility | Where |
+|---|---|---|---|
+| 1 | `AuthenticityReport`: `status` becomes `NOT_ESTABLISHED` or `ESTABLISHED`. New required fields `signatureValidity`, `signerTrust`, `reasonCodes`, `signer`, `trustStore` | Additive on the wire for tolerant clients. Breaking for strict 1.1.0 validators (`additionalProperties` false). | `BundleMetadata`, `ReplayReport` |
+| 2 | `Health`: `commitSha` (40 lowercase hex or `unknown`), `status` becomes `ok` or `unavailable`, and a 503 response with the same key set | Breaking for strict validators (D2 AM-10 rows 2 and 3) | `/health` |
+| 3 | Owner cookie `vk_owner` as a documented cookie scheme, plus the rule that a mismatch is the same 404 | Behaviour change in the public profile only (AM-10 row 1) | `components.securitySchemes`, info text |
+| 4 | 429 `RATE_LIMITED` with `Retry-After` on runs, replays, cases and events routes | Schema-compatible (AM-10 row 5) | the route responses |
+| 5 | Contract header on every response (G-6) | Compatible, no schema change | `api/server.py` |
+| 6 | Edge 401, 403, 415 | Outside the contract. No edit (AM-10 row 4). | none |
+
+**Lockstep (AM-10 row 7).** One dependency-free constant `CONTRACT_VERSION` in a new core module is read by `api/server.py`, `api/presenter.py` and `mcp_server.py`, so the three literals disappear. A test compares it with `info.version` and the `ContractVersion` constant in `api/openapi.yaml`, with `CONTRACT_VERSION` in `ui-kit/src/api.ts`, and with `contractVersion` in every file in `api/examples/`. The same change updates `ui-kit` types and components, the examples, `docs/API_CONTRACT.md` and the tests that pin `1.1.0`. The existing mutation row that sets `authenticity.status` to `VERIFIED` still fails validation, unmodified.
+
+**Clients.** Tolerant JSON clients keep working and see only the version value change. Strict 1.1.0 validators fail on the new fields, which is the stated effect of a bump. The server does not serve two versions. The frozen tag `v1.0.0-submission` is the supported 1.1.0 pair. The UI and the server refuse each other's other version, as today. `ui/judge` pins `1.1.0` in `app.js` and conflicts with DD-10 (OD-D5-5). MCP `replay_bundle` reports 1.2.0 and adds `authenticity` fields to `explain_verdict` (D4.3). The CLI prints the four results on separate lines with the fingerprint (10.20), and its exit code rule stays "0 only for reproduced and intact" (OD-D5-6 covers a present but `INVALID` signature).
+
+**Documentation.** `docs/SIGNING.md` states that a valid signature establishes who signed the bytes and does not establish that the claim is true, that the timestamp is trusted, or that the key was not compromised (10.23). It also documents key provisioning, the Trust_Store format, rotation, revocation and the reason codes.
+
+### D5.9 Adversarial tests and deterministic replay
+
+Every row asserts the stated result and also that `authenticity` is never `ESTABLISHED` unless the row says so. A mutation guard flips each check off in a copy of the code and must see the matching row fail.
+
+| # | Attack or fault | Expected |
+|---|---|---|
+| A-1 | One byte changed in each manifest-listed member (every member of the stub bundle) | Integrity `FAILED`, signature `VALID`, `NOT_ESTABLISHED`, `INTEGRITY_NOT_VERIFIED` |
+| A-2 | One byte changed at every offset of `manifest.json` | `INVALID` (`MANIFEST_HASH_MISMATCH`) or malformed. Never `ESTABLISHED`. |
+| A-3 | One hex digit changed in each envelope field. `alg` changed to `Ed25519`, `ED25519`, `ed448`, `none`, empty | `INVALID`, or `UNSUPPORTED_ALGORITHM` for `alg`. No fallback. |
+| A-4 | Envelope removed | `UNSIGNED`, `NOT_ESTABLISHED`. No claim of tampering. |
+| A-5 | Re-signed with an attacker key | `VALID`. `UNTRUSTED_SIGNER` with a store, `NOT_EVALUATED` without. Never `ESTABLISHED`. |
+| A-6 | Envelope copied from bundle X into bundle Y | `INVALID` (`MANIFEST_HASH_MISMATCH`) |
+| A-7 | Duplicate `signature/envelope.json`. Duplicate `manifest.json`. A raw name made of the envelope name, a NUL byte and more text, alone and next to the real envelope | `INVALID` (`DUPLICATE_ARCHIVE_PATH` or `ARCHIVE_UNREADABLE`), the same on both hosts |
+| A-8 | Second envelope under `signature/envelope2.json`, `Signature/Envelope.json`, `signature/envelope.json ` (trailing space), a fullwidth `ｓignature/envelope.json`, `signature\envelope.json`, `./signature/envelope.json` | `INVALID` (`UNKNOWN_SIGNATURE_MEMBER` or `ARCHIVE_UNREADABLE`), the same on both hosts |
+| A-9 | Manifest lists the envelope or another reserved name | `INVALID` (`ENVELOPE_LISTED_IN_MANIFEST`) |
+| A-10 | Envelope with whitespace, other key order, uppercase hex, an extra or missing key, a duplicate key, a float, a BOM, a trailing newline, more than 2,048 bytes | `INVALID` |
+| A-11 | Signature of 63 or 65 bytes, non-hex, truncated JSON | `INVALID` |
+| A-12 | Small-order public keys (the full list) with a universal signature and a matching `key_id` | `INVALID` (`PUBLIC_KEY_SMALL_ORDER`) |
+| A-13 | Signature with `S+L` (non-canonical S) | `INVALID` |
+| A-14 | `key_id` that differs from the SHA-256 of the embedded key | `INVALID` (`KEY_ID_MISMATCH`) |
+| A-15 | Signature made without the domain tag, or with another tag, or over only `manifest_sha256` | `INVALID` |
+| A-16 | Trust_Store: malformed JSON, duplicate keys, unknown field, unknown status, `key_id` not equal to the key hash, duplicate `key_id`, 262,145 bytes, BOM, directory, unreadable, unknown `format_version`, pin mismatch | `NOT_EVALUATED` with the reason. Validity and integrity unchanged. Never `TRUSTED`. |
+| A-17 | Store states: `REVOKED`, expired, not yet valid, `ROTATED`, `ACTIVE`, boundary instants of the interval | As D5.7. `as_of` equal to either bound is inside. |
+| A-18 | Trust injection: a bundle member, an MCP argument, an HTTP parameter or header, a request body field | No effect on the store. The bundle member case is `UNKNOWN_SIGNATURE_MEMBER`. |
+| A-19 | Signing key file: missing, empty, directory, symlink, RSA, Ed448, encrypted, 4,097 bytes, group-readable (POSIX) | Run or bundle creation aborts with the matching code. No `.vkb`, no `.tmp`, no ledger append, no key bytes or path in any output. |
+| A-20 | Canary key: the private key bytes searched for in the bundle, API and MCP results, error text, stdout, stderr, logs and the examiner environment | 0 occurrences |
+| A-21 | Zip bomb or oversized envelope | Existing limits apply. `ENVELOPE_TOO_LARGE`. |
+
+**Deterministic replay requirements.** DR-1: the same case, clock and key give byte-identical bundles in one environment, and identical member hashes on both host classes (zip bytes can differ across zlib builds). DR-2: the same bundle, Trust_Store bytes and `as_of` give a byte-identical `authenticity` JSON on Windows and Linux. DR-3: verification reads no clock except `as_of`, opens no socket and reads no environment variable except the documented ones, and a test replaces `time`, `datetime` and `socket` with guards that raise. DR-4: signing and verification do not read the verdict hash inputs, so the verdict hash is equal for signed and unsigned runs and a signed bundle replays `REPRODUCED`. DR-5: the key order of a Trust_Store file does not change the result. DR-6: the reason codes and keys in a report are sorted. DR-7: before D5 code changes, a pre-change step records the SHA-256 of the zip and of every member for the fixed reference bundles on each host, and the post-change run must reproduce the member hashes everywhere and the zip hash on the same host. DR-8: Hypothesis properties under the `ci` profile cover the round trip, "no single-byte change of a signed region yields `ESTABLISHED`" and replay stability.
+
+### D5.10 Acceptance criteria
+
+All rows are UNVERIFIED until an Execution_Record exists.
+
+| ID | Check | Pass threshold | Req | Host |
+|---|---|---|---|---|
+| D5-AC-1 | Unsigned compatibility: DR-7 hashes. `golden.vkb` verifies, replays and reports `UNSIGNED` and `NOT_ESTABLISHED`. All existing tests pass. | 0 member-hash differences, 0 zip-hash differences on the same host, 0 edits to `tests/contract/test_bundle_replay.py` and `tests/integration/test_bundle_evidence_and_golden.py`, and every other test diff is a `1.1.0` to `1.2.0` literal change | 10.5, 10.32 | Both |
+| D5-AC-2 | Round trip with generated keys, each of `ACTIVE` and `ROTATED` | 200 of 200 examples `VALID`, `TRUSTED`, `ESTABLISHED`. `ROTATED` adds `KEY_ROTATED`. | 10.22, 10.28 | Both |
+| D5-AC-3 | Deterministic signing | Two runs and two processes give 0 differing bytes | 10.7 | Both |
+| D5-AC-4 | Verdict hash independence | Equal hash, signed against unsigned. Signed replay `REPRODUCED`. | 10.6 | Both |
+| D5-AC-5 | A-1 and A-2 exhaustively on the stub bundle | 0 `ESTABLISHED`. Each case has the stated result. | 10.15 | Both |
+| D5-AC-6 | A-3 to A-15 | 0 `VALID` where an attack row forbids it, and the stated code in 100% of rows | 10.24, 10.29, 10.30 | Both |
+| D5-AC-7 | Exemption exactness, with a mutated prefix-match copy of the code | The exact name passes. The mutated code fails A-8. | 10.31 | Both |
+| D5-AC-8 | Trust_Store rows A-16 and A-17 and the 24-combination truth table of validity, trust and integrity | `ESTABLISHED` in exactly 1 combination. Every failure keeps validity and integrity unchanged. | 10.9 to 10.14, 10.17, 10.27, 10.28, 10.33 | Both |
+| D5-AC-9 | Key handling A-19 and A-20, the examiner environment check and the examiner-uid read check | 0 files created on failure, 0 canary occurrences, examiner cannot read the key (container) | 10.2, 10.18, 10.25 | Both, container on Linux |
+| D5-AC-10 | Offline and time guards (DR-3) | 0 sockets, 0 clock reads other than `as_of` | 10.19 | Both |
+| D5-AC-11 | Contract: examples and responses validate against `api/openapi.yaml` 1.2.0. The version constant equals every pin of F5-7 that is edited. | 0 mismatches. The old `VERIFIED` mutation row still fails. | 10.21 | Both |
+| D5-AC-12 | D2 items 1 to 5 of D5.8 are described in `api/openapi.yaml` and validated, including the 503 and 429 bodies | 0 schema errors | 10.21 | Both |
+| D5-AC-13 | Display: API, CLI and UI show validity, trust, authenticity and fingerprint as separate fields. UI tests assert label text. A scan rejects "authenticated", "signed" and "verified" applied to an unsigned bundle. | 4 separate results in 3 surfaces, 0 forbidden phrases | 10.20, 10.32, 10.33 | Both |
+| D5-AC-14 | `docs/SIGNING.md` holds the three statements of 10.23 | 3 of 3 present | 10.23 | Both |
+| D5-AC-15 | Cross-host determinism DR-2 | 0 differing bytes between Windows and Linux outputs | 10.7, 2.2 | Both |
+| D5-AC-16 | Hypothesis properties of DR-8 | 0 failures in 200 examples per property | 10.15, 10.22 | Both |
+| D5-AC-17 | MCP: `replay_bundle` and `explain_verdict` return the `authenticity` object (joint with D4-AC-19) | Present, schema-valid | 9.8 | Both |
+
+### D5.11 Open decisions, risks and traceability
+
+| ID | Decision | Recommendation |
+|---|---|---|
+| OD-D5-1 | Contract event: 1.2.0 joint, 1.1.0 with a documented header, or split events | 1.2.0 joint (D5.8). The maintainer confirms. |
+| OD-D5-2 | One envelope member or separate signature, algorithm and key members | One member. Fewer names to exempt and to reject, one parse. 10.4 allows it. |
+| OD-D5-3 | Interval checked against the verifier clock or the manifest time | Verifier clock. |
+| OD-D5-4 | MCP signs bundles | No in this phase. Later only with an authenticated isolated examiner. |
+| OD-D5-5 | `ui/judge` under the bump: leave it (refuses 1.2.0, DD-10 kept) or change its one constant | Leave it. D2 does not deploy it. Record the incompatibility in the release notes. |
+| OD-D5-6 | CLI exit code for a present `INVALID` signature | Exit 1 when `signatureValidity` is `INVALID`. `UNSIGNED` and the rest unchanged. |
+| OD-D5-7 | Unsupported protocol or format version | Map to `UNSUPPORTED_ALGORITHM` with its own reason code, because the verifier lacks the means and the signature is not shown to be forged. |
+| OD-D5-8 | Encrypted private keys | Not supported now. A passphrase file would be one more secret. |
+| OD-D5-9 | Signing while `UNENFORCED` | Allow with a CLI warning. The public profile already requires `ENFORCED`. |
+| R-D5-1 | Key file permissions on Windows are not checked | UNVERIFIED. Operators use an ACL. |
+| R-D5-2 | No trusted timestamp: rotated-key reuse and back-dating cannot be detected | Documented. Revoke on suspicion. |
+| R-D5-3 | Offline revocation depends on distributing a new store | `serial` and hash are reported. Pin the hash. |
+| R-D5-4 | Container bytes are not signed | Stated in `docs/SIGNING.md`. |
+| R-D5-5 | The small-order list depends on the library's current behaviour | Test vectors run on every `cryptography` version bump. |
+
+**Files for implementation (not changed now).** `core/src/verdictkit/bundle.py`; new `core/src/verdictkit/signing.py` and the contract-version module; `cli.py`; `api/server.py`, `api/presenter.py`, `api/run_service.py`; `mcp_server.py`; `api/openapi.yaml`, `api/examples/*.json`; `ui-kit/src/{api.ts,types.ts,components.tsx}` and tests; `docs/API_CONTRACT.md`, new `docs/SIGNING.md`; `deploy/entrypoint.sh` (environment pass-through for the custodian only); new tests and fixtures. `ui/judge` is not edited unless OD-D5-5 changes.
+
+**Traceability.** 10.1: D5.4, AC-6. 10.2: D5.5, AC-9. 10.3: D5.2 F5-1. 10.4: D5.4. 10.5: D5.5, AC-1. 10.6: D5.4, AC-4. 10.7: D5.4, AC-3, AC-15. 10.8: D5.3, AC-8. 10.9, 10.10: D5.3, AC-8. 10.11, 10.12: D5.7, AC-8. 10.13, 10.14: D5.3, AC-8. 10.15: D5.9, AC-5. 10.16, 10.17: D5.7, AC-8. 10.18: D5.5, AC-9. 10.19: D5.6, AC-10. 10.20: D5.3, D5.8, AC-13. 10.21: D5.8, AC-11, AC-12. 10.22: D5.9, AC-2, AC-16. 10.23: D5.8, AC-14. 10.24: D5.4, AC-6. 10.25: D5.5, AC-9. 10.26: D5.4, AC-6. 10.27, 10.28: D5.7, AC-2, AC-8. 10.29: D5.4, AC-6. 10.30: D5.6, D5.9, AC-6. 10.31: D5.6, AC-7. 10.32: D5.3, AC-1, AC-13. 10.33: D5.3, AC-8, AC-13. Every criterion of Requirement 10 maps to at least one D5 section and one acceptance row. D2 coordination: AM-10 rows 1 to 7 map to D5.8 items 1 to 6 and the lockstep paragraph. D1 OD-7 maps to the display rules in D5.3. D4 criterion 9.8 maps to AC-17.
+
+### D5.12 Maintainer decisions on open items (conditional approval)
+
+The maintainer approved D5 conditionally. Each decision below is DECIDED and DESIGNED. None is implemented, no signing key was created and no test was run for D5. Text in D5.1 to D5.11 is unchanged. Where a decision here differs from that text, this section governs. The ledger entries U-001 to U-005 are confirmed present in `docs/next-phase/EXECUTION_EVIDENCE.md`, so this record makes no ledger change.
+
+| ID | Decision | Effect on D5 text |
+|---|---|---|
+| AM-D5-1 | Signatures use Ed25519 through the maintained `cryptography` library with strict validation. The project writes no elliptic-curve or field arithmetic and no point decoding. | D5.4 stands. The small-order list of D5.6 step 5 is a constant table of byte encodings compared byte for byte. It is not curve code. Its entries are taken from a published list whose source is named in `docs/SIGNING.md`, and vectors check them (R-D5-5). |
+| AM-D5-2 | Public keys, encodings and signature representations are validated before use. Public key: 32 bytes, SHA-256 equal to `key_id`, not on the small-order or non-canonical list. Envelope: canonical JSON, exact key set, lower-case hex of fixed length. Signature: 64 bytes with `S < L`. | D5.6 steps 4, 5 and 7 stand. Where the library accepts a form that A-12, A-13 or the vectors of AM-D5-3 forbid (F5-6 shows it accepts small-order keys), the verifier adds a table check. No library behaviour is assumed without a vector. |
+| AM-D5-3 | Adversarial vectors are mandatory: every small-order encoding, non-canonical encodings (including a `y` value at or above the field prime), keys of 31 and 33 bytes, the all-zero and identity keys, a small-order or non-canonical `R` in an otherwise valid signature, `S+L`, and a universal signature. | D5-AC-6 gains these rows next to A-12 and A-13. They run on both hosts and on every `cryptography` version change. The mitigation of R-D5-5 becomes mandatory. |
+| AM-D5-4 | Signing keys are provisioned outside the application. The application never generates, stores in the repository, logs or returns a private key. Tests use throwaway keys created in memory. | D0.8 item 5 and D5.5 stand. A-19 and A-20 stay the checks. |
+| AM-D5-5 | MCP never signs bundles. | OD-D5-4 decided as recommended. `mcp_server.py` gains no signing path. |
+| AM-D5-6 | Key validity and revocation are evaluated against an explicit verifier policy: the Trust_Store the verifier names and the `as_of` it passes. Nothing inside a bundle selects either. A missing or unreadable store gives `NOT_EVALUATED`. | OD-D5-3 decided: the verifier's explicit `as_of`, not the manifest time. D5.6 and D5.7 stand. |
+| AM-D5-7 | An embedded signing time or `written_at` is not a trusted timestamp. It is never used to judge validity or revocation. If shown, it is labelled as a claimed time. | R-D5-2 stands and becomes a display rule. The wording scan of D5-AC-13 rejects text that presents such a value as the time of signing. |
+| AM-D5-8 | Unsigned bundles stay compatible. `golden.vkb` and every unsigned bundle keep verifying and replaying and report `UNSIGNED`. They are never called invalid or tampered. | D5-AC-1 stands. |
+| AM-D5-9 | Every archive member name is validated in its original stored form (`orig_filename`) before any platform normalisation. This covers the baseline `_check_zip_safety` checks as well as the signature checks. | F5-3 and D5.6 step 1 stand. A-7 and A-8 run on both hosts with identical results. |
+| AM-D5-10 | Each contract change carries one label, COMPATIBLE or BREAKING, in a table in `docs/API_CONTRACT.md`. BREAKING means a client that validates strictly against the previous schema rejects the response, or documented behaviour changes. Breaking changes are listed apart in the release notes and are never described as additive. | The D5.8 table is labelled from its own Compatibility column: rows 1, 2 and 3 BREAKING (row 3 in the public profile only), rows 4 and 5 COMPATIBLE, row 6 outside the contract. OD-D5-1 stays open: whether the event keeps the label 1.2.0 is decided after the labels are approved, and no version literal is edited before then. New row D5-AC-18. |
+| AM-D5-11 | Minimal next-phase compatibility changes to `ui/judge` are permitted: the constant `CONTRACT` in `app.js` and the version label in `index.html`, and nothing else. The frozen submission stays untouched: the Frozen_Release refs and the Submission_Artifacts are not edited. The existing judge preview tests keep passing, and this change edits none of them (a BE-2 remediation edit under D8 is separate). | OD-D5-5 decided differently from the recommendation. DD-10 now reads: `ui/judge` is not restyled, and the compatibility change of AM-D5-11 is allowed. `ui/judge` is application code and is not one of the named Submission_Artifacts. If the maintainer reads the catch-all of that definition as covering it, 1.8 needs a recorded exception. New row D5-AC-19. |
+
+**Acceptance rows added by this record (all UNVERIFIED).**
+
+| ID | Check | Pass threshold | Req | Host |
+|---|---|---|---|---|
+| D5-AC-18 | Contract labels: every row of the D5.8 table and every added field has one label, and the release-note section lists the BREAKING rows | 0 unlabelled changes | 10.21 | Both |
+| D5-AC-19 | Judge UI: `git diff 84df25c -- ui/judge`, `tests/ui/test_judge_preview.py` passing and unmodified except a BE-2 remediation hunk, diff of the Submission_Artifacts and the three Frozen_Release refs | Only the constant and the label differ. 0 changed submission lines. 0 changed refs. | 10.21, 1.2, 1.8 | Both |
+
+**Not decided in this review.** OD-D5-1 (see AM-D5-10), OD-D5-2, OD-D5-6, OD-D5-7, OD-D5-8 and OD-D5-9, and the risks R-D5-1 to R-D5-4, stay open with the recommendations of D5.11.
+
+**Traceability.** AM-D5-1: 10.3, 10.24. AM-D5-2: 10.24, 10.29, 10.30. AM-D5-3: 10.15, 10.24, 10.30. AM-D5-4: 10.2, 10.18, 10.25. AM-D5-5: 10.2, 10.18. AM-D5-6: 10.9 to 10.14, 10.19. AM-D5-7: 10.19, 10.33. AM-D5-8: 10.5, 10.32. AM-D5-9: 10.29, 10.31. AM-D5-10: 10.21. AM-D5-11: 10.21, 1.2, 1.8.
+
+### D5.13 Maintainer decisions recorded with the D6 and D7 review (contract 2.0.0 and judge UI)
+
+The maintainer's D6 and D7 review also recorded these decisions for D5. Each is DECIDED and DESIGNED. Nothing is implemented, no signing key was created and no test was run for D5. Text in D5.1 to D5.12 is unchanged. Where a decision here differs from that text, this section governs.
+
+| ID | Decision | Effect on D5 text |
+|---|---|---|
+| AM-D5-12 | OD-D5-1 is decided: the contract event is **2.0.0**, not 1.2.0. D5.8 rows 1 and 2 are BREAKING, and row 3 is BREAKING in the public profile (AM-D5-10); a strict 1.1.0 validator rejects them, so the major version changes, while every existing field is preserved (10.21). One version is served, with no dual serving. The D5.8 lockstep list (the `CONTRACT_VERSION` constant, `openapi.yaml` `info.version` and `ContractVersion`, the `ui-kit` constant, `contractVersion` in `api/examples/`, the MCP replay result, the tests) moves together in one change. `docs/API_CONTRACT.md` gains a migration section with a before and an after example for each BREAKING row and a client checklist. Compatibility tests show a tolerant 1.1.0 client working against 2.0.0, a strict 1.1.0 validator failing on exactly the documented BREAKING rows and nothing else, and the UI_Kit and API_Server each refusing the other's other major version with an error naming both versions. The frozen tag `v1.0.0-submission` stays the supported 1.1.0 pair; bundle format and API contract stay separate, so bundles written under 1.1.0 keep verifying and replaying. The D7 contract-visible items (`as_of`, the snapshot retrieval date, the Examination_Semantics id) are classified in this same event. Release notes list BREAKING rows apart, never as additive. Rollback is one revert of the lockstep change, including the judge-UI constant. | D5.8 and AM-D5-10 named only the label; OD-D5-1 now resolves to 2.0.0, not 1.2.0. D5-AC-18 is read with 2.0.0. No version literal is edited until implementation (10.34). D7's OD-D7-3 and G-D7-1 (the `as_of` key and the snapshot retrieval date) are classified here. |
+| AM-D5-13 | Confirms AM-D5-11. Minimal compatibility changes to `ui/judge` are allowed on the Phase_Branch: the `CONTRACT` constant in `app.js` (now `2.0.0`) and the version label in `index.html`, nothing else. `ui/judge` is application code, not a Submission_Artifacts file. The Frozen_Release refs and the Submission_Artifacts files stay immutable. | DD-10 is read with this exception, as AM-D5-11 already stated. D5-AC-19 now expects the constant `2.0.0` rather than `1.2.0` (10.21, 10.35). |
+
+**Not decided in this review.** OD-D5-2, OD-D5-6, OD-D5-7, OD-D5-8, OD-D5-9 and the risks R-D5-1 to R-D5-4 stay open with the recommendations of D5.11.
+
+**Traceability.** AM-D5-12: 10.21, 10.34. AM-D5-13: 10.21, 10.35, 1.2, 1.8.
+
+## D6. P5 Reusable claim-plugin SDK
+
+### D6.1 Scope and status
+
+**Covers.** Requirement 11 (11.1 to 11.15): documented protocol and registration, the scaffolding command, the Conformance_Suite, a synthetic example, and the guards that keep plugins behind the Answer_Blind boundary. It adds the rule that a public deployment never loads an untrusted plugin.
+
+**Does not cover.** A sandbox for hostile code, plugin signing or publishing, loading in a request path, and any change to the HTTP contract or to the claim types it lists.
+
+**Status.** Everything in D6 is DESIGNED. Nothing is IMPLEMENTED or VERIFIED. Facts marked (read) come from a read-only inspection at commit `c29d2fe` and are UNVERIFIED for Requirement 3 until a record exists. Notes: `docs/next-phase/D6_D7_WORKING_NOTES.md`.
+
+### D6.2 Inspected baseline and findings
+
+Read: `core/src/verdictkit/{plugin.py,cli.py,mcp_server.py}`, `api/{server.py,run_service.py}`, `examiner/worker.py`, `deploy/entrypoint.sh`, `Dockerfile`, `examples/pyproject.toml`, `examples/stub_claimtype/*`, `tests/contract/{receipt_claimtype,test_blinding,test_llm_fence,test_isolation}.py`, both app `pyproject.toml` files and `.kiro/steering/verdict-integrity.md`.
+
+| # | Finding (read) | Req |
+|---|---|---|
+| F6-1 | `ClaimType` is a `runtime_checkable` Protocol: four attributes, nine methods, six optional hooks read with `getattr`. | 11.1, 11.14 |
+| F6-2 | `Registry.register` overwrites a duplicate `type_id` silently. Any installed package can replace a built-in claim type. | 11.15 |
+| F6-3 | `_load_registry` is the only discovery path (CLI, API, MCP, Examiner worker). The entry-point loop sits in one `try/except Exception: pass`, so one failing plugin silently stops every later one. `VK_CLAIM_TYPES` imports any named module. | 11.1 |
+| F6-4 | `entrypoint.sh` passes `VK_CLAIM_TYPES` to the custodian and the Examiner. The image installs the example package (`uv sync --frozen --all-packages`). The API filters to `CONTRACT_CLAIM_TYPES` only after loading, so unlisted plugin code is already imported. | 11.15 |
+| F6-5 | No `type_id` grammar exists. Intake uses `raw.get("schema_version", plugin.schema_version)` and nothing compares the two. The entry-point name need not equal `type_id`. | 11.4, 11.14 |
+| F6-6 | Two receipt claim types exist, `examples/stub_claimtype/receipt.py` (installed, with `golden.vkb`) and `tests/contract/receipt_claimtype.py` (used by the blinding and replay tests). Their hashes differ. | 11.11 |
+| F6-7 | First-party plugin sources contain no `float`, no `.now(` and no `os.environ` (text search). `reel_autopsy` imports `datetime`. | 11.5, 11.11 |
+| F6-8 | `VK_PROFILE` exists only in the D2 design. `VK_JUDGE_MODE` exists in `api/server.py`. | 11.15 |
+
+### D6.3 Design decisions
+
+| ID | Decision | Alternative rejected | Why |
+|---|---|---|---|
+| DD6-1 | A plugin is trusted code that an operator admits. The SDK is a conformance and safety rail, not a sandbox. No request, API field, MCP argument or UI input names a plugin. | Claim that scans make a plugin safe. | A plugin runs in the Custodian after reveal and holds outcomes there. Checks cannot confine Python code. |
+| DD6-2 | New package `core/src/verdictkit/sdk` (`loader`, `validate`, `conformance`, `scaffold`). `plugin.py` is unchanged. `cli._load_registry` keeps its name and calls the loader. | Edit `Registry` or the Protocol. | 11.14. Tests call both. |
+| DD6-3 | Entry point `python -m verdictkit.sdk new` and `check`. The CLI parser is unchanged. | `verdictkit plugin` subcommands. | Smaller change (OD-D6-1). |
+| DD6-4 | Local mode keeps both mechanisms: entry-point group `verdictkit.claim_types` and `VK_CLAIM_TYPES`. Public mode loads a closed allowlist, decided before any import. | Filter after loading, as the API does. | Import is code execution (F6-4). |
+| DD6-5 | `type_id` grammar `NAMESPACE.NAME.vN`. The suffix is the compatibility generation. `schema_version` is the revision. | Free text. | F6-5. |
+| DD6-6 | One function `run_suite` serves the command, the generated test and the repository tests. | Separate copies. | F6-6 shows copies drift. |
+| DD6-7 | The synthetic example is the scaffold output for `example.line_total.v1`, generated in a temporary directory at test time. The stub stays the committed example. | Commit a second package. | One source of truth. |
+| DD6-8 | Messages carry a code, the entry-point name and the distribution name. Never exception text, a path or a claim value. | Print the exception. | D4 sanitising rule, 2.3. |
+
+### D6.4 Registration and discovery
+
+**Loader `sdk.loader.discover(policy)`** returns the loaded types and a list of issues `(code, entry_point, distribution)`.
+
+1. List the entry points of the group with `importlib.metadata`. Listing imports nothing. Sort by distribution name, then entry-point name, so the result does not depend on directory order.
+2. In public mode drop every entry point whose `(distribution, value)` pair is not on the allowlist **before** `ep.load()`. Dropped entries are counted and logged by code (`PLUGIN_NOT_ALLOWLISTED`). They are not an error.
+3. Load each remaining entry in its own `try` block. A failure records `ENTRY_POINT_LOAD_FAILED`, writes one stderr line `VKPLUGIN v1 code=<CODE> ep=<name> dist=<name>` and the loop continues.
+4. Validate the object (D6.5). A `type_id` in namespace `quote` is accepted only from distribution `quote-autopsy`, in `reel` only from `reel-autopsy`, and `verdictkit` and `vk` from none (`TYPE_ID_RESERVED`).
+5. Two registrations with one `type_id` are both rejected (`TYPE_ID_DUPLICATE`). There is no silent winner.
+6. `VK_CLAIM_TYPES` runs after the entry points, in local mode only, and each item passes the same checks. An import error is an issue, not a crash.
+
+| Mode | Sources | `VK_CLAIM_TYPES` set | Failed plugin |
+|---|---|---|---|
+| Local (default) | all entry points, then `VK_CLAIM_TYPES` | read | issue line, continue |
+| Public: `VK_JUDGE_MODE=1` or `VK_PROFILE=public` | allowlist constant: distributions `quote-autopsy` and `reel-autopsy`, the three `CONTRACT_CLAIM_TYPES` values | start-up refuses, `VK_STARTUP_ERROR=plugin_loading_disabled` | start-up refuses if an allowlisted type fails |
+
+Either variable selects public mode, so a missing profile cannot loosen it. The mode is read once at start-up. The allowlist is a code constant that no file, variable or request changes. The Examiner worker applies the same policy, so `deploy/entrypoint.sh` must pass the profile variable to it (G-D6-1). The example package stays installed and is ignored in public mode.
+
+**Codes.** `ENTRY_POINT_LOAD_FAILED`, `NOT_A_CLAIM_TYPE`, `TYPE_ID_INVALID`, `TYPE_ID_RESERVED`, `TYPE_ID_DUPLICATE`, `SCHEMA_VERSION_INVALID`, `FIELDS_INVALID`, `SDK_API_UNSUPPORTED`, `PLUGIN_NOT_ALLOWLISTED`, `PLUGIN_LOADING_DISABLED`.
+
+### D6.5 Validation and version compatibility
+
+| Level | Rule | Code |
+|---|---|---|
+| Identifier | `type_id` is ASCII, at most 64 characters and matches `^[a-z][a-z0-9_]{1,31}(\.[a-z][a-z0-9_]{1,31}){1,3}\.v[1-9][0-9]{0,2}$`. | `TYPE_ID_INVALID` |
+| Descriptor | Four attributes and nine methods present, each method with the Protocol's positional arity. `schema_version` is an `int` of at least 1 and not a `bool`. `param_fields` and `outcome_fields` are `frozenset[str]`, `outcome_fields` is not empty, and the sets are disjoint. | `NOT_A_CLAIM_TYPE`, `SCHEMA_VERSION_INVALID`, `FIELDS_INVALID` |
+| Claim | `validate_params` and `validate_outcomes` raise `SchemaError` and nothing else for bad input (CS-09). D4 maps `SchemaError` to `CLAIM_INVALID` and any other exception to `INTERNAL_ERROR`. | suite check |
+
+The four existing types must pass the identifier and descriptor levels, so `list_claim_types` over MCP keeps its four entries (D6-AC-14).
+
+- **Generation.** The `vN` suffix. A change that alters verdicts of existing claims needs a new generation, registered beside the old one while old bundles must replay.
+- **Revision.** `schema_version`. CS-07 checks that the golden claim states it. Core compares the two nowhere (F6-5). Enforcing it at intake and replay is OD-D6-3. D6 records the gap and changes no core behaviour.
+- **SDK API.** `verdictkit.sdk.SDK_API_VERSION` is 1. A plugin may set the optional class attribute `sdk_api`. Absent means 1. Any other value gives `SDK_API_UNSUPPORTED`. The attribute is optional, so no Protocol signature changes (11.14).
+- **Core.** The scaffold `pyproject.toml` pins `verdictkit` to a compatible range (`>=0.1,<0.2` at version `0.1.0`). Installers enforce it. The loader does not re-evaluate specifiers, because `packaging` is not a declared dependency.
+- **HTTP contract.** Unchanged. A new plugin is reachable by the CLI and MCP only. Exposing it over HTTP needs a change to the `ClaimTypeId` enum in `api/openapi.yaml`, which is a contract event for D5.8 and out of scope (11.15).
+
+### D6.6 Scaffolding command
+
+**Command.** `python -m verdictkit.sdk new <type_id> --dest <dir> [--package <name>]`. The default package name joins namespace and name with `_` (`example_line_total` for `example.line_total.v1`). The distribution name is `verdictkit-claimtype-` plus the package name with `_` as `-`.
+
+**Identifier rules (11.4).** The package name is lowercase ASCII, 2 to 40 characters, a valid identifier, not a keyword, not in `sys.stdlib_module_names`, not `verdictkit`, `quote_autopsy`, `reel_autopsy` or `stub_claimtype`, and not a Windows device name (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`, compared without case and with or without an extension). The `type_id` follows D6.5 and its namespace is not `quote`, `reel`, `verdictkit` or `vk`. The message names the identifier and the rule. The identifier is echoed with control characters escaped and at most 80 characters.
+
+**Algorithm.** (1) Validate every identifier with no file access. (2) Resolve the destination. Refuse a file, a symlink, a path inside `core/src/verdictkit` (11.6) and a non-empty directory. (3) Render every file in memory by replacing validated tokens, then run `ast.parse` and CS-10 on the Python output. (4) Create the directory if absent and write each file with exclusive creation. (5) On any error remove only the files and the directory that this run created and exit non-zero. An existing file is never opened for writing (11.3).
+
+**Output tree (11.2).** `pyproject.toml` (backend `hatchling`, entry point `<type_id> = "<package>.claim_type:<ClassName>"` in group `verdictkit.claim_types`, the range of D6.5), `<package>/__init__.py`, `<package>/claim_type.py`, `<package>/golden/claim.json`, `tests/test_conformance.py`.
+
+**Template.** A line-total claim type: params `unit_price` and `quantity`, outcome `stated_total`, one assumption axis `discount_pct` fixed at 0 by policy. It uses `Decimal` inside `localcontext` with explicit precision and `ROUND_HALF_EVEN`, returns `format(value, "f")`, and has no `float`, clock, randomness or environment read. It sets `sdk_api = 1`. The golden claim states that its numbers are constructed (`verdict-integrity.md` rule 8). The generated test calls `run_suite` with the class and the golden file.
+
+**Determinism.** Output uses LF and holds no timestamp, path or random value. Two runs with equal arguments give byte-identical trees on both hosts (D6-AC-5). **Exit codes.** 0 success, 2 invalid identifier or usage, 3 destination not empty, 4 destination forbidden, 5 input or output error.
+
+### D6.7 Conformance suite
+
+`run_suite(target, golden=None, registry=None)` takes a registered `type_id`, or a class with a golden path. It runs every check, continues after a failure and returns `(check, status, field, code)` rows. `python -m verdictkit.sdk check <type_id> [--json]` exits 0 only when all pass, 1 on any failure, 2 on usage error and 3 when the type cannot be loaded (11.13). A failure names the check and the field and never a claim value. The golden claim comes from `--golden`, else from the first `fixtures()` entry, else the type must ship one (OD-D6-7).
+
+| ID | Check | Req |
+|---|---|---|
+| CS-01 | Registered under its `type_id`, descriptor level of D6.5. With a `pyproject.toml`, its entry point is in the group and names a class with that `type_id`. | 11.1, 11.7 |
+| CS-02 | `param_fields` and `outcome_fields` share no name. | 11.9 |
+| CS-03 | Blinding. The golden claim and two outcome variants (each decimal outcome changed in its last place, and a 10-digit sentinel) give identical `encode_task` bytes and identical examination bytes. A variant that `validate_outcomes` rejects gives `NO_VALID_OUTCOME_VARIANT`. | 11.8 |
+| CS-04 | Determinism. `examine` twice in one process and twice in child processes with `PYTHONHASHSEED` 1 and 2 give identical canonical examination bytes. | 11.9 |
+| CS-05 | No `float` in the examination payload, in `shared` or in finding numbers. | 11.9 |
+| CS-06 | The evidence policy forbids `SourceClass.CLAIMANT`, and every request for the golden claim names a permitted source. | 11.9 |
+| CS-07 | The golden file is canonical JSON (`parse_canonical`, decimals as strings) and states the plugin's `schema_version`. | 11.10 |
+| CS-08 | `run_case`, `write_bundle` and `replay_bundle(allow_refetch=False)` on the golden claim give `REPRODUCED`. | 11.10 |
+| CS-09 | `validate_params({})` and `validate_outcomes({})` raise `SchemaError`. A float in place of each decimal string raises `SchemaError`. No other exception type escapes. | 11.9, D4.4 |
+| CS-10 | AST scan of the class's module and the modules it imports from its own package (excluding `sources` and `assist`): no banned LLM import (names of `test_llm_fence.py`), no `float` name or literal, no call to `now`, `utcnow` or `today`, no import of `time`, `random`, `secrets`, `uuid`, `socket`, `ssl`, `urllib`, `http`, `subprocess` or `ctypes`, no `os.environ` or `os.getenv`. | 11.5, 2.9 |
+
+The suite runs `examine` through `InProcessExaminer`, as `test_blinding.py` does. It imports custody modules, so the Examiner process never imports `sdk.conformance` or `sdk.scaffold` (D6-AC-11). CS-10 is a review aid. A plugin can evade it with `getattr` or a hidden import (R-D6-1).
+
+### D6.8 Threats and controls
+
+| # | Threat | Control | Check |
+|---|---|---|---|
+| T-P1 | A package on the path runs code at start-up in the Custodian or Examiner | Public mode filters before `ep.load()`. Local mode is an operator choice. | D6-AC-8 |
+| T-P2 | A plugin replaces `quote.finance.v1` | Duplicate rejection, reserved namespaces | D6-AC-3 |
+| T-P3 | `VK_CLAIM_TYPES` names a hostile module in a public deployment | Start-up refuses. The variable is read in local mode only. | D6-AC-9 |
+| T-P4 | The scaffold writes outside the destination, overwrites or follows a link | Destination checks, exclusive create, rollback of own files only | D6-AC-6, 7 |
+| T-P5 | An identifier injects text into a template or the terminal | Grammar before any substitution, escaped and capped echo | D6-AC-4 |
+| T-P6 | A plugin reads outcomes, the vault, the key or the network | `BlindedTask` has no outcome field (CS-03). The SDK exposes no such handle. Examiner process isolation stays the control for the rest (R-D6-1). | D6-AC-10, 11 |
+
+### D6.9 Acceptance criteria
+
+All rows are UNVERIFIED until an Execution_Record exists. Rows needing the container or a symlink run on Linux.
+
+| ID | Criterion | Method | Pass threshold | Req |
+|---|---|---|---|---|
+| D6-AC-1 | Suite on the existing types | `run_suite` on `quote.finance.v1`, `quote.lease.v1`, `reel.mechanical.v1`, `example.receipt.v1` | 10 of 10 checks pass for each of the 4. A `NO_VALID_OUTCOME_VARIANT` result for a first-party type is a defect of the variant rule of CS-03, not of the plugin. It is resolved by a recorded maintainer decision on the rule, never by weakening the check (R-D6-3). | 11.11 |
+| D6-AC-2 | Fresh scaffold | Generate `example.line_total.v1` into a temporary directory, run the suite with no edit | 10 of 10 pass, exit 0, the 5 files of D6.6 exist | 11.2, 11.12 |
+| D6-AC-3 | Loader rules | Fake distributions: duplicate id, `quote.*` id from another distribution, a failing entry point between two good ones | Both duplicates and the reserved id rejected, both good plugins load, one issue line each | 11.1, 11.15 |
+| D6-AC-4 | Identifier rejection | Uppercase, dash, keyword, stdlib name, device name, 41 characters, control characters, path separators, reserved namespace | Exit 2, 0 files or directories created, message names identifier and rule, at most 80 characters echoed | 11.4 |
+| D6-AC-5 | Output determinism | Two runs into two directories on each host | 0 differing bytes across the four trees | 11.2, 2.2 |
+| D6-AC-6 | Non-empty destination | Destination holding one file | Exit 3, file byte-identical, 0 new entries | 11.3 |
+| D6-AC-7 | Containment | Destination inside `core/src/verdictkit`, a file, a symlink, an injected failure at the third file | Exit 4 or 5, repository tree unchanged, 0 files left by the failed run | 11.6 |
+| D6-AC-8 | Public mode is import-free | Fake distribution whose module writes a canary file on import | Public mode: 0 canary files and `PLUGIN_NOT_ALLOWLISTED`. Local mode: 1 canary file. | 11.15 |
+| D6-AC-9 | Public refusal | `VK_JUDGE_MODE=1` with `VK_CLAIM_TYPES` set. `VK_PROFILE=public` alone. One allowlisted type made to fail. | Non-zero exit and a `VK_STARTUP_ERROR` line each. `VK_PROFILE=public` alone selects public mode. No key value in output. | 11.15 |
+| D6-AC-10 | Suite negative controls | Mutants: outcome copied into the task, `float` in `shared`, a `set` iterated into output, `diagnose` removed, `CLAIMANT` permitted | Each mutant fails its check, the suite continues and exits 1 | 11.8, 11.13 |
+| D6-AC-11 | SDK surface and import graph | Public names of `verdictkit.sdk` and the Protocol types. Import `verdictkit.examiner.worker` in a clean interpreter. | 0 parameters or returns carrying outcomes, vault, key or socket. `sdk.conformance` and `sdk.scaffold` absent from `sys.modules`. | 11.15 |
+| D6-AC-12 | No protocol change | `git diff --stat 84df25c` over `plugin.py`, `test_blinding.py`, `test_llm_fence.py` | 0 changed lines | 11.14, 11.15 |
+| D6-AC-13 | Fence on SDK and output | New test reusing the banned names of `test_llm_fence.py`, plus a test that the two name sets are equal | 0 violations in `sdk/` and in scaffold output. Sets equal. | 11.5 |
+| D6-AC-14 | Existing surface | `list_claim_types` over MCP and the API claim-type list with the new loader. `docs/SDK.md` content test. | 4 entries of D4-AC-1 unchanged. API list equals `CONTRACT_CLAIM_TYPES`. Group, `VK_CLAIM_TYPES`, protocol, trust model, public rule and exit codes present. | 11.1, 11.15 |
+
+### D6.10 Open decisions, risks and traceability
+
+| ID | Decision or risk | Recommendation |
+|---|---|---|
+| OD-D6-1 | `python -m verdictkit.sdk` or `verdictkit plugin` subcommands | Module entry now. |
+| OD-D6-2 | Unlisted entry points in public mode: ignore or refuse start-up | Ignore and count. The image keeps the example package. |
+| OD-D6-3 | Enforce `schema_version` equality at intake and replay (F6-5) | Record the gap. A small core change may follow if the maintainer decides. Not needed for 11.x. |
+| OD-D6-4 | Duplicate `type_id`: reject all, or first wins by sort order | Reject all. A winner by sort order is a hidden rule. |
+| OD-D6-5 | Local-mode failure: report and continue, or stop | Report and continue. |
+| OD-D6-6 | Reserved namespaces `quote`, `reel`, `verdictkit`, `vk` | As written. `example` stays free. |
+| OD-D6-7 | Golden claims for `quote.*`, which has no `fixtures()` hook | Reuse existing constructed worksheets from the integration tests. Invent no numbers. |
+| G-D6-1 | The Examiner needs the profile variable from `entrypoint.sh`. D2-AC-1 gains a start-up case for a failing allowlisted type. | Coordination with D2. |
+| R-D6-1 | CS-10 and the import checks are not a sandbox | Stated in `docs/SDK.md`. Admission control is the control. |
+| R-D6-2 | Local mode runs any installed package | By design. Documented. |
+| R-D6-3 | CS-03 varies decimal outcomes only, with two derived variants. A plugin whose `validate_outcomes` rejects both gets `NO_VALID_OUTCOME_VARIANT`. Whether the four existing types accept the derived variants is UNVERIFIED until D6-AC-1 runs. | Stated in `docs/SDK.md`. Other outcome types need SDK API 2. A rejected derivation is corrected by a recorded decision on the variant rule, and the check is not weakened. |
+| R-D6-4 | Windows device-name and path behaviour and the symlink case are UNVERIFIED | D6-AC-4 and D6-AC-7 on both hosts. |
+
+**Files for implementation (not changed now).** New `core/src/verdictkit/sdk/{__init__,__main__,loader,validate,conformance,scaffold,templates}.py`; `cli.py` (`_load_registry` delegates); new `docs/SDK.md`; new tests under `tests/sdk/` and `tests/contract/test_sdk_fence.py`. Not changed: `plugin.py`, existing tests, `examples/`, the API contract.
+
+**Traceability.** 11.1: D6.4, D6.5, AC-3, AC-14. 11.2: D6.6, AC-2, AC-5. 11.3: D6.6, AC-6. 11.4: D6.5, D6.6, AC-4. 11.5: D6.6, CS-10, AC-13. 11.6: D6.6, AC-7. 11.7: D6.7, AC-1. 11.8: CS-03, AC-10. 11.9: CS-02 to CS-06, CS-09, AC-10. 11.10: CS-07, CS-08, AC-1. 11.11: AC-1. 11.12: AC-2. 11.13: D6.7, AC-10. 11.14: D6.3, D6.5, AC-12. 11.15: D6.4, D6.8, AC-3, AC-8, AC-9, AC-11, AC-12, AC-14. D0.4 rows for 2.1, 2.2, 2.3 and 2.9 map to D6.6, D6.7 and T-P6. Every criterion of Requirement 11 maps to at least one D6 section and one acceptance row.
+
+### D6.11 Maintainer decisions on open items (conditional approval)
+
+The maintainer approved D6 conditionally, with the decisions below recorded in the same D6 and D7 review. Each is DECIDED and DESIGNED. None is implemented, no plugin is loaded and no test was run for D6. Text in D6.1 to D6.10 is unchanged. Where a decision here differs from that text, this section governs.
+
+| ID | Decision | Effect on D6 text |
+|---|---|---|
+| AM-D6-1 | OD-D6-2 is decided as recommended: public plugin loading fails closed. An unlisted entry point is never imported and is only counted. Any failure of an allowlisted plugin, a provenance mismatch, a duplicate `type_id`, `VK_CLAIM_TYPES` set, an unknown Security_Profile or an unreadable provenance manifest refuses start-up with a `VK_STARTUP_ERROR` code and a non-zero exit, and no listener opens. | D6.4's loader table is read with this rule. D6-AC-9 is extended to the provenance-manifest and plugin-failure cases in the public profile (11.15, 11.16). |
+| AM-D6-2 | OD-D6-4 is decided as recommended: a duplicate `type_id` is rejected in every mode, and all colliding registrations are rejected, so the result does not depend on load order. In public mode this refuses start-up. OD-D6-5 is decided as recommended for local mode: the collision is reported and the colliding types are left unregistered. | D6.4 step 5 is read with this rule. D6-AC-3 already exercises both the duplicate and the reserved-id case (11.17). |
+| AM-D6-3 | An approved plugin is bound to its Plugin_Provenance and not to a module name. An allowlist entry holds the distribution name, the exact version, the entry-point name, the entry-point value and `provenance_sha256`. The image build writes a root-owned, read-only provenance manifest from the locked tree (installed files with SHA-256, `RECORD` checked against disk, `__pycache__` excluded) for each allowlisted distribution; its own hash goes into release provenance (14.17) and an image label. The loader verifies the files before any import, and after import checks that the module file belongs to the verified set and that no other module claims the plugin's top-level name, refusing on mismatch with `PLUGIN_PROVENANCE_MISMATCH`. Only the `workspace-tree` provenance kind is built; a `locked-wheel` kind is designed and not built (YAGNI). | D6.4's allowlist description and D6.8's T-P6 row are read with this binding. D8 owns the provenance tests (PD-1 to PD-12) (11.18). |
+| AM-D6-4 | G-D6-1 is closed: the Security_Profile is resolved by one function and validated in both processes. `VK_PROFILE` is `local` (default) or `public`; `public` or `VK_JUDGE_MODE=1` selects public mode, and a conflict (`VK_JUDGE_MODE=1` with `VK_PROFILE=local`) or an unknown value refuses start-up. `deploy/entrypoint.sh` passes the profile to the examiner. At start-up the custodian asks the examiner, over the authenticated socket, for its profile and a registry digest (SHA-256 over the sorted `type_id` and `schema_version` list); a mismatch refuses start-up. `VK_STARTUP_OK isolation=ENFORCED` is unchanged (7.7). | D6.4's note that `deploy/entrypoint.sh` must pass the profile variable to the examiner (G-D6-1) is resolved. D2-AC-1 gains these start-up cases (7.19, 11.15). |
+
+**Not decided in this review.** OD-D6-1, OD-D6-3, OD-D6-6, OD-D6-7 and the risks R-D6-1 to R-D6-4 stay open with the recommendations of D6.10.
+
+**Traceability.** AM-D6-1: 11.15, 11.16. AM-D6-2: 11.17. AM-D6-3: 11.18. AM-D6-4: 7.19, 11.15.
+
+## D7. P6 Expanded regulatory verification from official sources
+
+### D7.1 Scope and status
+
+**Covers.** Requirement 12 (12.1 to 12.20): official-source and evidence-record rules, rule statuses, effective dates, deterministic snapshot updates, stale evidence, rollback, and the order Texas completion, then California, Florida and New York.
+
+**Does not cover.** Retrieval of any source, naming of any official host, rule values for California, Florida or New York, lease tax rules, legal conclusions, and any edit to the Texas implementation.
+
+**Status.** Everything in D7 is DESIGNED. Nothing is IMPLEMENTED or VERIFIED. No source was retrieved while writing this design, no host is named and no California, Florida or New York rule value appears in it. Facts marked (read) come from a read-only inspection at commit `c29d2fe` and are UNVERIFIED for Requirement 3 until a record exists. Notes: `docs/next-phase/D6_D7_WORKING_NOTES.md`.
+
+### D7.2 Inspected baseline and findings
+
+Read: `apps/quote-autopsy/src/quote_autopsy/{rules.py,sources.py,claim_type.py}`, `rules/{TX.json,MANIFEST.json}`, `docs/B7_TEXAS_SPEC.md`, `tests/integration/test_quote_b7_texas.py`, `tests/api/test_http_run_lifecycle.py` (the cases that use state codes), `core/src/verdictkit/model.py` (`compute_verdict_hash`), `api/openapi.yaml` (finding and evidence schemas) and `.gitattributes`.
+
+| # | Finding (read) | Req |
+|---|---|---|
+| F7-1 | `TX.json` is canonical JSON with a closed key set. Each source has only `uri`, `retrieved_at` and `sha256_of_source`. No media type, excerpt or effective date. | 12.2, 12.19 |
+| F7-2 | `load_rules` checks the file hash against `MANIFEST.json`, canonical form and the key set. `rules/` holds no source bytes, so no source hash can be recomputed offline. | 12.7 |
+| F7-3 | `compute_verdict_hash` covers the sorted evidence hashes and, for every finding, `statement` and `reason`. Editing `TX.json`, or any Texas finding text, changes Texas verdict hashes. | 12.13 |
+| F7-4 | A state other than `TX` gives `unsupported_jurisdiction` with the statement "No rules snapshot is available for {state}; only TX is supported". `TX` with no matching evidence gives `evidence_unavailable`. | 12.8 |
+| F7-5 | Two existing tests use `CA` as the unsupported example: `test_non_tx_external_findings_unsupported_jurisdiction` and `test_external_only_claim_is_indeterminate`. | 12.13, 12.18 |
+| F7-6 | `params.jurisdiction` accepts only `state` and `locality_code`. Finance requires two letters, lease checks only that the length is 2. Quote claims carry no date. | 12.19 |
+| F7-7 | `Status` has no `UNVERIFIED` member. `Finding.reason` is a free string, also in OpenAPI. | 12.20 |
+| F7-8 | The 225.00 documentary-fee amount rests on OCCC bulletin B16-5, an agency document. `docs/B7_TEXAS_SPEC.md` marks the amendment status of the rule as unchecked. The rule text is not a source. | 12.11 |
+| F7-9 | The adapter returns bytes, a URI and a media type only, so `EvidenceDTO.retrievedAt` can only be the acquisition time (inferred). Showing the source retrieval date needs a contract-visible field. | 12.14 |
+
+### D7.3 Design decisions
+
+| ID | Decision | Alternative rejected | Why |
+|---|---|---|---|
+| DD7-1 | Two tiers. The legacy tier (`TX.json`, `MANIFEST.json` Texas entry, `rules.py`, `sources.py`, the Texas branches of `claim_type.py`, the Texas tests) keeps its bytes. New jurisdictions use format `vk-rules/2`. Texas gets an additive sidecar only. | Migrate `TX.json` to the new format. | F7-3: a new `TX.json` changes every Texas verdict hash (12.13). |
+| DD7-2 | A reviewer enters each value, window and excerpt from the official text. Tools only verify. | Extract values with a tool or a model. | 12.6. |
+| DD7-3 | Only `fetch` uses the network and a clock. `verify`, `build` and the loader are pure functions of files. | A build that stamps the time. | 12.16, 2.2. |
+| DD7-4 | Rule statuses `VERIFIED`, `UNVERIFIED`, `AMBIGUOUS`, `UNSUPPORTED`. Authority classes `BINDING_LAW` and `AGENCY_GUIDANCE`. Only a `VERIFIED` rule of class `BINDING_LAW` reaches `SUPPORTED` or `REFUTED`. | Treat any official page as law. | Guidance is not binding law. |
+| DD7-5 | `UNVERIFIED` is a rule status. The finding is `INDETERMINATE` with a reason code. | A new `Status` member. | F7-7. A new member is a contract event. |
+| DD7-6 | The claim states an as-of date. A rule applies on `effective_from <= as_of < superseded_on`. No wall clock. | Default to the snapshot date. | A default can refute a quote from before the rule existed. |
+| DD7-7 | Retrieval age is shown and gated in CI. It never changes a verdict. | Expire snapshots by wall clock. | Replay must give the same hash on any date. |
+| DD7-8 | Snapshots are immutable and versioned. Rollback is a reviewed change to a pointer in the manifest. | Edit in place. | Bundles and history stay intact. |
+| DD7-9 | Order: Texas completion, California, Florida, New York. A jurisdiction that fails the gate is recorded `BLOCKED`. | Add all at once. | 12.17, 12.18. |
+
+### D7.4 Rule model, statuses and findings
+
+**Jurisdiction identifier.** `US-` plus the two-letter code in upper case (`US-CA`). The claim keeps `jurisdiction.state`, and the loader maps `state.upper()`. **Rule families**, each only where an Official_Source states it: `STATE_TAX_RATE`, `LOCAL_TAX_RANGE` (minimum and maximum computed with `Decimal` from a published table, never typed), and `DOC_FEE` with the kinds of `rules.py` (`STATUTORY_MAXIMUM`, `PRESUMED_REASONABLE_AMOUNT`, `NO_STATUTORY_LIMIT`). Lease external findings stay `INDETERMINATE` with `not_applicable_lease_tax_model`, as for Texas.
+
+**Authority class.** The reviewer sets it from the source text. The default is `AGENCY_GUIDANCE` unless the source shows that it is a statute or an adopted rule. A rule carries no `value` unless it is `VERIFIED` (12.5).
+
+| Condition | Rule status | Finding |
+|---|---|---|
+| Every check of D7.5 passes, class `BINDING_LAW`, review recorded | `VERIFIED` | `SUPPORTED`, `REFUTED` or `CONDITIONAL` by `Decimal` comparison |
+| Host not official, non-200, 30 s timeout, error page or app shell, excerpt absent, unsupported media type, no stated effective date, bytes not stored | `UNVERIFIED` | `INDETERMINATE`, `rule_unverified` |
+| Only `AGENCY_GUIDANCE` supports the value | `UNVERIFIED` | `INDETERMINATE`, `rule_unverified` |
+| Identical bytes under two URIs, no reviewer approval | `UNVERIFIED` (quarantined) | `INDETERMINATE`, `rule_unverified` |
+| Recomputed hash, manifest or review does not match | unavailable | At acquisition the adapter serves no evidence and the finding is `INDETERMINATE`, `evidence_unavailable`, as for Texas. In the examination, a snapshot that fails its own check gives `evidence_integrity`. |
+| Two readings, or two `BINDING_LAW` sources disagree on value or overlap in time | `AMBIGUOUS` | `INDETERMINATE`, `conflicting_sources` or `rule_ambiguous`, both excerpts cited |
+| Guidance contradicts a `VERIFIED` rule | unchanged | The `VERIFIED` rule decides. The guidance is listed as a note. |
+| The rule needs a filing or document VerdictKit cannot obtain | `VERIFIED` | `INDETERMINATE`, `missing_filing:<id>`, never `REFUTED` (12.9) |
+| No snapshot or no `ACTIVE` snapshot for the jurisdiction | `UNSUPPORTED` | `INDETERMINATE`, `unsupported_jurisdiction`, no evidence item |
+| No as-of date, or as-of outside every window | none | `INDETERMINATE`, `as_of_date_required` or `rule_not_in_effect` |
+| Locality unstated and the rate varies (12.10) | `VERIFIED` | Sweep from minimum to maximum inclusive as `DEFAULT_POLICY`, bounds in the finding |
+
+Existing codes stay: `unsupported_jurisdiction`, `evidence_unavailable`, `requires_regulator_filing`, `not_applicable_lease_tax_model`. Evidence missing or refused at acquisition for a supported jurisdiction gives `evidence_unavailable`. Evidence that reaches the examination and fails its own check gives `evidence_integrity`. No model output, memory or secondary site is a source (12.6, 12.20).
+
+### D7.5 Official sources and evidence records
+
+**Host registry** `rules/v2/official_hosts.json` (canonical JSON, empty at design time). Each entry: `jurisdiction`, exact `host`, `basis` (the page where that jurisdiction publishes or links the host), `reviewed_by`, `reviewed_on`. A host of another jurisdiction does not count. A contractor-operated host is accepted only if a page of the jurisdiction designates it, and `basis` cites that page. Accepted URIs use `https`, the default port, no userinfo and no IP literal. The host is compared in lower-case ASCII (IDNA applied) by exact match, never by suffix. A redirect is followed only to another registry host, at most 3 times, and the final URI is recorded. Otherwise the result is `HOST_NOT_OFFICIAL`, no snapshot is created and the rule is `UNVERIFIED` (12.1).
+
+**Evidence record** (12.2, 12.15): `evidence_id`, `uri`, `retrieved_on` (UTC date), `http_status`, `byte_count`, `sha256` (64 lower-case hex), `media_type`, `excerpt` (verbatim, 1 to 2,000 characters), `excerpt_sha256`, `rights` (`REDISTRIBUTABLE` or `NOT_ESTABLISHED`) and `bytes_file`. Retrieved bytes are stored at `rules/v2/bytes/<sha256>` when `rights` is `REDISTRIBUTABLE`. Without stored bytes the rule is `UNVERIFIED` (`source_bytes_not_stored`), because 12.7 needs a recomputable hash (OD-D7-1).
+
+**Verification (12.3).** 1. Status is 200 and the host check passes. 2. The media type is `text/html`, `application/xhtml+xml` or `text/plain`. Other types, including PDF, give `media_type_unsupported` (OD-D7-2). 3. Decode as UTF-8, reject invalid bytes. For HTML collect the text nodes outside `script` and `style` with `html.parser` and unescape entities. Normalise to NFC and collapse whitespace. Apply the same normalisation to the excerpt. 4. The excerpt must occur in the text. An error page or a script-rendered shell fails here. 5. Every value of the rule must equal, as `Decimal`, a numeral token in the excerpt. This catches typing errors only, not wrong meaning (R-D7-1). 6. Group the evidence of one jurisdiction by `sha256`. A group with two or more URIs rejects all of them (12.4) until a review record names the group. The loader repeats steps 3 to 6 on the stored bytes (12.7).
+
+### D7.6 Snapshot update, review and rollback
+
+| Stage | Command (`scripts/rules_snapshot.py`) | Network or clock | Result |
+|---|---|---|---|
+| Plan | A reviewer writes `rules/v2/plan/<ID>.plan.json`: per rule the uri, excerpt, value, window, class and rights. | none | Reviewed input |
+| Fetch | `fetch <ID>` with a 30 s limit per source, no cookies, fixed request headers, at most 4 MiB (ASSUMED) | network and date | Evidence records and bytes. One Evidence_Ledger record per fetch: command, status, byte count, SHA-256 (12.15). |
+| Verify | `verify <ID>` | none | D7.5 checks. Failures are listed with `rule_id` and code. |
+| Build | `build <ID>` | none | `rules/v2/<ID>.<seq>.json` and manifest entry. Canonical JSON, sorted lists, LF, no time read. |
+| Review | A person writes `<ID>.<seq>.review.json` with `snapshot_sha256`, `approved_by` and `approved_on`. | none | The agent cannot create or waive it. |
+| Promote | A reviewed commit sets `active` in `rules/v2/MANIFEST.json`. | none | New runs use it. |
+
+**Determinism.** Equal plan, evidence records and bytes give byte-identical output on both hosts. `build` takes `retrieved_on` from the fetch record and reads no clock. `.gitattributes` gains `apps/quote-autopsy/src/quote_autopsy/rules/v2/** -text`, because its present `-text` line for `quote_autopsy/rules/*.json` does not match subfolders.
+
+**Manifest** `rules/v2/MANIFEST.json`: `active` per jurisdiction, and per snapshot its SHA-256, review file and hash, and status `ACTIVE`, `SUPERSEDED`, `SUSPENDED` or `WITHDRAWN`. Also the SHA-256 of the host registry. The adapter checks the manifest and the review record when a case acquires evidence. `examine` and `findings` read only the embedded evidence, so replay never consults the manifest.
+
+**Rollback.** A new reviewed commit sets `active` to the earlier sequence number and marks the later one `WITHDRAWN` with a reason. No snapshot file is edited or deleted. A bundle embeds its evidence, so a bundle written under the withdrawn snapshot still replays offline (D7-AC-9). `SUSPENDED` stops new runs for a jurisdiction and gives `unsupported_jurisdiction`.
+
+### D7.7 Effective dates and stale evidence
+
+**Dates.** `YYYY-MM-DD` only, parsed with `datetime.date.fromisoformat` and a strict pattern, no zone, no time. The window of a rule is `[effective_from, superseded_on)`. A stated last day D is stored as `superseded_on` = D plus one calendar day. A rule with no stated effective date is `UNVERIFIED` (12.19). The claim states the date in the new optional key `params.jurisdiction.as_of` (OD-D7-3). Legacy Texas ignores it.
+
+**Selection.** Among `VERIFIED` rules of one family whose window holds `as_of`: exactly one applies. Two with different values are `conflicting_sources`. Two with equal values apply once. None, because the date is before the first window, after the last without a successor, or inside a gap, gives `rule_not_in_effect`.
+
+| Stale case | Behaviour |
+|---|---|
+| Hash, manifest, review or host registry mismatch at load | Source unavailable. `evidence_integrity`. No value is used (12.7). |
+| Retrieval date old | Shown next to each finding that relies on it (12.14). `check-fresh --today <date> --max-age-days <N>` lists `STALE` snapshots. It reads no clock, because the date is an argument. The default `N` is 180 (ASSUMED, OD-D7-6). The verdict does not change. |
+| Rule superseded | The successor applies by date. Without a verified successor the result is `rule_not_in_effect`. |
+| Source page changed after retrieval | The stored bytes still decide. A new fetch that differs is recorded as `source_changed`, and a new snapshot follows the pipeline. |
+
+### D7.8 Texas completion and jurisdiction order
+
+1. **TX-1.** The owner retrieves the text of 7 TAC §84.205 from the Texas Secretary of State (12.11), or the sidecar records it `UNVERIFIED` with the reason. The 225.00 treatment and every Texas finding stay unchanged either way. A text that contradicts the amount makes the sidecar entry `AMBIGUOUS`, stops D7 and goes to the maintainer (12.11 and 12.13 conflict in that case).
+2. **Texas sidecar** `rules/v2/US-TX.legacy-evidence.json`. For each of the four sources in `TX.json` it repeats `uri` and `sha256_of_source` and adds media type, excerpt, class and stated effective date, or marks the item `UNVERIFIED`. A newly fetched hash that differs is recorded as `source_changed_since_snapshot`. The verdict path never reads the sidecar. Texas rules rest on agency documents (F7-8), and the sidecar says so (R-D7-2).
+3. **Order.** Texas completion, then California, Florida, New York. Each uses the pipeline and passes `gate <ID>`: criteria 12.1 to 12.16, plus the four outcome tests of 12.12. A jurisdiction with no verified rule in a family stays unsupported. A failed gate is recorded `BLOCKED`. The next jurisdiction starts only after the maintainer confirms (OD-D7-4).
+
+### D7.9 Acceptance criteria
+
+All rows are UNVERIFIED until an Execution_Record exists. Date and rule fixtures use a fictional jurisdiction `US-ZZ` and are labelled constructed (`verdict-integrity.md` rule 8).
+
+| ID | Criterion | Method | Pass threshold | Req |
+|---|---|---|---|---|
+| D7-AC-1 | Texas preserved | `git diff 84df25c` over `TX.json`, `rules/MANIFEST.json`, `rules.py`, `sources.py`. The Texas test file. Verdict hash of one Texas claim at `84df25c` and at the candidate. | 0 changed lines in the four files. All Texas tests pass. Equal verdict hashes. The test file differs only by the hunk of B-D7-1, if approved. | 12.13 |
+| D7-AC-2 | Unsupported jurisdictions | `ZZ`, a code absent from the manifest, a `SUSPENDED` and a `WITHDRAWN` jurisdiction, claims with no `ACTIVE` snapshot. `C`, `CAL` and `C1` in a finance claim at intake. | `INDETERMINATE` with `unsupported_jurisdiction`, 0 evidence items, internal findings equal to the plain run. Malformed finance codes give `SchemaError`. | 12.8, 12.20 |
+| D7-AC-3 | Contradictory evidence | Overlapping windows with different values. Equal values. Identical bytes under two URIs. Guidance against a `VERIFIED` rule. | `conflicting_sources` with both evidence ids. One application for equal values. Both URIs rejected and no use until a review names the group. The `VERIFIED` rule decides and the guidance is a note. | 12.4, 12.20 |
+| D7-AC-4 | Effective-date boundaries | Windows `[2025-01-01, 2026-07-01)` and `[2026-07-01, open)`. As-of 2024-12-31, 2025-01-01, 2026-06-30, 2026-07-01. A gap of one day. A stated last day 2027-12-31. Leap day 2028-02-29. Malformed dates. The clock patched to two dates. | `rule_not_in_effect`, old, old, new. Exactly one rule at each boundary. Gap gives `rule_not_in_effect`. `superseded_on` is 2028-01-01. Malformed dates, including 2027-02-29, give `SchemaError`. 2028-02-29 is accepted. 0 differing bytes between clock settings. | 12.19 |
+| D7-AC-5 | Official host | Look-alike suffix, other jurisdiction's host, punycode, userinfo, IP literal, `http`, redirect to an unlisted host, exact registry host. A local fake fetcher. | 7 of 7 give `HOST_NOT_OFFICIAL` and no snapshot. The exact host passes. | 12.1 |
+| D7-AC-6 | Retrieval verification | Excerpt present. Error body with status 200, script shell, status 404 and 500, a 30 s stall, PDF, a value not in the excerpt. | Only the first passes. The rest are `UNVERIFIED` with no value and no snapshot. One ledger record per fetch. | 12.2, 12.3, 12.5, 12.15 |
+| D7-AC-7 | Load integrity | Flip one byte in the snapshot, each evidence file, the review record, the host registry and the manifest. Remove the review record. | `evidence_integrity` or no use, 0 `SUPPORTED` and 0 `REFUTED`. | 12.7 |
+| D7-AC-8 | Deterministic update | Run `build` twice, on both hosts, with the clock patched. Rebuild with no input change. | 0 differing bytes. Manifest unchanged. | 12.16, 2.2 |
+| D7-AC-9 | Rollback | Promote sequence 2, write a bundle, roll back to 1. | New runs use 1. Sequence 2 file unchanged. The bundle replays `REPRODUCED` offline. | 12.16 |
+| D7-AC-10 | Four outcomes | For each added jurisdiction one test each for `SUPPORTED`, `REFUTED`, `CONDITIONAL`, `INDETERMINATE`, expected values computed with `Decimal` from the snapshot. A scan for `float`. | 4 of 4, 0 `float`. Where a jurisdiction cannot produce an outcome, the test uses a `US-ZZ` fixture and says why (OD-D7-7). | 12.12 |
+| D7-AC-11 | Locality | Locality unstated, stated and in the table, stated and absent. | Sweep over the full range with bounds listed. Exact rate. `unknown_locality`. | 12.10 |
+| D7-AC-12 | Missing filing | A rule that needs a filing. | `missing_filing:<id>`, never `REFUTED`. | 12.9 |
+| D7-AC-13 | Offline equality | Launcher that fails any non-Unix `connect`, against an unrestricted run. | Equal findings. 0 outbound connections. | 12.16 |
+| D7-AC-14 | Freshness | `check-fresh` with two dates and the clock patched. | `STALE` listed as expected. Verdict bytes unchanged. | 12.14 |
+| D7-AC-15 | Texas sidecar | URIs and hashes against `TX.json`. 84.205 retrieved or `UNVERIFIED`. | 4 of 4 match or are flagged. No Texas finding changes. | 12.11, 12.17 |
+| D7-AC-16 | Order gate | Mark a later jurisdiction `ACTIVE` while an earlier one is neither `ACTIVE` nor `BLOCKED`. | The gate refuses. | 12.17, 12.18 |
+| D7-AC-17 | No invented fact | Every `VERIFIED` value against its excerpt. A scan of documents and UI text. | 0 values without a matching excerpt. 0 support statements without a `SUCCEEDED` record. | 12.6, 3.10 |
+| D7-AC-18 | Display and contract | UI test for label text and the retrieval date next to a finding. The added fields classed as compatible or breaking. | Date shown. Classification present in D5.12 form. | 12.14 |
+| D7-AC-19 | Replay of older bundles | A bundle that holds the legacy finding, produced from `84df25c` in a disposable worktree, replayed with the candidate | `DIVERGED`, integrity `VERIFIED`, and the release notes name the change (G-D7-2). A candidate-made bundle replays `REPRODUCED`. | 12.13, 2.8 |
+
+### D7.10 Open decisions, blockers, risks and traceability
+
+| ID | Item | Recommendation |
+|---|---|---|
+| B-D7-1 | Adding California conflicts with F7-5 and with 12.13. The first of the two tests fails once California is supported (no as-of date gives `as_of_date_required`), and the second may change (UNVERIFIED). D4-AC-2 forbids edits to the Texas test file. | Maintainer approval of a one-token edit `CA` to `ZZ` in each test that needs it, and an amended D4-AC-2. Otherwise California waits. |
+| B-D7-2 | No source was retrieved. A jurisdiction cannot be `VERIFIED` until the owner approves network retrieval and a reviewer approves each snapshot. | Process blocker. D7 builds no snapshot. |
+| OD-D7-1 | Store source bytes in the repository (12.7). Repository size and rights are UNVERIFIED. | Store them when `REDISTRIBUTABLE`. Otherwise the rule is `UNVERIFIED`. |
+| OD-D7-2 | PDF excerpt checks. Raw PDF bytes cannot hold the excerpt. | Not supported now. A pinned text extractor is a later decision. |
+| OD-D7-3 | As-of date input | New optional key `params.jurisdiction.as_of` and a UI field. Contract-visible, so classified under D5.12 (G-D7-1). |
+| OD-D7-4 | Order handling after `BLOCKED` | Continue only with maintainer confirmation. |
+| OD-D7-5 | The statement "only TX is supported" becomes false once any jurisdiction is added, and it is hashed (F7-3). Options: (a) new text without the clause, or (b) keep the text and accept a false sentence. | (a): "No rules snapshot is available for {state}", same reason. The release notes state the effect of G-D7-2. |
+| OD-D7-6 | Default `N` for the freshness check and whether it fails a release gate | 180 days (ASSUMED). Report only, until the maintainer sets a gate. |
+| OD-D7-7 | An outcome a real jurisdiction cannot produce | Use the `US-ZZ` fixture and record the reason. |
+| OD-D7-8 | Later migration of Texas to the new format | Not in this phase. It changes hashes. |
+| G-D7-1 | Contract-visible items for D5.12: `as_of` and a snapshot retrieval date on the evidence DTO | Classify each. Batch with the D5 event. |
+| G-D7-2 | Under OD-D7-5 (a), every bundle written earlier that holds the legacy unsupported-jurisdiction finding replays `DIVERGED` with integrity `VERIFIED`, for every non-Texas state and not only the new ones, because `statement` is hashed. The earlier release published such bundles only if a user made them (no such bundle is committed). | Release notes and D7-AC-19. |
+| R-D7-1 | A reviewer can mistype a value or misread a text. The numeral check catches only typing. | Review record. A second look is advised. |
+| R-D7-2 | Texas rules rest on agency documents. The new tier is stricter. | The sidecar states it. Verdicts unchanged (12.13). |
+| R-D7-3 | The host registry rests on a reviewer's judgement of `basis`. | Visible, reviewed and hash-pinned. |
+| R-D7-4 | Snapshots are point-in-time copies. | Displayed (12.14) and checked for age. |
+
+**Files for implementation (not changed now).** New `rules_v2.py` and `sources_v2.py` in `apps/quote-autopsy/src/quote_autopsy/`; `claim_type.py` (dispatch for non-Texas states, the `as_of` key, the new adapter and source id, the changed unsupported statement; no Texas function is edited); `scripts/rules_snapshot.py`; `rules/v2/` data; `.gitattributes`; `docs/REGULATORY_SNAPSHOTS.md`; new tests under `tests/integration/`. Not changed: `TX.json`, `rules/MANIFEST.json`, `rules.py`, `sources.py`, `docs/B7_TEXAS_SPEC.md`, the Texas tests (except B-D7-1 if approved).
+
+**Traceability.** 12.1: D7.5, AC-5. 12.2, 12.3, 12.5: D7.5, AC-6. 12.4: D7.5, AC-3. 12.6: DD7-2, AC-17. 12.7: D7.5, D7.6, AC-7. 12.8: D7.4, AC-2. 12.9: D7.4, AC-12. 12.10: D7.4, AC-11. 12.11: D7.8, AC-15. 12.12: AC-10. 12.13: DD7-1, AC-1, AC-19. 12.14: D7.7, AC-14, AC-18. 12.15: D7.6, AC-6. 12.16: D7.6, AC-8, AC-9, AC-13. 12.17: D7.8, AC-15, AC-16. 12.18: D7.8, AC-16. 12.19: D7.4, D7.7, AC-4. 12.20: D7.4, AC-2, AC-3. Every criterion of Requirement 12 maps to at least one D7 section and one acceptance row.
+
+### D7.11 Maintainer decisions on open items (conditional approval)
+
+The maintainer approved D7 conditionally. Each decision below is DECIDED and DESIGNED. No source was retrieved, no snapshot was built and no test was run for D7. Text in D7.1 to D7.10 is unchanged. Where a decision here differs from that text, this section governs.
+
+| ID | Decision | Effect on D7 text |
+|---|---|---|
+| AM-D7-1 | B-D7-1 is decided: a targeted fixture edit, `CA` to `ZZ`, in `test_non_tx_external_findings_unsupported_jurisdiction` (`tests/integration/test_quote_b7_texas.py`), in `test_external_only_claim_is_indeterminate` (`tests/api/test_http_run_lifecycle.py`), and in any other test that a search for the literal shows uses `CA` only as an unsupported-jurisdiction example. Only the jurisdiction code literal changes; name, purpose and every assertion stay. `ZZ` is permanently unsupported, guarded by a test that fails if `ZZ` ever appears in the supported set. | D7-AC-1 and D4-AC-2 are amended: the Texas test file and `test_quote_b7_texas.py` differ from the baseline only by this hunk, which is recorded as a fixture-data change and not a loosening (12.21, 12.13). |
+| AM-D7-2 | Read-only retrieval of official regulatory sources is authorized for implementation: HTTPS GET only, hosts only from the reviewed registry, no authentication, payment, cloud provisioning or new account. Each retrieval is its own Execution_Record. The retrieval of 7 TAC §84.205 (TX-1) may be done under this authorization. Review and promotion of every snapshot stay human records the agent cannot write. | B-D7-2 is partly resolved: retrieval is approved, review stays pending. Nothing was retrieved while writing this design or this amendment (12.22). |
+| AM-D7-3 | Historical replay is preserved by version-aware Examination_Semantics. A bundle records the Examination_Semantics id under which it was produced; a bundle with no id is `legacy-1`. Replay selects the semantics only from the bundle, never from the current registry or manifest. A `legacy-1` bundle needs no new field and stays byte-identical to the baseline; the id sits in integrity-covered bytes; it reaches the examiner inside the task so isolation holds; the custodian assigns it and a claim cannot choose it; an unknown id gives `UNVERIFIABLE`. The legacy unsupported-jurisdiction statement text stays under `legacy-1`; the new wording of OD-D7-5(a) applies only under a newer id. The carrier (a manifest key plus a task key, or an adapter id) is chosen at implementation under these constraints (new item OD-D7-9). | G-D7-2 and D7-AC-19 are replaced: every bundle of a corpus produced from `84df25c` replays with the candidate to a verdict hash equal to the hash recorded in that bundle and the status `REPRODUCED` or `REPRODUCED_ACROSS_ENV`, never `DIVERGED` or `UNVERIFIABLE`, for Texas, a non-Texas legacy finding, Lease, Reel and the stub type. A replay in the image that wrote a bundle keeps the status `REPRODUCED`. The contract-visible Examination_Semantics field is classified under AM-D5-12's 2.0.0 event (12.23, 12.13). |
+| AM-D7-4 | Regulatory source artifacts are preserved where the source's terms permit: bytes under `rules/v2/bytes/<sha256>`, SHA-256, retrieval date, stated effective dates, URI, final URI, HTTP status, media type, the `Content-Type`, `ETag` and `Last-Modified` headers when present, and the retrieval tool's name and version. Offline verification recomputes hashes, checks excerpt containment and checks date windows with no network. Where terms do not permit storage, only the hash, the verified excerpt and `rights: NOT_ESTABLISHED` are kept, the rule is `UNVERIFIED`, and the owner may hold the bytes privately. | OD-D7-1 is decided as recommended. OD-D7-2 (PDF extraction) stays undecided (12.24). |
+
+**Not decided in this review.** OD-D7-2, OD-D7-4, OD-D7-6, OD-D7-7, OD-D7-8 and the risks R-D7-1 to R-D7-4 stay open with the recommendations of D7.10. OD-D7-1 and OD-D7-5 are decided above (AM-D7-4 and AM-D7-3). OD-D7-3 and G-D7-1 are classified under AM-D5-12.
+
+**Traceability.** AM-D7-1: 12.21, 12.13. AM-D7-2: 12.22. AM-D7-3: 12.23, 12.13. AM-D7-4: 12.24.
+
+## D8. P7 Threat-model-driven security and property testing, BE-1 and BE-2 remediation
+
+### D8.1 Scope and status
+
+**Covers.** Requirement 13 (13.1 to 13.28): the Threat_Model, the BE-1 and BE-2 remediation designs, and the property, adversarial, isolation, plugin-provenance, cross-user, replay-determinism, canary and fail-closed-start-up test designs. It also carries the detailed security design for criteria that Requirements 1, 2, 3, 7, 8, 9 and 11 gained in their final amendment round (1.19, 2.13, 2.14, 3.11 to 3.14, 7.19 to 7.22, 8.20, 9.21, 11.16 to 11.18), where those criteria are controls rather than product behaviour.
+
+**Does not cover.** Implementation, infrastructure provisioning, cloud spending, the content of any External_Review_Record, the actual virtual machine or account behind a Contained_Hook_Environment (an owner action), release-verification mechanics (the P8 design, D9.3 to D9.9), and any California, Florida or New York rule value.
+
+**Status.** Everything in D8 is DESIGNED. Nothing is IMPLEMENTED or VERIFIED. Facts marked F8-n come from a read-only inspection on 2026-11-25 (Windows host) and are UNVERIFIED for Requirement 3 until an Execution_Record exists. Source: `docs/next-phase/D8_D10_WORKING_NOTES.md`. No workspace was trusted, no hook ran, no container was built, no key was created and no network call was made while writing this section.
+
+### D8.2 Inspected baseline and findings
+
+Read: `deploy/entrypoint.sh`, `examiner/{worker.py,client.py}`, `api/server.py` (`SafetyMiddleware`, `_replay`), `core/src/verdictkit/{bundle.py,mcp_server.py}`, `.github/workflows/{p0-integration.yml,m3b-api-checks.yml}`, the Evidence_Ledger records and `core/pyproject.toml`.
+
+| # | Finding (read) | Req |
+|---|---|---|
+| F8-1 | `as_custodian` runs `setpriv ... env -i ... ${VK_VAULT_KEY:+VK_VAULT_KEY="$VK_VAULT_KEY"} "$@"`; `serve`, `gate-http` and `gate-case` call `as_custodian env VK_VAULT_KEY="$vault_key" ...`, so the key is an argument of `env` processes. `serve` starts the examiner before the custodian. Container `/proc/<pid>/cmdline` is world-readable by default (UNVERIFIED, D8 tests it). No `set -x`. The root entrypoint holds the key for its lifetime (R-1). | 7.20 |
+| F8-2 | The examiner's environment list is `PATH, HOME, LANG, PYTHONHASHSEED, PYTHONDONTWRITEBYTECODE, VK_EXAMINER_SOCKET, VK_EVIDENCE_DIR, VK_ISOLATION`, plus optional `VK_SOURCES_CONFIG` and `VK_CLAIM_TYPES`. No judge-mode or profile variable reaches the examiner (G-D6-1). The worker refuses to start only when `VK_VAULT_KEY` is present. | 7.19, 7.20 |
+| F8-3 | `examiner/worker.py`: `conn, _ = srv.accept()` with no peer check, serial handling, no per-connection read timeout. The socket directory is mode 2750, owner `vk-examiner`, group `vk-ipc`; the entrypoint sets the socket to group `vk-ipc` mode 660 after bind. | 2.14 |
+| F8-4 | `examiner/client.py`: `SocketExaminer(expected_peer_uid=None)` connects with no check and reports UNENFORCED; with a uid it checks `SO_PEERCRED` at construction and on each connection. `isolation_enforced()` is `False` off Linux. `startup_checks` refuses judge mode unless ENFORCED. | 2.13, 7.19 |
+| F8-5 | `SafetyMiddleware.dispatch` reads the whole body into a bytearray (cap 8 MiB for `/replays`, 256 KiB otherwise), copies it into `request._body`, and only then does `replay_upload` try `replay_slots` (`BoundedSemaphore(2)`). | 7.21 |
+| F8-6 | `_replay` passes the shared `evidence_dir` as `evidence_root` when isolation is ENFORCED; `bundle.replay_bundle` restores hash-checked embedded evidence there through `EvidenceStore`, so uploaded content enters the store that live cases use. | 7.22 |
+| F8-7 | `mcp_server._bundle_path` accepts any path with `expanduser().is_file()` and size at most 8 MiB. Symlinks, `..`, UNC paths and reparse points are followed. No containment. | 9.21 |
+| F8-8 | BE-2: `tests/ui/test_judge_preview.py` hard-codes `api_port = 65534` and a 2 s client timeout; `scripts/serve_judge_ui.py` opens an `HTTPConnection` with a 10 s timeout and maps `OSError`, `ValueError` and `HTTPException` to 502. A refused connection to a closed loopback port was observed to take about 2 s on Windows; this is a hypothesis, NOT established. | 13.12, 13.26 |
+| F8-9 | `p0-integration.yml` has `workflow_dispatch` and two Ubuntu jobs (`security-and-regression`, `web-ui`); `security-and-regression` runs the lock check, `ruff`, the startup tests, the full non-isolation pytest, the Docker build, the four container gates, offline replay and `scripts/gate_nov22.sh`. No Windows job exists. | 13.15 |
+| F8-10 | The raw record file `records.jsonl` held user-profile paths in 4 command fields. Raw logs are git-ignored; only their hashes are published. | 3.11, 3.14 |
+| F8-11 | Ledger rows E-009, E-012 to E-014, E-020, E-023 and E-024 abbreviate their command field (`...`, `<gate>`, "Hook_Set command") and carry no Execution_Index identifier, although the canonical raw records hold the exact command text. | 3.12 |
+| F8-12 | `requires-python >=3.12`; the Dockerfile pins `python:3.12-slim`; CI uses `setup-python 3.12`. `os.mkdir(mode=0o700)` applies a Windows access list only from CPython 3.12.4, and the same change landed in the 3.11 line at 3.11.10 and in the 3.13 line at 3.13.0 (python.org release notes); this project supports 3.12 and later only. | 13.11, 13.25 |
+| F8-13 | BE-2 evidence is two Windows runs; no Linux per-test run exists. An image-based run is invalid because `ui/` is absent from the image. | 13.13, 1.19 |
+| F8-14 | `mcp` is locked at `2.3.0`; `core/pyproject.toml` still states `mcp>=1.2`, superseded by AM-D4-6 and confirmed by AM-D4-8. | 9.22 |
+| F8-15 | Earlier design text delegated to D8: the Threat_Model rows for cross-owner access, resource exhaustion, log leakage and sweeper correctness (D2.1); residual risks R-1 and R-2 (D2 B-9, AM-5); the BE-2 root cause, instrumentation and port configuration (D3.9 BE2-1 to BE2-6); the Python minimum (OD-D3-4); and the MCP bundle root (R-D4-3). | 13.1, 13.12, 13.19, 13.25 |
+| F8-16 | `gh workflow run` against a branch needs the workflow file to exist on the default branch; `GITHUB_SHA` on a dispatched run is the tip of the dispatched ref. Relevant to the P8 design, which owns the dispatch procedure (D9.3 DD9-4, D9.4 VM-10) and the head-SHA check (D9-AC-9). Recorded here because it was read during this work. | 14.20 |
+
+### D8.3 Design decisions
+
+| ID | Decision | Rejected alternative | Why |
+|---|---|---|---|
+| DD8-1 | The Threat_Model (D8.4) has one row per threat; every row names a control and either a test id or `UNTESTED` with a reason. | A narrative threat list with no row-level test mapping. | 13.1 to 13.3 require it. |
+| DD8-2 (M-1) | The vault key is never a process argument. The root entrypoint writes it with shell builtins to a custodian-owned, mode-0400 file on tmpfs, unsets the variable, starts the examiner with the closed list of F8-2, and the custodian reads the file once (`VK_VAULT_KEY_FILE`), validates owner and mode, and removes it. `VK_VAULT_KEY` in the environment stays supported for non-container runs. | Passing the key through the environment of every child, as today. | F8-1, F8-2: argv and non-custodian environ are readable through `/proc` by other local processes. |
+| DD8-3 (M-2) | Uploaded replay content never enters the trusted evidence root. Each replay gets a server-generated namespace (`^[0-9a-f]{32}$`) under a separate replay root, removed in `finally`, with orphans swept at start. Metadata stays in custodian-private scratch. The examiner reads a namespace read-only through a validated namespace key and re-hashes on read. A per-replay and a total replay byte quota apply. | Restoring replay evidence directly into the shared `evidence_dir`, as today. | F8-6: uploaded content enters the same store live cases use. |
+| DD8-4 (L-7) | Admission before buffering: a process-wide semaphore (`VK_MAX_CONCURRENT_UPLOADS`, default 2) is taken before the first body read. No slot gives 429 `RATE_LIMITED` with `Retry-After` after headers only. One buffered copy, not two. A total body deadline frees slow slots; the slot releases on disconnect and on error. | Checking the semaphore after the body is already buffered, as today. | F8-5: the body is fully buffered, with a second copy, before any slot check. |
+| DD8-5 (L-6) | `VK_MCP_BUNDLE_ROOTS` plus the private working directory are resolved and pinned once. NUL, relative, UNC, `\\?\`/`\\.\`, alternate-data-stream and alias names are rejected. POSIX opens components with `O_NOFOLLOW` and `dir_fd`; Windows rejects a reparse point below the root and re-checks the final path of the opened handle. File type and size are verified on the opened handle, not the path. One `PATH_NOT_ALLOWED` code, one shared helper reused by the scaffold destination and the replay scratch. | Validating the path string, then opening by name, as today. | F8-7: symlinks, `..`, UNC paths and reparse points are followed (R-D4-3). |
+| DD8-6 (L-3) | `requires-python` stays `>=3.12`. The BE-1 Windows helper fails with `UNSUPPORTED_PYTHON_PATCH` (not a skip) on 3.12.0 to 3.12.3. `mcp_server._workdir()` self-checks the new directory on Windows and refuses to start with `PRIVATE_DIR_UNSAFE` on failure. Elevation state is recorded. The resolved patch version joins release provenance. | Bumping `requires-python` to `>=3.12.4` (lock churn), or accepting a weaker ACL silently on an old patch release. | F8-12: the Windows ACL behaviour of `os.mkdir` only exists from 3.12.4; silent acceptance would violate the fail-closed intent of 13.11. |
+| DD8-7 (L-3) | The Windows oracle for BE-1 is O1 (exact structural access-list allowlist), required and sufficient. O2 (`GetEffectiveRightsFromAclW`, AM-D3-2(b)) is dropped. O3 (`AuthzAccessCheck`) is a timeboxed spike, adopted only if it agrees with O1 on six constructed access lists in at most 120 lines with no new dependency. | Keeping AM-D3-2(b)'s effective-rights call as the check. | Microsoft's own reference for `GetEffectiveRightsFromAcl` (D8.5) documents the gaps O1 avoids. |
+| DD8-8 | BE-2: instrumentation fields, hypotheses H1 to H5, a standalone `connect_ex` probe, and a fix rule that is never "raise the timeout" alone. | Raising the client or bridge timeout and calling BE-2 fixed. | 13.12 forbids treating a longer timeout alone as a verified fix. |
+| DD8-9 (H-1) | Private_Original files stay outside the published tree, byte for byte, SHA-256 published. The Sanitized_Copy is published with its own SHA-256, produced by ordered exact-string rules with placeholders; the redaction manifest lists rule ids and counts, never values. A zero-hit scan over the defined classes gates every commit that publishes evidence or documents. | Scrubbing by rewriting git history. | A force push is not permitted; the one earlier application (`records.jsonl`, F8-10) stays a recorded residual. |
+| DD8-10 (L-1) | Isolation_Mode is fixed at process start (S1 to S7): ENFORCED is mandatory once a socket is configured; only an absent socket in the local profile gives UNENFORCED, always labelled; the public profile refuses UNENFORCED at start; losing the examiner mid-run fails the request closed without changing the mode; a replay never overrides its own recorded mode. | A mid-run fallback to in-process examination on socket failure. | 2.13 forbids a runtime downgrade or upgrade and requires fail-closed on examiner failure. |
+| DD8-11 (L-2) | The examiner authenticates the custodian: `SO_PEERCRED` is matched against the uid of `vk-custodian`, resolved by name at worker start, never from a request or environment value. A refused peer is closed unread, logged by a fixed code only. The worker refuses to start if the account cannot be resolved. The socket mode is set by umask before the first accept. A per-connection read deadline applies. | Accepting any peer (today's behaviour) or trusting a uid passed in the request. | F8-3: no peer check exists today; 2.14 requires a custodian-only service. |
+| DD8-12 | Security_Profile propagation is AM-D6-4's design (D6.11); D8 owns only the tests for it (D8.12). | Redesigning profile propagation inside D8. | Avoids a second design for the same mechanism. |
+| DD8-13 (M-6) | An External_Review_Record is kept outside the repository by the owner or an independent reviewer. The repository keeps only a reference (record id, SHA-256, date, verdict, commit, reviewed-file hashes), ledger type `OWNER_ATTESTED`. A changed reviewed file voids the record. The agent cannot create or waive it. | Letting the agent author or self-certify the review. | 13.27 requires a record the agent cannot write. |
+| DD8-14 (M-7) | Complexity budget: no new runtime dependency; one shared containment helper, one profile resolver, one key mechanism, one upload-admission mechanism, one sanitizer rule list; every new control maps to a Threat_Model row or is removed. Not built: a plugin sandbox, online revocation, MCP signing, dual contract serving, a replay queue, an ACL framework, a second evidence service. | A bespoke mechanism per surface (for example separate path-safety code for MCP and for the scaffold). | 13.28 requires each mechanism once; the unbuilt items are YAGNI. |
+| DD8-15 (M-5, L-5) | Contained_Hook_Environment, CE-1 to CE-8: a dedicated VM or restricted account with no cloud, signing or vault credential and no access to the owner's profile; a push-disabled clone with a closed environment list; pinned, recorded tool versions; blocked outbound traffic where the platform allows it, else a recorded residual; hash-pinned hook files, matcher corpus, environment list and `mcp.json`; the clone refreshed only from a reviewed commit; evidence leaves only as Kiro-captured originals plus sanitized excerpts with hashes; the environment's class recorded without names. Absent CE-1, hooks stay at ST-3 and nothing counts as automatic execution. | Firing hooks directly in the maintainer's main workspace or account. | 8.20 and 3.13 require a contained environment and preserved, non-reconstructed evidence. |
+
+### D8.4 Threat_Model
+
+One row per threat (13.1). `docs/next-phase/THREAT_MODEL.md` is built from this table at implementation and is not written now. Status is TESTED when a test id exercises the control; UNTESTED carries a non-empty reason (13.3). Test ids point to the matrices of D8.5 to D8.12 or to an existing acceptance row.
+
+| ID | Asset, principal, entry point | Threat | Control | Test ID | Status | Reason |
+|---|---|---|---|---|---|---|
+| T8-1 | Outcome data; Examiner process; the task object | Outcome leakage to the Examiner | `BlindedTask` carries no outcome field (D6.7 CS-03) | D6-AC-10, D6-AC-11 | TESTED | — |
+| T8-2 | Vault key; root entrypoint, custodian; env, argv, fd, files, logs | Vault key exposure | DD8-2 key-file mechanism | KT-1 to KT-8 | TESTED | — |
+| T8-3 | Bundle ledger; any holder of a Bundle; `ledger/ledger.jsonl` | Ledger tampering | Hash-chain and manifest checks in `_integrity`; D8.7 mutation guard | D8-AC-14 | TESTED | — |
+| T8-4 | Case evidence; replay client; uploaded Bundle | Evidence substitution | DD8-3 replay-namespace isolation and re-hash on read | RI-1 to RI-8 | TESTED | — |
+| T8-5 | Bundle parser; any Bundle source; zip entries | Bundle zip bombs | `MAX_BUNDLE_ENTRIES`, `MAX_BUNDLE_UNCOMPRESSED`, `MAX_ENTRY_UNCOMPRESSED` (baseline) | Z-1, Z-2 | TESTED | — |
+| T8-6 | Bundle parser; any Bundle source; zip member names | Bundle path traversal | `_check_zip_safety` name checks (baseline) | Z-7, Z-8, Z-9 | TESTED | — |
+| T8-7 | API routes; any client; request body | Malformed API input | Schema validation, `SafetyMiddleware` (baseline) | D8-AC-19 | TESTED | — |
+| T8-8 | API routes; any client; request body | Oversized API input | Body size caps (baseline); UA matrix | UA-2, UA-3 | TESTED | — |
+| T8-9 | API routes; any client; request rate | Rate-limit evasion | Existing 429 limiter (D2 DD2-6) | D2-AC-8 | TESTED | — |
+| T8-10 | Storage; replay client; uploaded Bundle | Replay of uploaded bundles consuming storage | DD8-3 per-replay and total replay byte quotas | RI-7, RI-8 | TESTED | — |
+| T8-11 | Signature; any Bundle holder; signature envelope | Signature forgery | Ed25519 validation, small-order and non-canonical rejection (D5 AM-D5-1 to AM-D5-3) | D8-AC-13 | TESTED | — |
+| T8-12 | Trust_Store; any Bundle holder; key id | Key substitution | `key_id = SHA-256(pubkey)`, Trust_Store lookup by id (D5.6, D5.7) | D5-AC-8 | TESTED | — |
+| T8-13 | Trust_Store file; operator; file system | Trust_Store tampering | Malformed or unreadable store gives `NOT_EVALUATED` (D5.7) | D5-AC-8 | TESTED | — |
+| T8-14 | MCP tool results; MCP client; `path` argument | MCP path leakage | Fixed `PATH_NOT_ALLOWED` message, no path echoed (DD8-5) | PR-1 to PR-23 | TESTED | — |
+| T8-15 | MCP tool results; MCP client; error object | MCP error leakage | Sanitizer, fixed messages, no `exc_info` (D4.4, AM-D4-7) | D4-AC-4 | TESTED | — |
+| T8-16 | Examination outcomes; a loaded plugin; the loader | Plugin code reaching outcomes | Examiner process isolation, `BlindedTask` (D6.8 T-P6); AM-D6-3 provenance binding | D6-AC-10, PD-1 to PD-12 | TESTED | — |
+| T8-17 | Regulatory snapshot; any Bundle holder; `rules/` files | Regulatory snapshot substitution | Snapshot and manifest hash checks, duplicate-URI rejection (D7.5, DD7-1) | D7-AC-7 | TESTED | — |
+| T8-18 | Replay metadata; replay client; index and URI fields | Replay metadata poisoning | DD8-3: metadata kept in custodian-private scratch, re-hashed on read | RI-5, RI-6 | TESTED | — |
+| T8-19 | Upload buffer memory; any client; concurrent uploads | Concurrent upload exhaustion | DD8-4 admission-before-buffering semaphore | UA-1 to UA-8 | TESTED | — |
+| T8-20 | Examiner socket; any local process; the connecting uid | Custodian impersonation | DD8-11 `SO_PEERCRED` check against the resolved `vk-custodian` uid | CA-1, CA-2, CA-6 | TESTED | — |
+| T8-21 | Isolation_Mode; the running process; runtime state | Isolation downgrade | DD8-10 S1 to S7 (fixed at start, fail-closed) | IS-1, IS-2, IS-5 | TESTED | — |
+| T8-22 | Plugin allowlist; the loader; installed files | Plugin provenance substitution | AM-D6-3 provenance manifest, verify-before-import | PD-2, PD-5 | TESTED | — |
+| T8-23 | Claim-type registry; two distributions; `type_id` | Duplicate `type_id` | AM-D6-2 reject-all rule | PD-1 | TESTED | — |
+| T8-24 | File system below an Approved_Root; MCP client; `path` | MCP root escape | DD8-5 safe-open helper | PR-1 to PR-23 | TESTED | — |
+| T8-25 | Published evidence and documents; the publishing commit; files to publish | Evidence publication leak | DD8-9 Private_Original/Sanitized_Copy, sanitizer rule list | D8-AC-22 | TESTED | — |
+| T8-26 | Evidence_Ledger; the agent; Execution_Record command field | Ledger command misreport | F8-11 ledger lint (no placeholder, Execution_Index id required) | D8-AC-23 | TESTED | — |
+| T8-27 | Hook evidence; the hook runner; the firing environment | Hook execution containment | DD8-15 CE-1 to CE-8; absent containment forces `UNVERIFIED` | D8-AC-25 | TESTED | — |
+| T8-28 | CI run; the dispatcher; the ref and head SHA | CI dispatch ref confusion | The run's `headSha`, `headBranch`, `event` and `status` are read from the CI service and must equal the Release_Candidate SHA, the Phase_Branch, `workflow_dispatch` and `completed`; a mismatch records `FAILED` and discards the run (DD9-4, VM-10) | D9-AC-9 | TESTED | — |
+| T8-29 | Dependency versions; the maintainer; `uv.lock` | Dependency drift | Exact pin and `uv lock --check` (AM-D4-8); crypto-vector rerun on dependency change | D4-AC-18 | TESTED | — |
+| T8-30 | Case data; another owner; routes carrying a case id | Cross-owner access | Ownership check on every case-related route (D2.12 AM-6) | D2-AC-25, CU-1 to CU-4 | TESTED | — |
+| T8-31 | Evidence blobs; the sweeper; the sweep interleaving | Sweeper deleting a live blob | Lock and live-reference derivation (D2.12 AM-9) | D2-AC-28 | TESTED | — |
+| T8-32 | Logs; any process; log output | Log leakage | DD8-2 key handling, DD8-9 sanitizer, privacy-safe logging (D2 DD2-9) | KT-5, PC-1 to PC-6 | TESTED | — |
+| T8-33 | Security_Profile; custodian and examiner processes; start-up | Profile mismatch between processes | AM-D6-4 profile resolver and registry-digest check | FC-3, FC-4 | TESTED | — |
+| T8-34 | Vault key; root entrypoint process; process lifetime | R-1: the root entrypoint process holds the key for its lifetime | None; the process that passes the key on must briefly hold it | — | UNTESTED | Accepted residual risk (D2 B-9): no test can show the absence of access by a process that must have access to do its job. |
+| T8-35 | Network namespace; Examiner process; container networking | R-2: the Examiner shares the network namespace with the custodian, so egress is not separable per OS user | A negative egress test from the examiner uid (D2 AM-5) | D2-AC-23 | TESTED | Accepted residual risk (D2 B-9): the test is a negative probe, not a guarantee; if it cannot show the connection is blocked, R-2 stays accepted with this reason. |
+
+### D8.5 Detailed designs
+
+**BE-1 closure (resolves 13.11 and 13.25; reconciles 2.11 and 8.13 with 13.11).** D3.9 (BE1-1 to BE1-8) already designed a two-branch test: the POSIX assertion (BE1-1) keeps its exact text and runs on every POSIX host; a new Windows branch (BE1-2, BE1-3) asserts the same access-only-to-the-current-user-and-system-principals property with Windows ACL calls. Criteria 2.11 and 8.13 forbid loosening, skipping or `xfail`-marking the existing assertion; 13.11 requires adding a Windows assertion and forbids a skip on the platform branch. These do not conflict: the platform branch (`if os.name == "posix": ... else: ...`) is not a `skip` decorator and does not touch the POSIX line, so the unchanged POSIX text and the added Windows text each execute unconditionally on their own platform. The AST guard (BE1-5) and the new guard test that 13.11 requires both fail if the POSIX comparison is later removed, weakened or marked. Until the Windows branch is implemented and passing, the test keeps failing on Windows exactly as today, and 8.13 requires every hook to report that failure unchanged. After BE1-2 and BE1-3 land and D8-AC-5 passes, a further Windows failure of this test is a new regression under 1.13, not BE-1.
+
+**Windows oracle (DD8-7, amends AM-D3-2(b), closes OD-D3-4 jointly with the next item).** AM-D3-2(b) directed an effective-rights call such as `GetEffectiveRightsFromAclW`. Microsoft's own reference states that this function may be altered or become unavailable in a later release and directs callers to the Authz API instead, and that it ignores implicit owner rights, privileges and logon-session groups such as Authenticated Users, and fails on an inherited deny entry ([Microsoft Learn, `GetEffectiveRightsFromAcl`](https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-geteffectiverightsfromacla)). DD8-7 drops it. Three oracles were compared: **O1**, an exact structural allowlist over the access list itself (protected, no inherited entry, allow entries only, trustees limited to the owner SID, OWNER RIGHTS, SYSTEM and Builtin Administrators, none for Everyone, Authenticated Users, Builtin Users or Guests); **O2**, the dropped effective-rights call; **O3**, `AuthzAccessCheck` against a synthetic client context, Microsoft's documented method for effective-access evaluation ([Checking Access with the Authz API](https://learn.microsoft.com/en-us/windows/win32/secauthz/checking-access-with-authz-api)), built from `AuthzInitializeContextFromSid`, which may itself attempt an S4U logon or query the account object for group membership ([`AuthzInitializeContextFromSid`](https://learn.microsoft.com/en-us/windows/win32/api/authz/nf-authz-authzinitializecontextfromsid)). **Decision:** O1 is required and sufficient for BE-1 closure, because it is exact for a directory this project creates and needs only two `ctypes` calls. O3 is a timeboxed spike (`S-AUTHZ`, OD-D8-5), adopted only if it agrees with O1 on six constructed access lists, including an Everyone entry and an inherited entry, in at most 120 lines with no new dependency; otherwise the record states `NOT_ADOPTED` with the reason, and its absence does not block BE-1 closure. The negative controls of BE1-6 (an added Everyone entry; an inherited allow entry; a Builtin Users entry) must each fail O1.
+
+**Python minimum (DD8-6, closes OD-D3-4, part of 13.25).** `requires-python` stays `>=3.12` (no lock churn). Windows needs CPython 3.12.4 or later before `os.mkdir(mode=0o700)` restricts the directory on Windows at all; this shipped as a security fix (CVE-2024-4030) on the 3.11 line at 3.11.10 ([Python 3.11.10 release notes](https://www.python.org/downloads/release/python-31110/)) and is the same fix D3.9 cites for 3.12.4. Content from the Microsoft and Python pages cited above was rephrased for compliance with licensing restrictions. The BE-1 Windows helper fails with `UNSUPPORTED_PYTHON_PATCH`, not a skip, on 3.12.0 to 3.12.3. `mcp_server._workdir()` self-checks the directory it just created on Windows and refuses to start with `PRIVATE_DIR_UNSAFE` if the check fails, so the fail-closed rule holds even on a host with an old patch release. Elevation state is recorded, because an elevated process's owner may resolve to Administrators (CPython issue 157876, cited in D3.9). The image's resolved Python patch version joins release provenance (14.17).
+
+**BE-2 closure (DD8-8, closes 13.12, 13.13 and 13.26).** Instrumentation, with UTC and monotonic timestamps: client send, bridge accept, upstream-connect start and end with the exception class and errno, response write, client first byte, total duration; at least 30 trials per host class; the minimum, median and maximum are reported. **Hypotheses:** H1, a refused loopback connect takes about 2 s on Windows; H2, another process owns port 65534 or filtering software delays the connect; H3, the bridge's `ThreadingHTTPServer` thread model adds delay; H4, the client socket timeout accumulates connect and read time; H5, the delay is test-only. A standalone `connect_ex` probe to a closed loopback port on both hosts discriminates H1 without the rest of the bridge. The Linux leg needs a full checkout, because the container image has no `ui/` (F8-8), so it runs on a Linux_Docker_Host or in CI. **Fix rule:** if H1 is confirmed, bound the bridge's upstream connect with a dedicated timeout below the client's deadline (default 1.0 s, override `VK_BRIDGE_CONNECT_TIMEOUT`); keep the 10 s read timeout and the test's own 2 s client timeout unchanged; replace the hard-coded port 65534 with a port allocated at run time (override `VK_TEST_CLOSED_PORT`, which satisfies 1.17). If H1 is not confirmed, the actual root cause is recorded and a different fix follows. A longer timeout alone is never accepted as the fix (13.12). Closure needs 30 of 30 passes on both hosts with `-rA` and the direct exit code (13.13). **Attribution wording (1.19):** until the Linux run exists, every mention of BE-2 keeps the phrase "observed on Windows" and states no cause; D0.5's wording rule is unchanged by this closure design.
+
+**Key channel (DD8-2, closes 7.20, part of 13.16).** Property: for all start-ups, a search of argv, non-custodian environ, inherited descriptors, examiner-readable files and logs for the vault key, in raw, base64, hex and URL-encoded form, finds 0 matches (P-n). Sequence, because order matters here: (1) the root entrypoint writes the key with shell builtins to a custodian-owned, mode-0400 file on tmpfs; (2) it unsets `VK_VAULT_KEY`; (3) it starts the examiner with the closed environment list of F8-2; (4) the custodian reads the file once through `VK_VAULT_KEY_FILE`; (5) it validates the file's owner and mode; (6) it removes the file. `VK_VAULT_KEY` in the environment stays supported for non-container runs.
+
+| ID | Case |
+|---|---|
+| KT-1 | Poll `/proc/<pid>/cmdline` of every process at 1 ms resolution across 20 start-ups |
+| KT-2 | Read the environ of every process other than the custodian and the root entrypoint |
+| KT-3 | Read `/proc/<pid>/fd` of the examiner for an inherited descriptor |
+| KT-4 | A bounded file-system search as the `vk-examiner` uid |
+| KT-5 | Read the logs of every process |
+| KT-6 | Run the entrypoint under `bash -x` in a test copy and read the trace |
+| KT-7 | Trigger a crash and read its output |
+| KT-8 | Aggregate: 0 matches across KT-1 to KT-7, each checked in raw, base64, hex and URL-encoded form |
+
+Pass: 0 matches in every case (13.16, D8-AC-8).
+
+**Replay isolation (DD8-3, closes 7.22, part of 13.17 and 13.18).** Properties: the trusted evidence root's file list and file hashes are identical before and after a replay (P-h's scope extended to replay namespaces); a replay namespace is removed in `finally` even on error.
+
+| ID | Case |
+|---|---|
+| RI-1 | Trusted-root file list and hashes identical before and after one replay |
+| RI-2 | Replay content is written only under the replay root, never under the trusted evidence root |
+| RI-3 | The namespace is removed in `finally`, including on an injected mid-replay failure |
+| RI-4 | An orphaned namespace from a killed process is swept at the next start |
+| RI-5 | The examiner can read its own replay namespace through the namespace key, and cannot read another one |
+| RI-6 | A re-hash on read that disagrees with the embedded hash rejects the replay |
+| RI-7 | A replay beyond the per-replay byte quota is rejected |
+| RI-8 | A sequence of replays beyond the total replay quota is rejected |
+
+Pass: 0 differences in RI-1; 0 cross-namespace reads in RI-5 (7.22, 13.17, D8-AC-9).
+
+**Upload admission (DD8-4, closes 7.21, part of 13.18).** Property: for all sequences of concurrent upload requests, the bytes held for upload bodies never exceed the number of slots multiplied by the request cap plus 2 MiB (P-i).
+
+| ID | Case |
+|---|---|
+| UA-1 | No byte of the request body is read before a slot is taken |
+| UA-2 | No free slot gives 429 `RATE_LIMITED` with `Retry-After` after headers only |
+| UA-3 | Peak extra memory across N concurrent uploads is at most `slots x cap + 2 MiB` |
+| UA-4 | A slot releases when the client disconnects mid-upload |
+| UA-5 | A slot releases when the request fails after the slot is taken |
+| UA-6 | A total body deadline frees a slot held by a slow sender |
+| UA-7 | 0 partial files remain after a failed or aborted upload |
+| UA-8 | The same admission mechanism serves every upload route, not only `/replays` |
+
+Pass: the bound of UA-3 holds in every trial; 0 partial files in UA-7 (7.21, 13.18, D8-AC-10).
+
+**Approved_Root (DD8-5, closes 9.21, part of 13.19).** Property: for all path strings submitted to the helper, it either opens a file inside an Approved_Root or returns `PATH_NOT_ALLOWED`, and never opens a file outside every Approved_Root (P-j). At least 20 cases per 13.19, plus a race test and Windows-only cases.
+
+| ID | Case | ID | Case |
+|---|---|---|---|
+| PR-1 | `..` traversal segment | PR-11 | Alternate data stream name |
+| PR-2 | Symbolic-link path component | PR-12 | Windows reserved device name |
+| PR-3 | Embedded NUL character | PR-13 | Trailing dot or space |
+| PR-4 | Relative path | PR-14 | Absolute path outside every root |
+| PR-5 | UNC path (`\\host\share`) | PR-15 | Empty string |
+| PR-6 | Device path (`\\.\`) | PR-16 | Mixed path separators |
+| PR-7 | Device path (`\\?\`) | PR-17 | Case-variant of an allowed path |
+| PR-8 | Drive-relative path (no root) | PR-18 | Unicode-normalization variant of an allowed path |
+| PR-9 | Path exceeding the platform length limit | PR-19 | A symlink created after the check, before the open (TOCTOU, single case) |
+| PR-10 | Name with a Windows alias (short 8.3 name) | PR-20 | The private working directory itself (positive control) |
+| PR-21 | Race: 1000 iterations changing the path between the check and the open | | |
+| PR-22 | Windows junction below the root | | |
+| PR-23 | Windows reparse point below the root | | |
+
+Pass: `PATH_NOT_ALLOWED` for every disallowed case; 0 opens outside an Approved_Root across all 1000 PR-21 iterations (9.21, 13.19, D8-AC-11).
+
+**Isolation semantics (DD8-10, closes 2.13, part of 13.24).**
+
+| ID | Case |
+|---|---|
+| IS-1 | Isolation_Mode is read once at start; a later attempt to change it has no effect |
+| IS-2 | A configured examiner that fails a request fails the request closed; the mode is unchanged; the request is not served in-process |
+| IS-3 | Local profile, no `VK_EXAMINER_SOCKET`: mode is UNENFORCED, and every output labels it |
+| IS-4 | Public profile start-up with a resolved mode of UNENFORCED refuses to start |
+| IS-5 | The examiner is lost mid-run (socket closed): the request fails closed, the mode is unchanged |
+| IS-6 | `SocketExaminer` with no expected uid is refused in the public profile |
+| IS-7 | Replaying a bundle recorded under one mode reports the replay's own mode, never the bundle's recorded mode, as the current mode |
+| IS-8 | Combined matrix: every (profile, socket-present, examiner-health) combination yields the mode the rule of DD8-10 predicts |
+
+Pass: 8 of 8 (2.13, 13.24, D8-AC-18).
+
+**Custodian authentication (DD8-11, closes 2.14, part of 13.17.)**
+
+| ID | Case |
+|---|---|
+| CA-1 | A connection from the `vk-custodian` uid is served |
+| CA-2 | A connection from any other uid is closed unread, with a fixed log code only |
+| CA-3 | The `vk-custodian` account cannot be resolved at worker start: the worker refuses to start |
+| CA-4 | The socket mode is correct from the first accept (set by umask before `bind`, not adjusted afterward) |
+| CA-5 | A per-connection read deadline disconnects a slow peer |
+| CA-6 | The expected uid is resolved by name only, never taken from a request field or an environment value |
+| CA-7 | `SO_PEERCRED` unavailable on the platform refuses the connection rather than accepting it |
+
+Pass: 7 of 7 (2.14, 13.17, D8-AC-18).
+
+**Publication rule (DD8-9, closes 3.11, 3.14).** The redaction methodology itself (the ordered exact-string rules, their placeholders and the rule-id/count-only manifest) is specified in `docs/next-phase/EVIDENCE_REDACTION.md`, a file this design does not create; it is written separately. D8's contract is the gate: 0 hits of the defined sensitive classes (user-profile paths, repository-root paths, user names, host names, e-mail addresses, non-loopback addresses, secrets, key blocks) before any commit publishes evidence or a document (3.14), with each Private_Original's SHA-256 published separately from its Sanitized_Copy's SHA-256 (3.11), and the Execution_Index mapping each pair (1.14). One past application exists already (`records.jsonl`, F8-10); because a force push is not permitted, that earlier published text is a recorded residual and not retroactively fixed.
+
+**Ledger reconciliation (F8-11) and BE-2 attribution wording.** The lint that D8-AC-23 runs checks: (a) no Execution_Record command field contains an ellipsis, an angle-bracket placeholder or a descriptive stand-in (3.12); (b) every Execution_Record cites the Execution_Index identifier of its canonical raw record (3.12); (c) the counts a record states equal the counts of the canonical row it cites; (d) a sentence that attributes BE-2 to a cause uses "observed on `<host>`" only, never a cause, until the BE-2 closure above produces a diagnosis (1.19). Reconciliation of the specific rows F8-11 names (E-009, E-012 to E-014, E-020, E-023, E-024) is a text correction, not a re-run: each abbreviated command field is replaced by the exact command text taken from the canonical raw record identified by its Execution_Index id; no new Execution_Record is fabricated, because the command already ran and only its recorded text was abbreviated.
+
+### D8.6 Property tests
+
+Library: Hypothesis (Python), the project's existing choice; D8 adds no new PBT library. Settings for every property below: the `ci` profile, derandomized, `max_examples=200` (at least the 100 that 13.7 requires), one Hypothesis test per property. Each test's docstring cites the property statement and at least one requirement id (13.4, per `.kiro/steering/testing.md`), and carries the comment **Feature: verdictkit-next-phase, Property P-x: `<statement>`**. These tests live under the existing `tests/` tree already collected by `p0-integration.yml` (F8-9), so no workflow file changes; a test needing the container is marked `isolation` and runs only in the container gate (13.8).
+
+| ID | Property ("for all ...") | Req |
+|---|---|---|
+| P-a | For all Bundles and all byte positions, flipping one byte and verifying the result never yields `REPRODUCED`, `REPRODUCED_ACROSS_ENV` or `VALID`. | 13.5(a) |
+| P-b | For all cases and clocks, a Bundle written with signing disabled is byte-identical to the baseline writer's output for the same case and clock. | 13.5(b), 10.5 |
+| P-c | For all cases, the Verdict_Hash computed with signing enabled equals the Verdict_Hash computed with signing disabled. | 13.5(c), 10.6 |
+| P-d | For all MCP error results, the message contains no host path separator (`/` or `\`) taken from the host file-system path. | 13.5(d) |
+| P-e | For all claim types produced by the scaffold with no edit, `run_suite` passes every check. | 13.5(e), 11.11 |
+| P-f | For all Bundles, replaying the same Bundle twice in the same environment produces byte-identical reports. | 13.22 |
+| P-g | For all Bundles in the legacy corpus produced before this phase, replay under the candidate reports a verdict hash equal to the hash recorded in the Bundle and the status `REPRODUCED` or `REPRODUCED_ACROSS_ENV`, never `DIVERGED` or `UNVERIFIABLE`. | 12.23, 13.22 |
+| P-h | For all interleavings of put, deduplicated put, freeze, run start, purge, sweep and replay-namespace creation, the sweeper never deletes a blob or a replay namespace that a live case or an in-flight examination references. | 7.25, 13.17 |
+| P-i | For all sequences of concurrent upload requests, the bytes held for upload bodies never exceed the number of admission slots multiplied by the request cap plus 2 MiB. | 7.21, 13.18 |
+| P-j | For all path strings submitted to the Approved_Root helper, it opens a file only inside an Approved_Root or returns `PATH_NOT_ALLOWED`, and never opens a file outside every Approved_Root. | 9.21, 13.19 |
+| P-k | For all inputs, applying the sanitizer twice gives the same output as applying it once, and the output matches none of the defined sensitive classes. | 3.14, 13.23 |
+| P-l | For all combinations of `VK_PROFILE`, `VK_JUDGE_MODE` and an unrecognised value, profile resolution is total (it always resolves or refuses to start), and no variable other than the two documented ones changes a `public` resolution to `local`. | 7.19, 13.24 |
+| P-m | For all orderings of the same set of entry points, the loader registers the same claim types and rejects the same duplicate `type_id`. | 11.17, 13.20 |
+| P-n | For all canary values and all documented sinks, the canary does not appear in the sink's output, including a test's own failure message. | 13.23, 7.20 |
+| P-o | For all malformed archive inputs of the Z-1 to Z-16 kinds (D8.7), the loader returns a rejection or `UNVERIFIABLE`, never `REPRODUCED`, `REPRODUCED_ACROSS_ENV` or `VALID`, and writes 0 files outside the scratch directory. | 13.6, 13.21 |
+
+### D8.7 Adversarial cryptographic and archive tests
+
+**Cryptographic vectors.** D8 adds no new vector; it reuses D5-AC-6 and the AM-D5-3 list (every small-order encoding, non-canonical encodings including a `y` value at or above the field prime, 31- and 33-byte keys, the all-zero and identity keys, a small-order or non-canonical `R` in an otherwise valid signature, `S+L`, and a universal signature) and adds the run discipline: both host classes, rerun on every `cryptography` version change (13.21), and a mutation guard that disables each check in a copy of the verifier and shows that the vector set then finds at least one failure.
+
+**Archive inventory.** `core/src/verdictkit/bundle.py` lines 261 to 305 (`_check_zip_safety`, `_read_bounded`) were read against the installed interpreter (`python 3.12.10`) together with a probe of the standard-library `zipfile` module's source for overlap, name-mismatch, normalisation and encryption handling. 16 cases, reduced from the longer list of threats by grouping the three stream-corruption cases into Z-16.
+
+| ID | Case | Baseline coverage | New D8 item |
+|---|---|---|---|
+| Z-1 | Zip bomb by compression ratio | Covered: `MAX_ENTRY_UNCOMPRESSED` (16 MiB) is checked against the declared uncompressed size before any inflate; `_read_bounded` re-checks the actual bytes read | Regression test only |
+| Z-2 | Zip bomb by total uncompressed size | Covered: the running total is checked against `MAX_BUNDLE_UNCOMPRESSED` (64 MiB) while scanning `infolist()` | Regression test only |
+| Z-3 | Entry count above the limit | Covered: `len(infos) > MAX_BUNDLE_ENTRIES` (4096) | Regression test only |
+| Z-4 | Duplicate names | Covered: `name in names` | Regression test only |
+| Z-5 | Case-colliding names (`Foo.txt` vs `foo.txt`) | Not covered: `names` is a case-sensitive `set[str]`; both pass | New check: reject a name that matches an existing name case-insensitively |
+| Z-6 | Unicode-normalization-colliding names (NFC vs NFD) | Not covered: no normalisation before the set check | New check: compare names after NFC normalisation |
+| Z-7 | Absolute names | Covered: `name.startswith("/")` | Regression test only |
+| Z-8 | Parent-directory names | Covered: `".." in name.split("/")` | Regression test only |
+| Z-9 | Backslash separators | Covered: `"\\" in name` | Regression test only |
+| Z-10 | Drive-letter names (`C:evidence/index.json`) | Not covered: no colon check | New check: reject a name containing `:` |
+| Z-11 | Alternate-data-stream names (`evidence/index.json:hidden`) | Not covered: same colon gap as Z-10 | Covered by the Z-10 check |
+| Z-12 | Reserved device names (`con`, `nul`, `aux`, `com1`, ...) | Not covered | New check: reject a component matching the Windows reserved-name list |
+| Z-13 | Trailing dot or space in a component | Not covered | New check: reject a component ending in `.` or a space |
+| Z-14 | Symbolic-link member (Unix `external_attr` bit) | Not covered: `_check_zip_safety` never reads `info.external_attr`; members are read in memory and never extracted to disk, which limits live risk, but the entry itself is not flagged | New check: reject an entry whose external attributes mark it a symlink |
+| Z-15 | Central/local header name mismatch | Covered indirectly: `zf.open()` raises `BadZipFile` on a name mismatch between the local and central directory headers, caught by `_read_bounded`'s `except` clause (confirmed against the installed interpreter) | Regression test asserting `BundleFormatError`, not a silent pass |
+| Z-16 | Overlapping entries, the encrypted flag, or a bad CRC | Covered indirectly: a corrupt or overlapping stream raises `BadZipFile`, `zlib.error` or `EOFError`; an encrypted entry with no password raises `NotImplementedError`; all are caught by `_read_bounded` | Regression test only |
+
+Pass for every Z case: rejection or `UNVERIFIABLE`, never `REPRODUCED`, `REPRODUCED_ACROSS_ENV` or `VALID`, 0 files written outside the scratch directory (13.6, 13.21, P-o).
+
+**13.6's seven malformed-input kinds, mapped:** a malformed zip entry (Z-16), a duplicate zip name (Z-4), an absolute member name (Z-7), a parent-directory member name (Z-8), a truncated signature (crypto vectors, reused), a wrong-algorithm signature (crypto vectors, `UNSUPPORTED_ALGORITHM`), a malformed Trust_Store file (D5-AC-8, reused). Each kind has at least one negative test, satisfying 13.6 without duplicating the D5 design.
+
+**13.14's seven adversarial surfaces, mapped:** the API (D2-AC-7 size caps, UA matrix), the MCP_Server (D4-AC-4, PR matrix), Bundle parsing (the Z matrix), the Trust_Store (crypto vectors, D5-AC-8), signature envelopes (crypto vectors), plugin scaffolding (the PD matrix, D8.8), regulatory snapshots (D7-AC-7). Each surface's test asserts a rejection, `INDETERMINATE` or `UNVERIFIABLE` result.
+
+### D8.8 Plugin discovery and provenance tests
+
+| ID | Case |
+|---|---|
+| PD-1 | Duplicate `type_id` registered by two distributions |
+| PD-2 | A rogue distribution whose module name shadows an allowlisted module earlier on the import path |
+| PD-3 | An entry-point value that differs from the allowlisted value |
+| PD-4 | A version mismatch against the allowlist entry |
+| PD-5 | One tampered installed file inside an allowlisted distribution |
+| PD-6 | An extra entry point in the `verdictkit.claim_types` group, never imported; its import-canary file stays absent |
+| PD-7 | `VK_CLAIM_TYPES` set while the Security_Profile is `public` |
+| PD-8 | An import side-effect canary, checked in both the `local` and the `public` profile |
+| PD-9 | A permuted order of the same entry points |
+| PD-10 | An allowlisted plugin that fails to load |
+| PD-11 | A reserved namespace (`quote`, `reel`, `verdictkit`, `vk`) claimed from the wrong distribution |
+| PD-12 | A Security_Profile or claim-type registry-digest mismatch between the custodian and examiner processes |
+
+Pass: each case ends in the result that 11.16 to 11.18 and 7.19 require — refused start-up in public mode, or a reported, unregistered collision in local mode, as D6.11 specifies per case (13.20, D8-AC-12).
+
+### D8.9 Cross-user evidence isolation
+
+| ID | Case |
+|---|---|
+| CU-1 | Owner B reads owner A's case, run, evidence, outcome or events: the same 404 `NOT_FOUND` as a nonexistent case |
+| CU-2 | Owner B changes (PATCH-class operation on) owner A's case: the same 404 |
+| CU-3 | Owner B opens the SSE stream of owner A's case: refused with the same 404 before any event is sent |
+| CU-4 | Owner B downloads or exports owner A's Bundle: the same 404 |
+| CU-5 | A replay started by one client cannot read the replay-namespace evidence of another client's replay |
+| CU-6 | The `vk-examiner` OS user cannot read the vault, draft files, the key file or another replay's namespace |
+| CU-7 | The examiner process cannot write to the trusted evidence root |
+| CU-8 | Case ids are 128-bit random, and a route-enumeration test fails if any route carrying a case id lacks an ownership check |
+
+Pass: 0 of N routes in CU-1 to CU-4 return anything but the nonexistent-case response; 0 unchecked routes in CU-8 (7.23, 13.17, D8-AC-9, D8-AC-20).
+
+### D8.10 Deterministic replay
+
+| ID | Case |
+|---|---|
+| DR-1 | The same Bundle, replayed twice in the same environment, gives byte-identical reports |
+| DR-2 | Windows and Linux give equal verdict hashes for the committed corpus |
+| DR-3 | The clock is patched to two different dates; the replay result is unchanged |
+| DR-4 | `PYTHONHASHSEED` set to `0`, to `1` and to a random value all reproduce identically |
+| DR-5 | A signed Bundle and an unsigned Bundle written in the test environment each replay `REPRODUCED`. Every Bundle of the legacy corpus replays to a verdict hash equal to its recorded hash with the status `REPRODUCED` or `REPRODUCED_ACROSS_ENV`, never `DIVERGED` or `UNVERIFIABLE`. The replay makes no network connection (offline socket guard) |
+| DR-6 | `DIVERGED` is reported only when integrity is `VERIFIED` and the hashes differ, never when integrity itself fails |
+
+Pass: 6 of 6 (13.22, D8-AC-15).
+
+### D8.11 Privacy and secret canaries
+
+Five canary types, each injected through every applicable entry point (environment variable, argument, claim field, evidence body, file name, MCP argument) and searched for in every sink the Threat_Model names (standard output, standard error, log files, error bodies, diagnostics, Bundles, the evidence index, process listings, pytest failure output), in raw, base64, hex, URL-encoded and JSON-escaped form.
+
+| ID | Canary type |
+|---|---|
+| PC-1 | The vault key |
+| PC-2 | A claimed figure (a monetary or rate value from a claim) |
+| PC-3 | A user-profile path |
+| PC-4 | An access token |
+| PC-5 | A hook environment variable |
+| PC-6 | Meta-rule: no test prints its own canary in its failure message |
+
+Pass: 0 matches for PC-1 to PC-5 across every entry point, sink and form; PC-6 holds for every test in the suite (13.23, D8-AC-16).
+
+### D8.12 Fail-closed start-up and isolation-semantics tests
+
+All FC cases run on a Linux_Docker_Host. Each gives a non-zero exit, a `VK_STARTUP_ERROR=<CODE>` line, no `VK_STARTUP_OK` line, no open listener (port probe) and no file written.
+
+| ID | Case |
+|---|---|
+| FC-1 | Missing vault key |
+| FC-2 | Malformed vault key |
+| FC-3 | Unknown Security_Profile value |
+| FC-4 | `VK_JUDGE_MODE=1` conflicting with `VK_PROFILE=local` |
+| FC-5 | Resolved mode UNENFORCED in the `public` profile |
+| FC-6 | Examiner missing (socket not present) |
+| FC-7 | Examiner uid mismatch (not `vk-custodian`'s expected peer) |
+| FC-8 | Socket mode wrong |
+| FC-9 | Peer credentials (`SO_PEERCRED`) unavailable |
+| FC-10 | An allowlisted plugin fails to load |
+| FC-11 | Invalid evidence directory |
+| FC-12 | Unreadable plugin provenance manifest |
+
+Pass: 12 of 12 (13.24, D8-AC-17). The isolation-semantics matrix IS-1 to IS-8 (D8.5, DD8-10) and the custodian-authentication matrix CA-1 to CA-7 (D8.5, DD8-11) cover the runtime side of the same two decisions; together with FC-1 to FC-12 they are the full test set for 13.24, 2.13 and 2.14 (D8-AC-18).
+
+### D8.13 Acceptance criteria
+
+All rows are UNVERIFIED until an Execution_Record exists. "Both" means Windows host and Linux_Docker_Host. "(isolation)" marks a test that needs the container and runs in the container gate (13.8).
+
+| ID | Criterion | Method | Pass threshold | Req | Host |
+|---|---|---|---|---|---|
+| D8-AC-1 | Threat_Model completeness | Row-by-row check of D8.4 against the named threats | One row per threat, a non-empty value in every column, a reason on every UNTESTED row | 13.1, 13.2, 13.3 | Both |
+| D8-AC-2 | Five properties of 13.5 | P-a to P-e under the `ci` profile; mutation guard disabling each underlying check | 200/200 examples hold, and P-a excludes `REPRODUCED`, `REPRODUCED_ACROSS_ENV` and `VALID`; the guard shows a failure once disabled | 13.5 | Both |
+| D8-AC-3 | Seven malformed-input kinds | One negative test per kind (D8.7's mapping) | Each kind rejects or returns `UNVERIFIABLE`; 0 `REPRODUCED`, `REPRODUCED_ACROSS_ENV` or `VALID` | 13.6 | Both |
+| D8-AC-4 | BE-1 POSIX branch | `git diff` on the POSIX assertion text; BE1-5 AST guard; Linux run with `-rA` and the direct exit code | 0 changed characters in the POSIX line; AST guard passes; exit code captured directly | 13.11, 2.11 | Linux_Docker_Host |
+| D8-AC-5 | BE-1 Windows helper | O1 check, BE1-6 negative controls, Python patch recorded, elevation recorded, S-AUTHZ (O3) outcome recorded if run | Passes on a safe directory, fails on each negative control; `UNSUPPORTED_PYTHON_PATCH` on 3.12.0 to 3.12.3 | 13.11, 13.25 | Windows |
+| D8-AC-6 | BE-2 instrumentation | Timed trials per DD8-8 | At least 30 trials per host class, every field populated, min/median/max reported | 13.26 | Both |
+| D8-AC-7 | BE-2 root cause and fix | H1 to H5, fix applied per the rule, rerun | 30 of 30 passes on both hosts with `-rA` and the direct exit code; port allocated at run time | 13.12, 13.13 | Both |
+| D8-AC-8 | Key channels | KT-1 to KT-8 | 0 matches, every case and encoding | 13.16, 7.20 | Linux_Docker_Host (isolation) |
+| D8-AC-9 | Replay isolation | RI-1 to RI-8 | Trusted-root list and hashes identical before and after; 0 cross-namespace reads | 7.22, 13.17 | Linux_Docker_Host (isolation) |
+| D8-AC-10 | Upload admission | UA-1 to UA-8 | At most `slots` uploads in flight; later requests get 429 before any body byte is read; peak extra memory at most `slots x cap + 2 MiB`; slot releases on disconnect; 0 partial files | 7.21, 13.18 | CI/VM |
+| D8-AC-11 | MCP Approved_Root | PR-1 to PR-23 | At least 20 cases rejected with `PATH_NOT_ALLOWED`; 1000-iteration race finds 0 opens outside a root; Windows junction and reparse cases rejected | 9.21, 13.19 | Both (Windows cases: Windows) |
+| D8-AC-12 | Plugin discovery and provenance | PD-1 to PD-12 | Each case ends in the result 11.16 to 11.18 require | 13.20, 11.16, 11.17, 11.18 | Linux_Docker_Host (isolation) |
+| D8-AC-13 | Adversarial cryptographic vectors | D5-AC-6 and AM-D5-3 vectors, rerun on every `cryptography` change | 0 `VALID` where a vector forbids it; mutation guard finds a failure once disabled | 13.21 | Both |
+| D8-AC-14 | Adversarial ZIP Z-1 to Z-16 | D8.7's inventory | Each case rejects or returns `UNVERIFIABLE`, never `REPRODUCED`, `REPRODUCED_ACROSS_ENV` or `VALID`; 0 files outside scratch; mutation guard finds a failure once a covered check is disabled | 13.6, 13.21 | Both |
+| D8-AC-15 | Deterministic replay DR-1 to DR-6 | D8.10 | 6 of 6, with every legacy-corpus Bundle at an equal verdict hash and the status `REPRODUCED` or `REPRODUCED_ACROSS_ENV`, never `DIVERGED` or `UNVERIFIABLE` | 13.22 | Both |
+| D8-AC-16 | Canaries PC-1 to PC-6 | D8.11 | 0 matches, every type, entry point, sink and form; PC-6 holds | 13.23 | Linux_Docker_Host (isolation) |
+| D8-AC-17 | Fail-closed start-up FC-1 to FC-12 | D8.12 | 12 of 12: non-zero exit, `VK_STARTUP_ERROR`, no `VK_STARTUP_OK`, no listener, no file written | 13.24 | Linux_Docker_Host |
+| D8-AC-18 | Isolation semantics and custodian authentication | IS-1 to IS-8, CA-1 to CA-7 | 15 of 15 | 2.13, 2.14, 13.24 | Linux_Docker_Host (isolation) |
+| D8-AC-19 | Profile propagation matrix | D2-AC-1's cases extended by AM-D6-4, plus FC-3 and FC-4 | Every combination resolves per AM-D6-4 or refuses to start | 7.19, 13.14 | CI/VM |
+| D8-AC-20 | Cross-user isolation CU-1 to CU-8 | D8.9 | 8 of 8 | 7.23, 13.17 | CI/VM |
+| D8-AC-21 | Sweeper stateful property, extended | D2-AC-28's stateful test with replay namespaces added | 0 deleted blobs or replay namespaces still referenced, across 200 examples under the `ci` profile | 7.25, 13.17 | CI/VM |
+| D8-AC-22 | Evidence publication | Apply the sanitizer twice; scan the published tree; compare hashes with the Execution_Index | Idempotent; 0 class hits in the published tree; every Private_Original hash matches its Execution_Index entry; every Sanitized_Copy hash listed | 3.11, 3.14 | Both |
+| D8-AC-23 | Ledger lint | Scan Execution_Record command fields; cross-check Execution_Index ids and counts; scan BE-2 sentences | 0 ellipsis or angle-bracket placeholders; every record cites its Execution_Index id; counts equal the canonical row; 0 BE-2 sentences imply a cause before DD8-8's diagnosis exists | 3.12, 1.19 | Both |
+| D8-AC-24 | Kiro evidence preservation | Diff preserved spec files, `.config.kiro` id and session exports against any derived copy; check usage figures | 0 reconstructed items; each Private_Original hash recorded; every usage figure traces to a Kiro usage record or is `NOT_AVAILABLE` | 3.13, 16.2 | Owner (Kiro) |
+| D8-AC-25 | Contained_Hook_Environment record | Review the session record against CE-1 to CE-8 | Each condition recorded met, environment class stated without names; an unmet condition keeps dependent hooks at ST-3 / `UNVERIFIED` | 8.20 | Owner (Windows) |
+| D8-AC-26 | CI dispatch precondition | Check `workflow_dispatch` on the default-branch workflow file; check a dispatched run's head SHA | Trigger present on the default branch; head SHA equals the Release_Candidate. The run-level check is D9-AC-9 | 14.20 | CI |
+| D8-AC-27 | External_Review_Record present | Compare reviewed-file hashes with the Release_Candidate; check authorship | Hashes equal; record attributed `OWNER_ATTESTED`, not the agent | 13.27 | Owner |
+| D8-AC-28 | Complexity budget | `uv.lock` diff; map every new control to a Threat_Model row | 0 added runtime packages; every D8.3 control maps to a D8.4 row; an unmapped control is removed | 13.28 | Both |
+| D8-AC-29 | Existing tests unmodified | `git diff 84df25c` over the test tree; `ruff check .` on new code | 0 changed lines except the approved BE1-2/BE1-3 hunk (D3.9) and the AM-D7-1 fixture hunks; 0 ruff violations on new code | 13.9, 13.10 | Both |
+| D8-AC-30 | Targeted regression, both hosts | Run the regression set touching the changed control on Windows and on a Linux_Docker_Host | Each host's result recorded separately; 0 unexplained divergence | 13.15 | Both |
+
+### D8.14 Independent review findings
+
+The independent review text itself is not stored in this repository; the 15 finding ids below (H-1, M-1 to M-7, L-1 to L-7) are the maintainer's one-line summaries, carried only as ids here, and those summaries are recorded in `docs/next-phase/REVIEW_REMEDIATION_REGISTER.md`; the Response column answers those summaries. The Response column answers the maintainer's one-line summaries, and the mapping of a summary to a code defect stays `UNVERIFIED` where the summary names no concrete example.
+
+| Finding | Response (section) | Rows | Requirement criteria | Mapping |
+|---|---|---|---|---|
+| H-1 | DD8-9: Private_Original/Sanitized_Copy publication, zero-hit scan | D8-AC-22 | 3.11, 3.14 | UNVERIFIED |
+| M-1 | DD8-2: vault key never a process argument, key-file mechanism | D8-AC-8 | 7.20, 13.16 | UNVERIFIED |
+| M-2 | DD8-3: replay evidence isolated from the trusted root | D8-AC-9, D8-AC-20 | 7.22, 13.17 | UNVERIFIED |
+| M-3 | D8-AC-26's CI dispatch precondition; the full remediation is owned by D9 (DD9-4 and VM-10 for the dispatch procedure, D9-AC-9 for the head-SHA check) | D8-AC-26, D9-AC-9 | 14.20 | UNVERIFIED |
+| M-4 | DD8-6, DD8-7: Python minimum and Windows oracle; D3.9's BE-1 design; the requirement reconciliation of 13.11 and 8.13 (D8.5) | D8-AC-4, D8-AC-5 | 13.11, 8.13 | UNVERIFIED |
+| M-5 | DD8-15: Contained_Hook_Environment, CE-1 to CE-8 | D8-AC-25 | 8.20 | UNVERIFIED |
+| M-6 | DD8-13: External_Review_Record kept outside the repository | D8-AC-27 | 13.27 | UNVERIFIED |
+| M-7 | DD8-14: complexity budget, one mechanism per surface | D8-AC-28 | 13.28 | UNVERIFIED |
+| L-1 | DD8-10: isolation semantics fixed at start, fail-closed | D8-AC-18 | 2.13, 13.24 | UNVERIFIED |
+| L-2 | DD8-11: examiner authenticates the custodian by `SO_PEERCRED` | D8-AC-18 | 2.14, 13.24 | UNVERIFIED |
+| L-3 | DD8-6, DD8-7: Python 3.12.4 floor and the O1 Windows oracle | D8-AC-5 | 13.25 | UNVERIFIED |
+| L-4 | D8.5's ledger reconciliation (F8-11 lint) | D8-AC-23 | 3.12 | UNVERIFIED |
+| L-5 | DD8-15: Kiro authoring and execution evidence preserved, not reconstructed | D8-AC-24 | 3.13 | UNVERIFIED |
+| L-6 | DD8-5: MCP Approved_Root, safe-open helper | D8-AC-11 | 9.21, 13.19 | UNVERIFIED |
+| L-7 | DD8-4: upload admission before buffering | D8-AC-10 | 7.21, 13.18 | UNVERIFIED |
+
+### D8.15 Open decisions, risks, blockers and traceability
+
+| ID | Item | Recommendation |
+|---|---|---|
+| OD-D8-1 | Final choice of key mechanism (DD8-2) | The tmpfs key-file, as designed. |
+| OD-D8-2 | Replay-namespace carrier (DD8-3) | A server-generated 32-hex-character token, as designed. |
+| OD-D8-3 | Default MCP Approved_Root when `VK_MCP_BUNDLE_ROOTS` is unset | The private working directory only. |
+| OD-D8-4 | Value of `VK_MAX_CONCURRENT_UPLOADS` and the replay byte quotas | 2 concurrent uploads, 64 MiB per replay (ASSUMED); revisit after D8-AC-10 trial data. |
+| OD-D8-5 | Whether to adopt O3 (`S-AUTHZ` spike, DD8-7) | Run the timeboxed spike; adopt only on exact agreement with O1. |
+| OD-D8-6 | Which BE-2 hypothesis (H1 to H5) holds, and the resulting fix branch | Run the `connect_ex` probe first; it is the cheapest discriminator. |
+| OD-D8-7 | Storage location of External_Review_Records | Owner-controlled, outside the repository; exact location is the owner's choice. |
+| OD-D8-8 | Whether to publish sanitized logs alongside the release report | PENDING; no publication is designed here beyond the existing `LOG_HASHES.txt` pattern. |
+| OD-D8-9 | Windows firewall rule for CE-4 (Contained_Hook_Environment outbound block) | Owner action; record the residual if not applied. |
+
+| ID | Risk | Reason |
+|---|---|---|
+| R-D8-1 | An elevated test process's owner may resolve to Administrators rather than the current user (CPython issue 157876), changing the expected O1 trustee set. | Record elevation state in every BE-1 Windows run (BE1-7). |
+| R-D8-2 | tmpfs may be absent on a host, affecting the DD8-2 key-file mechanism. | Record the mount check; fall back to a mode-0400 file on another local filesystem if tmpfs is absent, with the fallback recorded. |
+| R-D8-3 | GitHub Actions dispatch availability or limits (read for F8-16, owned by D9, R-D9-4). | Recorded here only because it was read during this work; D9 owns the mitigation (DD9-4, R-D9-4). |
+| R-D8-4 | The Windows development host may differ from a Windows runner used for CI, affecting BE-1/BE-2 generalisation. | Record the exact Windows version and build with every Windows Execution_Record. |
+| R-D8-5 | The sanitizer's rule list (DD8-9) is necessarily finite; an unanticipated sensitive pattern could pass the zero-hit scan. | Scan result is a count, never a claim of completeness; review remains advised (as D7's R-D7-1 notes for its own numeral check). |
+
+| ID | Blocker | What resolves it |
+|---|---|---|
+| B-D8-1 | A Linux_Docker_Host full-checkout run for BE-2's Linux leg (DD8-8) and for every D8-AC row marked "Both" or a Linux host class | Owner action: provision or use an existing Linux_Docker_Host. |
+| B-D8-2 | An External_Review_Record (DD8-13) | Owner or independent-reviewer action; the agent cannot create or waive it. |
+| B-D8-3 | A dedicated VM or restricted OS account for the Contained_Hook_Environment (DD8-15, CE-1) | Owner action; without it, hook-firing evidence stays `UNVERIFIED` (D8-AC-25). |
+
+**Files for implementation (not changed now).** New `deploy/entrypoint.sh` key-file handling (DD8-2); new helper module(s) under `tests/contract` or `tests/windows` for the BE-1 Windows oracle (BE1-4, D3.9); edits to `examiner/worker.py` (DD8-11 peer auth) and `examiner/client.py`; edits to `api/server.py` (DD8-3 replay namespace, DD8-4 admission) and `core/src/verdictkit/mcp_server.py` (DD8-5 Approved_Root helper, shared with the scaffold destination); a new provenance-manifest build step and loader check under `core/src/verdictkit/sdk/` (AM-D6-3); new `docs/next-phase/THREAT_MODEL.md` (built from D8.4); new `docs/next-phase/EVIDENCE_REDACTION.md` (written separately, not by this task); new test files under `tests/security/`, `tests/adversarial/` and `tests/contract/` for the KT, RI, UA, PR, IS, CA, PD, CU, DR, PC, Z, FC matrices and the P-a to P-o properties. Not changed: existing passing tests, except the approved BE1-2/BE1-3 hunk (D3.9) and the AM-D7-1 fixture hunks; `examples/`; the API contract (owned by D5).
+
+**Traceability.** 13.1 to 13.3: D8.4, D8-AC-1. 13.4: D8.6 (docstring and tag rule). 13.5: D8.6 P-a to P-e, D8-AC-2. 13.6: D8.7, D8-AC-3. 13.7: D8.6 (settings), D8-AC-2. 13.8: D8.13 Host column (isolation marker). 13.9: D8.14, D8-AC-29. 13.10: D8-AC-29. 13.11: D8.5 (BE-1 closure), D8-AC-4, D8-AC-5. 13.12: D8.5 (BE-2 closure), D8-AC-7. 13.13: D8.5, D8-AC-4, D8-AC-7. 13.14: D8.7 (surface mapping), D8-AC-19. 13.15: D8-AC-30. 13.16: D8.5 (KT), D8-AC-8. 13.17: D8.5 (RI, CA), D8.9 (CU), D8-AC-9, D8-AC-18, D8-AC-20. 13.18: D8.5 (UA), D8-AC-10. 13.19: D8.5 (PR), D8-AC-11. 13.20: D8.8 (PD), D8-AC-12. 13.21: D8.7, D8-AC-13, D8-AC-14. 13.22: D8.10 (DR), D8-AC-15. 13.23: D8.11 (PC), D8-AC-16. 13.24: D8.12 (FC, IS), D8-AC-17, D8-AC-18. 13.25: D8.5 (Windows oracle, Python minimum), D8-AC-5. 13.26: D8.5 (BE-2 instrumentation), D8-AC-6. 13.27: DD8-13, D8-AC-27. 13.28: DD8-14, D8-AC-28. 1.19: D8.5 (BE-2 attribution wording), D8-AC-23. 2.13: D8.5 (IS), D8-AC-18. 2.14: D8.5 (CA), D8-AC-18. 3.11: D8.5 (publication rule), D8-AC-22. 3.12: D8.5 (ledger reconciliation), D8-AC-23. 3.13: DD8-15, D8-AC-24. 3.14: D8.5 (publication rule), D8-AC-22. 7.19: D6.11 AM-D6-4 (mechanism), D8.12 FC-3/FC-4, D8-AC-19. 7.20: D8.5 (KT), D8-AC-8. 7.21: D8.5 (UA), D8-AC-10. 7.22: D8.5 (RI), D8-AC-9. 8.20: DD8-15, D8-AC-25. 9.21: D8.5 (PR), D8-AC-11. 11.16 to 11.18: D6.11 AM-D6-1 to AM-D6-3 (mechanism), D8.8 (PD), D8-AC-12. Every criterion of Requirement 13 and every cross-cutting criterion listed above maps to at least one D8 section and one row.
+
+## D9. P8 Complete end-to-end regression and release verification
+
+### D9.1 Scope and status
+
+**Covers.** Requirement 14 (14.1 to 14.27), Requirement 15 (15.1 to 15.10) and Requirement 16 (16.1 to 16.5), plus the criteria that the release run must show: 1.5, 1.14, 2.8, 3.6 to 3.13, 7.14, 10.12, 10.14, 12.23, 13.9 and 13.27.
+
+**Does not cover.** Implementation and the running of any verification. Any push, tag, merge, publication, cloud resource, spending, DNS record, certificate, public listener or announcement (D9.8). The deployment gates SG-1 to SG-9 and the smoke tests SM-1 to SM-14 of D2.8, which D9 names only as conditions of Public_Deployment_Readiness. The content of an External_Review_Record or of a Kiro capture, which are owner actions.
+
+**Status.** Everything in D9 is DESIGNED and UNVERIFIED. Facts marked F9-n were read on 2026-11-25 (Windows host). No gate was run, no image was built, no CI run was dispatched and no ref was pushed while writing this section. The only network access was reading public documentation pages (the GitHub Docs pages cited in D9.3 and D9.4, and the python.org release notes behind the F8-12 correction). Source: `docs/next-phase/D8_D10_WORKING_NOTES.md`.
+
+### D9.2 Inspected baseline and findings
+
+Read: `.github/workflows/p0-integration.yml`, `scripts/gate_http.py`, `scripts/gate_nov22.sh`, `deploy/entrypoint.sh`, `Dockerfile`, `.gitignore`, `core/src/verdictkit/{bundle.py,envprint.py}`, `uv.lock`, `docs/next-phase/{BASELINE_REPORT.md,EXECUTION_EVIDENCE.md,HISTORICAL_EVIDENCE_RECONCILIATION.md}` and `docs/next-phase/baseline/EXECUTION_INDEX.md`.
+
+| # | Finding (read) | Req |
+|---|---|---|
+| F9-1 | Baseline on `84df25c` (Windows host, 2026-11-24): ledger rows E-001 to E-026 are the 26 CANONICAL executions of the Execution_Index (45 raw records, 14 superseded duplicates, 5 execution errors; E-025a and E-025b share one run). `pytest -m "not isolation"` gave 444 passed, 2 failed (BE-1, BE-2), 5 skipped, 4 deselected, with 455 tests collected. | 1.14, 14.8, 14.9 |
+| F9-2 | Not run at the baseline: Browser E2E (E-027) and `scripts/gate_nov22.sh` (E-028). The five skipped cases (the symlink case in `tests/api/test_m3b_draft_store.py` and four peer-credential cases in `tests/api/test_m3b_examiner_identity.py`) have no Linux result. No Linux per-test baseline exists (E-025a is indirect). No CI run, test inventory or release report exists. | 14.19, 14.22 |
+| F9-3 | The four container gates and the offline replay ran on the Docker Desktop Linux engine with `--network none` and exited 0 (E-020 to E-024): 4 isolation tests passed, `VK_STARTUP_OK isolation=ENFORCED`, `GATE-HTTP PASSED`, an unsigned stub Bundle written, replay `REPRODUCED` with authenticity `NOT_ESTABLISHED`. | 14.23 |
+| F9-4 | `p0-integration.yml` triggers on pull requests and pushes to `master` and on `workflow_dispatch`, with `permissions: contents: read`. Job `security-and-regression` (30 min): lock check, sync, ruff, startup tests, `pytest -q -m "not isolation"`, `docker build -t verdictkit:p0-ci`, the four gates, replay, `bash scripts/gate_nov22.sh`. Job `web-ui` (20 min): `npm ci`, typecheck, tests, build, Playwright 1.63.0, `bash scripts/ui_e2e.sh`. No Windows job. No step uses `-rA` or `--collect-only`, records `git rev-parse HEAD`, checks `git status --porcelain` or records an image ID. `gate/` is not git-ignored, and `gate_nov22.sh` writes into it inside the clone (`OUT=gate`). That script builds its own image `verdictkit:gate` and expects `REPRODUCED_ACROSS_ENV` for its host-side replay. `m3b-api-checks.yml` has no dispatch trigger. | 14.20, 14.21 |
+| F9-5 | `scripts/gate_http.py` (run as `vk-custodian` by `gate-http`) drives `TestClient(create_app())` with isolation ENFORCED: a live-evidence `quote.finance.v1` case (`CONTRADICTED`), a `reel.mechanical.v1` case from the bundled synthetic fixture `fx_reel_impossible_sma` (`IMPOSSIBLE`), a refused live Reel case, and a server-side replay of each downloaded Bundle. No `quote.lease.v1` case exists in any gate or script. It signs nothing (no signing code exists yet), writes no Bundle to a mounted directory and replays inside its own process. `gate-case` and `verdictkit replay` write and replay an unsigned stub Bundle in two container runs. | 14.5, 14.23 |
+| F9-6 | `deploy/entrypoint.sh`: `gate-http` and `gate-case` start the examiner under `as_examiner` (socket group `vk-ipc`, mode 660), then run the custodian under `as_custodian env VK_VAULT_KEY=<generated> ...` with `VK_EXAMINER_SOCKET` set. The `verdictkit` subcommand runs `cd /app` and then the installed CLI. Any other command runs as root through `exec "$@"`. `as_custodian` has no signing or Trust_Store variable yet (D5.5 adds them). | 14.5, 14.23 |
+| F9-7 | `replay_bundle` reports `REPRODUCED` only if `engine_version`, `python_version` and the SHA-256 of `uv.lock` (read from the working directory) all equal the Bundle's `env_fingerprint`. With an equal verdict hash and any difference it reports `REPRODUCED_ACROSS_ENV`. `uv.lock` records the `mcp` specifier of the `verdictkit` member (`>=1.2` at the baseline) and 9.22 requires another specifier, so the lock hash at S will differ from the hash in a Bundle written at `84df25c`. The baseline tests that replay Bundles accept both statuses (for example `tests/integration/test_bundle_evidence_and_golden.py`). 12.23, 13.22 and 14.24 as amended accept `REPRODUCED` or `REPRODUCED_ACROSS_ENV` for a legacy Bundle with an equal verdict hash, and name `REPRODUCED` for a Bundle replayed in the image that wrote it. | 12.23, 14.24 |
+| F9-8 | `Dockerfile`: the base image and the `uv` image are pinned by digest, and `apt-get install` is unpinned, so two builds of one commit give different image IDs. The image holds `core/`, `apps/`, `api/`, `scripts/`, `tests/`, `examples/` and `uv.lock`, not `ui/` or `docs/`. `envprint` reads `VK_IMAGE_DIGEST` and nothing sets it. | 14.17, 14.23 |
+
+### D9.3 Exact-commit rule and design decisions
+
+**Exact-commit rule.** S is the full 40-character SHA of the Phase_Branch tip when the owner selects the Release_Candidate. Every verification runs in a clean checkout of S, and `git rev-parse HEAD` prints S and `git status --porcelain` prints nothing before and after each run (14.21). Windows: `git clone <repo> <clone-w>`, `git -C <clone-w> checkout --detach <S>`, `uv sync --frozen --all-packages --all-extras --group dev`, `npm ci`. Linux: the CI checkout of `GITHUB_SHA`, and a clone of S on the local Linux_Docker_Host. Run output goes to `<out>`, outside every clone. A new commit that changes a tested file makes a new Release_Candidate, and every verification runs again (DD9-2).
+
+| ID | Decision | Rejected alternative | Why |
+|---|---|---|---|
+| DD9-1 | S is written first in the release run and in every Execution_Record, with the step, Outcome_Class, passed and failed counts, and start and end times (14.1, 14.16). | Verify a branch name or a short SHA. | A branch moves. 14.16 needs the tested, built and described commit to be one commit. |
+| DD9-2 | Clean checkout per host and per run (rule above). Evidence commits after S may change only `docs/next-phase/**` and `.kiro/specs/verdictkit-next-phase/tasks.md`. `provenance` checks `git diff --name-only <S> <tip>`, and any other path makes a new Release_Candidate (OD-D9-1). | Test in the working tree where the code was written. Write run output under `gate/` in the clone. | Uncommitted files would be tested in place of S, and run output would make the tree dirty (F9-4). The ledger is in the repository, so a commit after S cannot be avoided. |
+| DD9-3 | Every command runs unpiped. Pytest adds `-rA`. The exit code is read directly. Counts are copied from the runner's summary line. The command text is stored exactly (3.12). | A pipe through `tail`. Counts typed from memory. | E-025a ended in a pipe through `tail`, so its exit code was not pytest's (1.15). 14.8 and 3.12 forbid inferred counts and placeholder commands. |
+| DD9-4 | CI by dispatch (VM-10). The run's `headSha`, `headBranch`, `event` and `status` are read from the CI service and must equal S, the Phase_Branch, `workflow_dispatch` and `completed`. A mismatch records `FAILED` and discards the run. Where dispatch is unsupported, or the remote ref is not S and no push is authorized, the CI result is `UNVERIFIED` with that reason. No pull request and no merge. This replaces the pull-request route of D0.3 and D0.9. | Open a pull request to `master` to get a run. | 14.20 forbids it. For a `pull_request` run `GITHUB_SHA` is a merge commit and not S ([GitHub Docs, events that trigger workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)). |
+| DD9-5 | Push rule (14.13). The agent pushes only the Phase_Branch, only when the request that asks for it carries the owner's explicit authorization, and never with force. The ledger cites that request and records `git ls-remote origin refs/heads/feature/kiro-next-phase` before and after. It never pushes `master`, a tag or an image. | A push made because verification needs it. | Authorization is per request. An implied permission is a silent publication. |
+| DD9-6 | One image per run. Build once from the clean clone, record `docker image inspect --format '{{.Id}}' <image>`, run every gate and scenario on that image, and read the ID again after the last one. The recorded image digest is this local ID. | Rebuild per gate. Report a registry digest. | Builds are not bit-identical (F9-8). A registry digest needs an image push, which is a publication (14.13). |
+| DD9-7 | Linux evidence has two labelled sources: CI (`ubuntu-latest`, full checkout, Linux `-rA`, Browser E2E, `gate_nov22.sh`) and the local Linux_Docker_Host (the Docker Desktop Linux engine on the Windows host, or a Linux VM: image build, gates, scenario, replay matrix). Windows is a separate native run in a fresh clone. One source never stands in for another. | One source for both host classes. | 14.17 records the host class of each run, and the sources differ (R-D8-4). |
+| DD9-8 | The end-to-end scenario is one new script `scripts/gate_e2e.py` run by one new subcommand `gate-e2e <out_dir>` that reuses the `cmd_gate_http` set-up. `gate_http.py` is not edited. The signing key is created in memory in the container by the custodian script, written as a 0600 file in the custodian's private directory and removed with the container. `<out>` receives Bundles and a Trust_Store with the public key only. | Extend `gate_http.py`. Provision a key file from the host. | `gate_http.py` is a Baseline_Run step that 14.9 compares, and it has no signing key, mounted output or separate replay run. 14.24 forbids a committed key file (`*.pem` and `*.key` are also git-ignored). |
+| DD9-9 | Kiro hook and MCP evidence comes only from output captured inside Kiro, in a Contained_Hook_Environment, by the owner (VM-11). Without a capture the capability is `UNVERIFIED`. | Count H6 or H8 of the Historical_Audit, or a hook command run by the agent. | 14.25 and 3.6. Historical results are not evidence for S (3.9). |
+| DD9-10 | One stdlib-only helper `scripts/release_verify.py` with subcommands `inventory`, `diff-inventory`, `check-run`, `frozen`, `provenance`, `report-lint` and `audit-scan`, each with a unit test and a negative control. | One ad hoc script per check, or manual comparison. | 13.28 asks for each mechanism once and no new dependency. A negative control makes each check testable. |
+
+### D9.4 Verification matrix
+
+**Rerun set and hosts.** The rerun set is the Baseline_Run ledger rows E-001 to E-028. Each row runs on every host class where it can run, and its record on any other host class is `UNVERIFIED` with the reason (1.6, 14.4). E-005 reruns as the 30-trial BE-2 loop (D8-AC-7). E-025a and E-025b are replaced by the Linux full-checkout `-rA` run, their valid-environment form (F8-13). Hosts: Windows (native, fresh clone), Linux_Docker_Host (Docker Desktop Linux engine on the Windows host, or a Linux VM), CI (the dispatched run), Owner (owner action). `<clone-w>` and `<clone-l>` are clean clones of S, `<out>` is a directory outside every clone, and `<image>` is the tag `verdictkit:rc-<first 12 characters of S>`.
+
+| ID | What | Host | Command or procedure | Expected | Record |
+|---|---|---|---|---|---|
+| VM-1 | Exact commit | Both | DD9-2 rule on a fresh clone: `git rev-parse HEAD` and `git status --porcelain`, before and after each run | HEAD prints S. Status prints nothing, 2 of 2 times per run | One per run |
+| VM-2 | Rows E-001 to E-018 and E-026: lock check, sync, ruff, eight pytest rows, three hook-command rows, four UI rows, Playwright install | Both | Windows: the baseline command of each row, with `-rA` on each pytest command and `HYPOTHESIS_PROFILE=ci`. Linux: the same commands as steps of the CI jobs `security-and-regression` and `web-ui`, with a step added for each row that the workflow lacks | `SUCCEEDED` on each host. BE-1 and BE-2 nodes `PASSED` in the listing. Counts from the runner line | One per row and host |
+| VM-3 | E-027 (`bash scripts/ui_e2e.sh`), E-028 (`bash scripts/gate_nov22.sh`) and the five skipped Linux cases | CI | Steps of the dispatched run (VM-10). The five cases are read from the Linux `-rA` listing, by the node names in the E-004 skip list. The Windows records of E-027 and E-028 are `UNVERIFIED`, Linux-only | `SUCCEEDED` for each row. 5 of 5 cases `PASSED` | One per row and case |
+| VM-4 | No-loss inventory (below) | Both | `inventory`, then `diff-inventory` | 0 baseline node ids missing without a decision | One per host class |
+| VM-5 | New-capability tests (14.2): signing and trust (D5), MCP stdio client run (D4), Conformance_Suite (D6), accessibility scan (D1), regulatory snapshot tests (D7), property tests P-a to P-o (D8) and scaffold end-to-end (D6) | Both | The command of each is fixed when its test file exists and is stored exactly (3.12). Property tests use the `ci` profile, derandomized, with `-rA` | `SUCCEEDED` | One per item and host |
+| VM-6 | Four container gates and offline replay (E-019 to E-024) | Linux_Docker_Host | Commands 1 to 7 of the block below | Exit 0 each. `isolation.xml` has 4 tests and 0 failures. `VK_STARTUP_OK isolation=ENFORCED` once. `GATE-HTTP PASSED`. Replay `REPRODUCED`, integrity `VERIFIED`. Image ID unchanged | One per command |
+| VM-7 | Enforced end-to-end scenario for `quote.finance.v1`, `quote.lease.v1` and `reel.mechanical.v1` (below) | Linux_Docker_Host | Command 8 of the block below | Per type: 5 ordered steps, `ENFORCED` in the run, the outcome and the Bundle | One per step and type |
+| VM-8 | Replay matrix (below) | Linux_Docker_Host, Windows | Command 9 of the block, per type, with and without `--trust-store` and on the tampered copy. Windows: the same Bundles with `uv run --no-sync verdictkit replay`, under the socket guard of D5 DR-3 | As the matrix | One per case |
+| VM-9 | Legacy corpus: the Bundles written at `84df25c` (a Texas finding, a non-Texas finding, a Lease claim, a Reel claim, the stub claim type and `examples/stub_claimtype/golden.vkb`), committed with their SHA-256 (D8 DR-2, P-g) | Both | `verdictkit replay <bundle> --json`, offline, on each host class | Each Bundle has an equal verdict hash and the status `REPRODUCED` or `REPRODUCED_ACROSS_ENV` (14.24), 0 `DIVERGED`, 0 `UNVERIFIABLE`. The observed status is recorded. See F9-7 and OD-D9-2 | One per Bundle and host |
+| VM-10 | CI dispatch (below) | CI | `gh workflow run`, `gh run watch`, `gh run view`, `check-run` | `check-run` exits 0. The conclusion is recorded | One per run |
+| VM-11 | Kiro hook firing and VerdictKit MCP tool call from inside Kiro | Owner | In the Contained_Hook_Environment the owner fires each hook of the pinned Hook_Set and calls each of the four tools once. The Kiro log and session export are the capture | Each capture cited by id and SHA-256, else `UNVERIFIED` | One per hook and tool |
+| VM-12 | Local demonstration | Linux_Docker_Host | `docker run` of `<image>` `serve` with a run-time vault key, published only on `127.0.0.1` on a free port chosen at run time (1.17), then SM-1 and SM-7 of D2.8 against it | SM-1 (with `commitSha` equal to S) and SM-7 pass. No other port published | One per check |
+| VM-13 | Frozen refs and Submission_Artifacts (14.14) | Both | `frozen`: `git rev-parse refs/tags/v1.0.0-submission`, `git rev-parse refs/tags/v1.0.0-submission^{commit}`, `git rev-parse refs/heads/master`, `git rev-parse refs/tags/verified-quote-e2e-20261118`, and `git diff --quiet 84df25c <S> -- <each Submission_Artifacts file>`, at the start and at the end of the phase | 4 of 4 values equal those of 1.2. Diff empty | One per check |
+| VM-14 | Provenance (D9.5) | Both | `provenance` | Every field present. Hashes recomputed from committed blobs | One |
+| VM-15 | Release report checks (D9.5) | Both | `report-lint` on `docs/next-phase/RELEASE_REPORT.md`, `docs/next-phase/REPRODUCING_VERIFICATION.md`, README, `docs/` and UI text | 0 violations | One |
+| VM-16 | Evidence publication | Both | The D8.5 sanitizer and zero-hit scan on each file to be published, and the hashes of each Private_Original and Sanitized_Copy | 0 hits in each class of 3.14 | One per commit |
+| VM-17 | Historical reconciliation re-check (15) | Owner | `audit-scan`, and recomputation of H1 to H8 from the read-only Historical_Audit directories | D9-AC-21 | One per record |
+| VM-18 | Credit records (16) | Owner | The owner reads the Kiro usage view. Record a Credit_Record or `NOT_AVAILABLE` | D9-AC-22 | One per session |
+| VM-19 | External_Review_Record | Owner | The owner supplies the reference. Compare the reviewed-file hashes with the hashes of those files at S | Hashes equal | One |
+
+Container commands for VM-6 to VM-8. `docker image inspect` is repeated after the last command (DD9-6). `VK_COMMIT_SHA` is the build argument of D2.8.
+
+```text
+1  docker build --build-arg VK_COMMIT_SHA=<S> -t <image> <clone-l>
+2  docker run --rm --network none -v "<out>:/out" <image> gate-isolation /out/isolation.xml
+3  docker run --rm --network none <image> gate-startup
+4  docker run --rm --network none <image> gate-http
+5  docker run --rm --network none -v "<out>:/out" -v "<clone-l>/examples/stub_claimtype:/in:ro" <image> gate-case /in/claim.json /out/stub.vkb
+6  docker run --rm --network none -v "<out>:/out:ro" <image> verdictkit replay /out/stub.vkb
+7  docker image inspect --format '{{.Id}}' <image>
+8  docker run --rm --network none -v "<out>:/out" <image> gate-e2e /out
+9  docker run --rm --network none -v "<out>:/out:ro" <image> verdictkit replay /out/<type>.vkb --trust-store /out/trust-store.json --json
+```
+
+**No-loss rule (VM-4).** Once, at `84df25c` in a disposable worktree on each host class (Windows native; a Linux full checkout, not the image, which lacks `ui/`, F9-8): `uv run --no-sync pytest --collect-only -q`. `inventory` keeps the lines that start with `tests/`, sorts them and writes `docs/next-phase/baseline/TEST_INVENTORY.windows.txt` or `TEST_INVENTORY.linux.txt`. The raw output is a Private_Original. The ledger records the SHA-256 of both files (3.11, 14.22). At S the same command runs on each host class and `diff-inventory` lists the node ids that are missing and added. Rules: every baseline node id is collected unless a recorded maintainer decision names its rename or removal; each node that passed or skipped at the baseline passes or skips at S; BE-1 and BE-2 pass; no `--deselect`, `-k` or `--ignore` is added to the baseline selectors of E-004, E-009 and E-012 (13.9). Baseline outcomes per node: Windows from the E-004 counts and the named failures and skips (444 passed, 2 failed, 5 skipped, 4 deselected, of 455); Linux from one `-rA` run at `84df25c`, which does not exist yet (F9-2, OD-D9-7). Step passing counts are compared as in 14.9.
+
+**Enforced end-to-end scenario (VM-7, DD9-8).** `gate-e2e <out_dir>` sets up the vault, the drafts directory, the examiner (`vk-examiner`, socket group `vk-ipc`, mode 660) and judge mode as `cmd_gate_http` does, then runs `scripts/gate_e2e.py` as `vk-custodian`. The script creates a throwaway Ed25519 key in memory and makes it available to the custodian only. For each claim type it records these steps in order, one Execution_Record each (14.5): (1) submit, `POST /api/v1/cases`; (2) freeze, `POST /api/v1/cases/{id}/freeze`; (3) run through the authenticated examiner, `POST .../evidence` then `POST .../runs`, which must end `COMPLETED` with `isolationMode` `ENFORCED` in the run record and in `GET .../outcome`; (4) download, `GET .../bundle` written to `<out>/<type>.vkb`, where `GET .../bundle/metadata` shows `ENFORCED`, integrity `VERIFIED` and `signatureValidity` `VALID`; (5) offline replay in a separate `--network none` container on the same image (VM-8). It also writes the public Trust_Store `<out>/trust-store.json` and a tampered copy `<out>/<type>.tampered.vkb`. It stops at the first failed step, keeps the records made so far and exits non-zero (14.7). Inputs are constructed and labelled `SYNTHETIC` in the scenario record: Quote and Lease reuse existing constructed test fixtures (the `PARAMS` of `gate_http.py` and `ITEMISED` of `tests/integration/test_quote_lease_itemised.py`), and Reel uses the bundled `SYNTHETIC_DEMO` fixture `fx_reel_impossible_sma`. The scenario adds no figure of its own, and each input names its source fixture.
+
+**Replay matrix (VM-8, 14.18, 14.24).** Expected values, for a replay in the image that wrote the Bundle:
+
+| Case | Trust_Store | Replay | Signature_Validity | Signer_Trust | Authenticity |
+|---|---|---|---|---|---|
+| Unsigned Bundle (the `gate-case` stub, written with no signing key) | none | `REPRODUCED` | `UNSIGNED` | `NOT_EVALUATED` | `NOT_ESTABLISHED` |
+| Signed Bundle, each type | file with the public key | `REPRODUCED` | `VALID` | `TRUSTED` | `ESTABLISHED` |
+| The same signed Bundle | none | `REPRODUCED` | `VALID` | `NOT_EVALUATED` | `NOT_ESTABLISHED` |
+| Tampered copy (one byte of the stored `manifest.json` data changed) | file with the public key | `UNVERIFIABLE` | `INVALID` | `NOT_EVALUATED` | `NOT_ESTABLISHED` |
+
+The tampered copy passes if the replay is `UNVERIFIABLE` or the validity is `INVALID`, with authenticity `NOT_ESTABLISHED` (14.24). The image that wrote a Bundle has the same `engine_version`, `python_version` and lock hash, so `REPRODUCED` is the expected status there. Natively on Windows the same Bundle may give `REPRODUCED_ACROSS_ENV`. That result passes if the verdict hash and the signature fields equal the container result (D8 DR-2).
+
+**CI dispatch (VM-10, DD9-4).** Preconditions: the workflow file is on the default branch and has run at least once, because GitHub allows dispatch against another branch or tag only after that ([GitHub Docs, events that trigger workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)); and `git ls-remote origin refs/heads/feature/kiro-next-phase` prints S. If it prints another value, a push follows DD9-5, or the CI result is `UNVERIFIED` with the reason. Steps: record the UTC time; `gh workflow run p0-integration.yml --ref feature/kiro-next-phase`; take the run id from the dispatch response ([GitHub Docs, create a workflow dispatch event](https://docs.github.com/en/rest/actions/workflows)) or from `gh run list --workflow p0-integration.yml --branch feature/kiro-next-phase --event workflow_dispatch --limit 1 --json databaseId,createdAt`; `gh run watch <id> --exit-status`; `gh run view <id> --json headSha,headBranch,event,status,conclusion,createdAt,url`, saved as the run record; `release_verify.py check-run <record> --sha <S> --branch feature/kiro-next-phase --after <time>`; `gh run download <id> --dir <out>` and `gh run view <id> --log`, both kept as Private_Originals. For a dispatched run `GITHUB_SHA` is the last commit of the dispatched ref, and the workflow file at that ref is the one that runs, so the added steps and the Windows job (OD-D9-3) belong to the run. The run's `conclusion` is the CI result. Content from the GitHub pages was rephrased for compliance with licensing restrictions.
+
+### D9.5 Release report and provenance
+
+`docs/next-phase/RELEASE_REPORT.md` is written after verification and committed as an evidence commit (DD9-2). Sections: (1) the candidate and the provenance block; (2) two result lines, Local_Readiness and Public_Deployment_Readiness, each `VERIFIED` or `NOT_VERIFIED` (D9.8); (3) for each of the nine tracks, every acceptance criterion of its requirement with its Outcome_Class and Execution_Record id (14.12); (4) the baseline comparison, one row per ledger row E-001 to E-028 with the baseline and S passing counts, flagged where the S count is lower (14.9); (5) every `UNVERIFIED` item with its reason, including Browser E2E, `gate_nov22.sh`, the five skipped Linux cases and automatic hook execution (14.11, 14.19); (6) every `FAILED` step, every unremediated Baseline_Exception and the blockers of D9.6 (14.10); (7) known limitations; (8) the rollback rows of D9.7; (9) Kiro usage (16) and Historical_Audit pointers (15); (10) the pointer to `docs/next-phase/REPRODUCING_VERIFICATION.md`, which lists the tools with versions, the clean-checkout steps for both host classes and the exact commands of the release run (14.15). Every count comes from the runner output of the S run (14.8). `report-lint` checks counts, commits, statuses and record ids against the ledger, the per-track table against the criteria of Requirements 5 to 14, each capability statement in README, `docs/` and UI text against a `SUCCEEDED` record of S (3.9, 3.10), the readiness wording, the credit figures and the citation of H records.
+
+| Provenance field (14.17) | Source |
+|---|---|
+| Commit | S, 40 characters |
+| Image ID | `docker image inspect --format '{{.Id}}' <image>` after the last gate, with the local run and the CI run listed separately. The image label `org.opencontainers.image.revision` (D2.8) equals S |
+| `uv.lock` and `package-lock.json` SHA-256 | Hash of the committed blob (`git show <S>:<file>`), so a CRLF checkout cannot change it |
+| Tool versions | Python patch version (host and image), uv, Node, npm, git, Docker engine, `gh`, Playwright, ruff, pytest, Hypothesis, locked `mcp` |
+| Host class of each run | Windows build, Linux engine or runner image label, and the role (native, local Linux_Docker_Host, CI) |
+| Plugin provenance manifest SHA-256 | Image label (D6.11 AM-D6-3) |
+| Contract version | `2.0.0` (D5.8) |
+
+### D9.6 Release blockers
+
+Level: LOCAL blocks Local_Readiness, PUBLIC blocks only Public_Deployment_Readiness, CLAIM blocks only a capability statement (14.26). A row stays open until its record exists for S. The report lists every open row.
+
+| ID | Blocker | Level | Req |
+|---|---|---|---|
+| RB-1 | BE-1 or BE-2 not remediated on S | LOCAL | 14.10, 1.18 |
+| RB-2 | A required step has Outcome_Class `FAILED` | LOCAL | 14.10 |
+| RB-3 | A baseline node id is missing without a decision, or a baseline node fails | LOCAL | 14.22, 1.13 |
+| RB-4 | No External_Review_Record whose reviewed-file hashes equal those at S | LOCAL | 14.27, 13.27 |
+| RB-5 | A container gate or the offline replay was not run on a Linux_Docker_Host with `--network none` | LOCAL | 14.3, 14.4, 14.23 |
+| RB-6 | An enforced end-to-end examination is missing for `quote.finance.v1`, `quote.lease.v1` or `reel.mechanical.v1` | LOCAL | 14.23 |
+| RB-7 | The replay matrix or the legacy corpus is missing or differs from D9.4 | LOCAL | 14.24 |
+| RB-8 | A Frozen_Release ref or a Submission_Artifacts file changed | LOCAL | 14.14 |
+| RB-9 | A publication scan hit | LOCAL | 3.14 |
+| RB-10 | S is not the verified head, a tree was dirty, or a count is not from the S run | LOCAL | 14.8, 14.16, 14.21 |
+| RB-11 | The provenance block is incomplete | LOCAL | 14.17 |
+| RB-12 | A Kiro hook firing or MCP call from inside Kiro has no Kiro capture | CLAIM | 14.19, 14.25 |
+| RB-13 | Browser E2E, `gate_nov22.sh`, a skipped Linux case or the CI run has no `SUCCEEDED` record for S | CLAIM | 14.19, 14.20 |
+| RB-14 | No `SUCCEEDED` record per 7.13 for a deployed instance | CLAIM | 7.13, 7.14 |
+| RB-15 | SG-1 to SG-9 or an applicable D2 acceptance row lacks a `SUCCEEDED` record | PUBLIC | 14.26 |
+| RB-16 | Hosting, domain, certificate or budget decision not recorded | PUBLIC | 14.26, 7.17 |
+| RB-17 | No monitoring, no rehearsed rollback or no recorded go decision of the owner | PUBLIC | 14.26, 14.13 |
+
+### D9.7 Rollback
+
+Every procedure adds commits or files. None resets history, force-pushes or touches `master` or a tag.
+
+| ID | Artifact | Procedure | Confirmation |
+|---|---|---|---|
+| RP-1 | Phase_Branch commits | `git revert` the commit range on the Phase_Branch | `frozen` equals the values of 1.2. The Submission_Artifacts diff is empty |
+| RP-2 | Contract version 2.0.0 | One revert of the lockstep change: server constant, `api/openapi.yaml`, UI_Kit constant, `api/examples/`, MCP replay result, tests and the `ui/judge` constant (AM-D5-12, AM-D5-13) | `GET /api/v1/health` shows the previous `contractVersion`. Contract tests pass |
+| RP-3 | Container image | Run or redeploy the previous image: its ID locally, its digest where a registry exists (D2.8) | `gate-startup` marker. `GET /api/v1/health` shows the previous `commitSha` (7.15) |
+| RP-4 | Rules manifest | Move the active pointer back to the previous manifest. Bundles embed their evidence, so replay is unaffected | Rule tests pass with the previous manifest. The legacy corpus replays as before |
+| RP-5 | Trust_Store | Publish a file with a higher `serial` that restores or revokes the key | A replay shows the new `serial` and `sha256` (D5.7) |
+| RP-6 | `mcp` pin | Revert `core/pyproject.toml` and `uv.lock` together | `uv lock --check` passes. The stdio client run passes |
+| RP-7 | Hooks | A new commit that restores `.kiro/hooks/` and `scripts/hooks/` from `84df25c` | The HM-T5 hash check (D3). Renewed review (8.17) |
+| RP-8 | Evidence publication | Supersede with a new Sanitized_Copy and a new hash. Never rewrite history | Publication scan has 0 hits. The Private_Original hash is unchanged |
+| RP-9 | Plugin allowlist | Revert the allowlist constant and the provenance manifest build step | The public profile loads 0 third-party plugins (AM-D6-1) |
+
+### D9.8 Local readiness and public deployment readiness
+
+D9 authorizes no cloud provisioning, spending, DNS record, certificate, public listener, announcement, tag, merge or publication. The documentation keeps stating that no hosted demonstration is available until an Execution_Record per 7.13 exists (7.14). The local demonstration of VM-12 publishes on loopback only and is not a public listener.
+
+| Condition | Local_Readiness | Public_Deployment_Readiness |
+|---|---|---|
+| Every LOCAL blocker of D9.6 clear on S | required | required |
+| Evidence of 14.1 to 14.27 complete, with every `UNVERIFIED` item listed (14.11) | required | required |
+| The image runs the demonstration locally (VM-12) | required | required |
+| SG-1 to SG-9 each `SUCCEEDED` (D2.8) | not required | required |
+| Hosting, domain, certificate and budget decisions recorded (D2.11) | not required | required |
+| Monitoring in place and rollback rehearsed (D2.8) | not required | required |
+| The owner's recorded go decision (14.13, D2.12 AM-11) | not required | required |
+
+The report gives each result on its own line and never one combined "ready" line. `report-lint` rejects a combined statement, and rejects `VERIFIED` for a level that has an open blocker.
+
+### D9.9 Acceptance criteria
+
+All rows are UNVERIFIED until an Execution_Record exists. "Both" means the Windows host and a Linux source (Linux_Docker_Host or CI).
+
+| ID | Criterion | Method | Pass threshold | Req | Host |
+|---|---|---|---|---|---|
+| D9-AC-1 | Exact commit and clean tree | VM-1 on each run. `provenance` reads S from every record and checks `git diff --name-only <S> <tip>` | `HEAD` equals S and the status is empty, 2 of 2 checks per run on each host class. Every record of the release run carries the same 40-character S, 0 others. The diff lists only the paths that DD9-2 allows. Negative control: a clone with one untracked file fails | 14.16, 14.21 | Both |
+| D9-AC-2 | Rerun completeness | VM-2, VM-3 and VM-5 | Each ledger row E-001 to E-028 (E-025a and E-025b through the Linux full-checkout run) has one record per host class with S, step, Outcome_Class, passed, failed, start and end. A row that cannot run on a host class is `UNVERIFIED` with a reason. Each of the 7 items of 14.2 has a record. 0 rows without a record | 14.1, 14.2, 14.19, 14.21 | Both |
+| D9-AC-3 | Counts and baseline comparison | `report-lint` compares the report with the S records | 0 counts that differ from the runner line of the S record. Each row whose S passing count is below its baseline count is listed with both counts. 0 counts from another commit. Negative control: a count changed by 1 fails | 14.8, 14.9 | Both |
+| D9-AC-4 | No-loss rule | VM-4 | Per host class: 0 baseline node ids missing without a recorded decision. Each node `PASSED` or `SKIPPED` at the baseline is `PASSED` or `SKIPPED` at S. BE-1 and BE-2 `PASSED`. 0 selection flags beyond those of E-004, E-009 and E-012. Negative control: a deleted test is reported missing | 14.22, 13.9 | Both |
+| D9-AC-5 | Container gates | VM-6 | The five commands exit 0 with `--network none` on a Linux_Docker_Host, and the image ID is equal before the first and after the last. A gate that cannot take `--network none` is `UNVERIFIED` with the reason, never `SUCCEEDED` | 14.3, 14.4, 14.23, 1.5 | Linux_Docker_Host |
+| D9-AC-6 | Enforced end-to-end | VM-7, plus one injected failure at each of the 5 steps | 3 of 3 types pass the 5 steps in order. The run record, the outcome and the Bundle record `ENFORCED`. The replay is `REPRODUCED`. 5 of 5 injected failures give scenario `FAILED`, name the failing step and keep the earlier records | 14.5, 14.6, 14.7, 14.23 | Linux_Docker_Host |
+| D9-AC-7 | Replay matrix | VM-8: container replays with `--network none`, native replays under the socket guard | Each case gives the matrix values, for 3 types. 0 outbound connections. `<out>` and the repository hold 0 key files (scan for `*.pem`, `*.key` and key blocks). The Trust_Store holds public keys only | 14.18, 14.24, 10.12, 10.14, 2.8 | Both |
+| D9-AC-8 | Legacy corpus | VM-9 | Every Bundle has an equal verdict hash, the status `REPRODUCED` or `REPRODUCED_ACROSS_ENV`, 0 `DIVERGED`, 0 `UNVERIFIABLE`, and `envMatch` recorded (14.24). The record keeps the observed status and the pass condition in separate fields, and an observed status is never relabelled. `REPRODUCED_ACROSS_ENV` with an equal hash is not recorded `FAILED`. A different hash, `DIVERGED` or `UNVERIFIABLE` is `FAILED` | 14.24, 12.23, 13.22 | Both |
+| D9-AC-9 | CI dispatch and head SHA | VM-10: `check-run` on the saved run record, with negative controls on a record with another SHA, another branch, `event` `push` and `status` `in_progress` | The run used has `headSha` equal to S, `headBranch` `feature/kiro-next-phase`, `event` `workflow_dispatch`, `status` `completed` and `createdAt` after the dispatch. 4 of 4 controls fail the check. The conclusion is recorded. 0 pull requests opened, 0 merges | 14.20 | CI |
+| D9-AC-10 | Kiro evidence | VM-11 and `report-lint` | Each hook and each of the four tools is `SUCCEEDED` with a cited Kiro capture (id and SHA-256) or `UNVERIFIED`. 0 statements without a capture. H6 and H8 are not cited for S. U-001 to U-005 are unchanged (empty diff) | 14.25, 3.6, 3.7, 3.13 | Owner |
+| D9-AC-11 | Unverified items and blockers | `report-lint` | Browser E2E, `gate_nov22.sh`, the five skipped cases, automatic hook execution and every other unrun item is `SUCCEEDED` with a record of S or `UNVERIFIED` with a reason. Each `FAILED` step, each unremediated Baseline_Exception and each RB row with its level is listed. A `VERIFIED` result for a level with an open blocker is rejected (negative control) | 14.10, 14.11, 14.19, 14.26 | Both |
+| D9-AC-12 | External_Review_Record | VM-19 | A reference with its 7 fields (record id, SHA-256, date, verdict, commit, reviewed-file hashes, type `OWNER_ATTESTED`) exists, every reviewed-file hash equals that file's hash at S, and the report quotes the verdict | 14.27, 13.27 | Owner |
+| D9-AC-13 | Provenance | VM-14 | 7 of 7 fields of D9.5 present. Hashes recomputed from committed blobs equal the recorded ones. The image ID equals the ID read after the last gate, and its revision label equals S | 14.17 | Both |
+| D9-AC-14 | Report completeness and statements | `report-lint` | For each of the 9 tracks every criterion of its requirement is listed with its Outcome_Class and record id, 0 missing. Known limitations are present. Each capability statement in README, `docs/`, UI text and the report cites a `SUCCEEDED` record of S, with 0 violations. Negative control: an uncited statement is reported with its file and line | 14.12, 3.9, 3.10 | Both |
+| D9-AC-15 | Push authorization | Ledger review and `git ls-remote origin` | 0 pushes without a cited authorization. Each push is of `feature/kiro-next-phase`, without force, with the ref value before and after. Remote `master` and both tags equal their recorded values | 14.13 | Owner |
+| D9-AC-16 | Frozen refs and Submission_Artifacts | VM-13 at the start and at the end of the phase | 4 of 4 values equal those of 1.2 (tag object, peeled commit, `master`, `verified-quote-e2e-20261118`). The diff of each Submission_Artifacts file against `84df25c` is empty | 14.14 | Both |
+| D9-AC-17 | Third-party reproduction | `report-lint` on `REPRODUCING_VERIFICATION.md` | Every tool named in a documented command has a version in the provenance block. Every command text of the S records appears in the document. Both host classes are covered | 14.15 | Both |
+| D9-AC-18 | Readiness separation and no provisioning | VM-12 and a wording and command scan | 2 separate result lines and 0 combined. The no-hosted-demonstration statement is present where deployment is described, and 0 public URL is presented as live. 0 release records contain `aws`, `terraform`, `certbot`, `docker push`, `gh release`, `gh pr create`, a `git tag` that creates a tag, or `git merge` other than `git merge-base`. The local demonstration publishes on loopback only | 14.26, 7.14 | Both |
+| D9-AC-19 | Rollback | `report-lint` | 9 of 9 RP rows are in the report, each with a confirmation check | 14.26 | Both |
+| D9-AC-20 | Release evidence hygiene | VM-16 | 0 hits in each class of 3.14 in every file to be published, with the count per class recorded. Private_Original and Sanitized_Copy hashes recorded separately. 0 command fields with an ellipsis or placeholder, and each record cites its Execution_Index id. 0 reconstructed items | 3.8, 3.11, 3.12, 3.13, 3.14, 1.14 | Both |
+| D9-AC-21 | Historical reconciliation re-check | VM-17 | Source directories unchanged (file count, bytes and tree hash equal before and after). 0 repository files with a SHA-256 equal to a Historical_Audit file and 0 tracked `messages.jsonl`. H1 to H8 recomputed, a differing value recorded with both values, and a value that cannot be recomputed `UNVERIFIED` and unused. Disagreements list both statements and the better supported one. Each result carries its host label. 0 audit-based statements without an H citation | 15.1 to 15.10 | Owner |
+| D9-AC-22 | Credits | VM-18 and `report-lint` | Credits for the phase are `NOT_AVAILABLE` unless a Credit_Record exists. 0 estimated or back-filled figures. 0 sums of U-001 to U-005. The Historical_Audit total is in its own section. 0 cost per task, test or requirement without a Credit_Record for that exact unit | 16.1 to 16.5 | Owner |
+
+### D9.10 Open decisions, risks and traceability
+
+| ID | Item | Recommendation |
+|---|---|---|
+| OD-D9-1 | Evidence commits after S. The ledger and the report live in the repository, so they can only be committed after S (14.16, 14.21). | Allow commits that change only `docs/next-phase/**` and the spec `tasks.md`, checked by `git diff --name-only <S> <tip>` (DD9-2). Any other change is a new Release_Candidate. Reconcile the wording of 14.21 in D10. |
+| OD-D9-2 | Legacy corpus status (F9-7, R-D9-1). | DECIDED by the requirement amendment: 12.23, 13.22 and 14.24 accept `REPRODUCED` or `REPRODUCED_ACROSS_ENV` with an equal verdict hash, and `DIVERGED` and `UNVERIFIABLE` stay forbidden. The `envMatch` rule is unchanged and `envMatch` is recorded. Open point: `uv.lock` changes make `REPRODUCED_ACROSS_ENV` the likely status for the legacy corpus (F9-7). |
+| OD-D9-3 | A Windows job in `p0-integration.yml`. | Add `windows-latest` (lock check, sync, ruff, `pytest -rA`, UI typecheck, tests, build) as extra evidence. The fresh-clone run on the owner's Windows host stays the Windows record. |
+| OD-D9-4 | Who performs the owner steps: push authorization, `gh` dispatch, the Linux full-checkout host, Kiro captures and the External_Review_Record. | The owner. The agent prepares the exact command lists and records the outputs that the owner supplies. |
+| OD-D9-5 | Completeness of the Submission_Artifacts list (14.14). | The five files named in the Glossary now. The owner adds any further file before S is selected, and the addition is recorded. |
+| OD-D9-6 | What "runs the demonstration locally" means for Local_Readiness (14.26). | `serve` on a loopback port plus SM-1 and SM-7 (VM-12). `gate-http` alone does not start the service. |
+| OD-D9-7 | The Linux per-test baseline at `84df25c` (F9-2). | One `-rA` run and one `--collect-only` run on a Linux full checkout of `84df25c` (B-D8-1). CI cannot run that commit without a pushed ref (14.13). |
+
+| ID | Risk | Mitigation |
+|---|---|---|
+| R-D9-1 | A legacy Bundle replays as `REPRODUCED_ACROSS_ENV` when `uv.lock` differs (F9-7), which is likely at S. D8 P-g and DR-5 carry the same pass condition. | The row records the observed status and `envMatch` and is never relabelled. The pass condition accepts both statuses (OD-D9-2). |
+| R-D9-2 | Run output inside the clone leaves `gate/` untracked, so the clean-tree check fails (F9-4). | An output-directory variable in `scripts/gate_nov22.sh` (default `gate`), and `$RUNNER_TEMP` in the workflow. |
+| R-D9-3 | Image IDs differ per build, and the CI image differs from the local one (F9-8). | DD9-6. Both IDs are listed. |
+| R-D9-4 | CI preconditions (R-D8-3): the workflow must be on the default branch and have run once, the remote must hold S, the push needs authorization, and the added steps may exceed the 30 and 20 minute limits. | The `UNVERIFIED` fallback of DD9-4. Raise `timeout-minutes` in the file and record the change. |
+| R-D9-5 | No Linux per-test baseline exists, and CI cannot run `84df25c` (OD-D9-7). | Until it exists the Linux no-loss check covers collection only, and node outcomes stay `UNVERIFIED`. |
+| R-D9-6 | The Windows development host and a Windows runner differ (R-D8-4). | Record the Windows build with each record. The fresh-clone run stays the Windows record. |
+| R-D9-7 | Owner-only evidence may be missing at S: Kiro captures, the External_Review_Record, the Linux host (B-D8-1 to B-D8-3) and the Historical_Audit directories. | RB-4, RB-5 and RB-12 stay open, and the report says so. An unavailable Historical_Audit gives `UNVERIFIED` for the re-check and leaves the records of 2026-11-24 unchanged. |
+| R-D9-8 | Any change to a tested file after S voids every record (14.21), so the whole run repeats. | Freeze the code before S is selected. Limit evidence commits (DD9-2). |
+
+**Files for implementation (not changed now).** New: `scripts/gate_e2e.py` and a `gate-e2e` subcommand in `deploy/entrypoint.sh` (which also passes `VK_SIGNING_KEY_FILE` and `VK_TRUST_STORE_FILE` to `as_custodian` only, as D5.5 designs); `scripts/release_verify.py` with its tests under `tests/release/`; `docs/next-phase/RELEASE_REPORT.md`; `docs/next-phase/REPRODUCING_VERIFICATION.md`; `docs/next-phase/baseline/TEST_INVENTORY.windows.txt` and `TEST_INVENTORY.linux.txt`; appended ledger records. Edited: `.github/workflows/p0-integration.yml` (a step per ledger row, `-rA`, steps that record `git rev-parse HEAD`, `git status --porcelain` and the image ID, the `gate-e2e` step, output under `$RUNNER_TEMP`, longer `timeout-minutes`, and a Windows job if OD-D9-3 is accepted); `scripts/gate_nov22.sh` (an output-directory variable, default `gate`). Not changed: `scripts/gate_http.py`, existing tests, `m3b-api-checks.yml`, the Frozen_Release refs, the Submission_Artifacts files and `requirements.md`.
+
+**Traceability.** 14.1: D9.4 (VM-2, VM-3), D9-AC-2. 14.2: VM-5, D9-AC-2. 14.3: DD9-7, VM-6, D9-AC-5. 14.4: VM-6, D9-AC-5. 14.5 to 14.7: VM-7, D9-AC-6. 14.8: DD9-3, D9.5, D9-AC-3. 14.9: D9.5, VM-15, D9-AC-3. 14.10: D9.6 (RB-1, RB-2), D9-AC-11. 14.11: D9.5, D9.6, D9-AC-11. 14.12: D9.5, D9-AC-14. 14.13: DD9-5, D9-AC-15. 14.14: VM-13, D9-AC-16. 14.15: D9.5, D9-AC-17. 14.16: DD9-1, DD9-2, D9-AC-1. 14.17: D9.5, VM-14, D9-AC-13. 14.18: VM-8, D9-AC-7. 14.19: D9.5, D9.6 (RB-12, RB-13), VM-3, VM-11, D9-AC-2, D9-AC-11. 14.20: DD9-4, VM-10, D9-AC-9. 14.21: DD9-2, DD9-7, VM-1, D9-AC-1, D9-AC-2. 14.22: VM-4, D9-AC-4. 14.23: VM-6, VM-7, D9-AC-5, D9-AC-6. 14.24: VM-8, VM-9, D9-AC-7, D9-AC-8. 14.25: DD9-9, VM-11, D9-AC-10. 14.26: D9.6, D9.7, D9.8, D9-AC-11, D9-AC-18, D9-AC-19. 14.27: D9.6 (RB-4), VM-19, D9-AC-12. 15.1 to 15.10: VM-17, D9-AC-21. 16.1 to 16.5: VM-18, D9-AC-22. 1.5: VM-6, D9-AC-5. 1.14: VM-16, D9-AC-20. 2.8: VM-8, D9-AC-7. 3.6 and 3.7: DD9-9, VM-11, D9-AC-10. 3.8: VM-16, D9-AC-20. 3.9 and 3.10: VM-15, D9-AC-14. 3.11 to 3.14: VM-16, D9-AC-20, and for 3.13 also VM-11 and D9-AC-10. 7.14: D9.8, D9-AC-18. 10.12 and 10.14: VM-8, D9-AC-7. 12.23: VM-9, D9-AC-8. 13.9: VM-4, D9-AC-4. 13.27: VM-19, D9-AC-12. Every criterion listed above maps to at least one D9 section and one row. Two readings are recorded and not closed here: the replay status that 12.23, 13.22 and 14.24 require for a legacy Bundle (F9-7, OD-D9-2), and the evidence commit after S under 14.16 and 14.21 (OD-D9-1). Both go to D10 for reconciliation, and `requirements.md` is not edited.
+
 ## Table of contents for D1 to D10
 
-D1 is written and conditionally approved by the maintainer (decisions in D1.16). D2 is written and conditionally approved by the maintainer (decisions in D2.12). D3 is written and conditionally approved by the maintainer (decisions in D3.13). Every other section below is PENDING and has no body in this file.
+D1 is written and conditionally approved by the maintainer (decisions in D1.16). D2 is written and conditionally approved by the maintainer (decisions in D2.12). D3 is written and conditionally approved by the maintainer (decisions in D3.13). D4 is written and conditionally approved by the maintainer (decisions in D4.12). D5 is written and conditionally approved by the maintainer (decisions in D5.12). D6 and D7 are written and await maintainer review (open decisions in D6.10 and D7.10). Every other section below is PENDING and has no body in this file.
 
 | Section | Title | Requirements | Status |
 |---|---|---|---|
 | D1 | P0 UI and landing page | R5, R6 | DESIGNED (conditionally approved; decisions in D1.16) |
 | D2 | P1 secure public deployment | R7 | DESIGNED (conditionally approved; decisions in D2.12) |
 | D3 | P2 hooks and Windows | R8 | DESIGNED (conditionally approved; decisions in D3.13) |
-| D4 | P3 MCP | R9 | PENDING |
-| D5 | P4 signing | R10 | PENDING |
-| D6 | P5 SDK | R11 | PENDING |
-| D7 | P6 regulatory | R12 | PENDING |
+| D4 | P3 MCP | R9 | DESIGNED (conditionally approved; decisions in D4.12) |
+| D5 | P4 signing | R10 | DESIGNED (conditionally approved; decisions in D5.12) |
+| D6 | P5 SDK | R11 | DESIGNED (awaiting maintainer review; open decisions in D6.10) |
+| D7 | P6 regulatory | R12 | DESIGNED (awaiting maintainer review; open decisions in D7.10) |
 | D8 | P7 security and property testing, BE-1 and BE-2 remediation | R13 | PENDING |
 | D9 | P8 release verification | R14, R15, R16 | PENDING |
 | D10 | Traceability, correctness properties, error handling, testing strategy, open decisions | all | PENDING |
