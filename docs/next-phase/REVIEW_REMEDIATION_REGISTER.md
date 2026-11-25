@@ -1,6 +1,6 @@
 # Independent-review remediation register
 
-Written 2026-11-25 with the final design checkpoint (design sections D8 to D10, `requirements.md` amended). The independent review text is not stored in this repository. The 15 summaries below are the maintainer's one-line wording, carried unchanged. Where a summary names no concrete defect, the response states the design's interpretation, and the mapping to a code defect stays UNVERIFIED.
+Written 2026-11-25 with the design checkpoint that added D8 and D9 and amended `requirements.md`. D10 and the seven canonical design sections were not part of that checkpoint. They were written afterwards, in the commit that finalizes the design, and D10.6 of `design.md` holds the short form of this register. The independent review text is not stored in this repository. The 15 summaries below are the maintainer's one-line wording, carried unchanged. Where a summary names no concrete defect, the response states the design's interpretation, and the mapping to a code defect stays UNVERIFIED.
 
 Status words. DECIDED: a maintainer decision is recorded. DESIGNED: written in `design.md`, nothing implemented. AMENDED: `requirements.md` text changed. APPLIED (documentation): a documentation-only change was made in this checkpoint, with no Execution_Record. IMPLEMENTED and VERIFIED: none in this checkpoint. The only SUCCEEDED, FAILED and UNVERIFIED results in the repository are the 26 canonical baseline executions of `EXECUTION_EVIDENCE.md`. Every row below is UNVERIFIED for Requirement 3 until an Execution_Record exists.
 
