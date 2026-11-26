@@ -409,6 +409,37 @@ Task status. The box of task 1.1 PH1-01 in `tasks.md` is ticked in the same comm
 
 Push. The push of the commit that holds this subsection is recorded by the first ledger update after it, because a commit cannot contain its own id (see the note after PUSH-003). No PUSH-005 row is written here.
 
+### Push of the PH1-01 finalization commit (observation, 14.13)
+
+Status: a reading of recorded data plus a publication scan, written 2026-11-26 (UTC date of the system clock). It is the first ledger update after the Finalization of PH1-01 and records the push that the Finalization left open. It adds no Execution_Record, no E-id and no Outcome_Class. It does not change records E-201 to E-222 or any text above it.
+
+This row is an observation of a ref update and not an Execution_Record: it has no command, exit code or Outcome_Class, as for PUSH-001 to PUSH-004. The time is the timestamp of the last line of the local reflog of `refs/remotes/origin/feature/kiro-next-phase`, converted to UTC. That line is an `update by push` entry and carries Unix time 1795677952. The time is when the local tracking ref was updated after the push, and it is not a server timestamp.
+
+| Record | Ref | Before | After | Updated (UTC) | Owner authorization |
+|---|---|---|---|---|---|
+| PUSH-005 | `refs/heads/feature/kiro-next-phase` | `a7ab9ab1b79721998b2961c9c2ae955aa90b3598` | `07cdac4d28ed001080e2299541bdf937eabe8b35` | 2026-11-26 07:25:52 | Owner-executed manual PowerShell push. Stated by the repository owner in the request of 2026-11-26 that asked for this record. The text of the statement is not stored in this repository. |
+
+Reading. The Before value equals the After value of PUSH-004 and the parent of the After commit. The After commit is the commit titled "docs(evidence): finalize PH1-01 start-of-phase preflight (E-201 to E-222)", which holds the Finalization of PH1-01 and the ticked box of task 1.1 PH1-01. At the time of this record the local reflog of the tracking ref holds 5 entries, all `update by push`, and they are the 5 rows PUSH-001 to PUSH-005.
+
+Publication scan (3.14). The file published by the commit that holds this subsection is this ledger. It was scanned for the eight classes of 3.14, for other absolute local paths (drive-letter, UNC and home-style) and for long encoded runs other than hexadecimal hashes, by a scratch script that is not part of the repository (the permanent scan is task PH1-03). The values of the local checkout path, the temporary directory path, the user-profile path, the user names and the host name were read from the environment and from the version-control configuration at run time and are not written in this file. The scanner was first run on a planted sample built in memory: 10 of 10 classes detected, 0 hits on a clean sample. The scan ran on the file text with the draft of this subsection in place, before it was written, and again on the written file. Both runs give the counts below. The result is one count per class and never a matched value.
+
+| Class | Ledger, whole file, after this update | Added lines of this update |
+|---|---|---|
+| User-profile path (RR-2, RR-3 and profile-style paths) | 0 | 0 |
+| Repository-root path (RR-1) | 0 | 0 |
+| Other absolute local path (drive-letter, UNC, home-style) | 0 | 0 |
+| User name (account, version-control and hosting identities) | 0 | 0 |
+| Host name | 0 | 0 |
+| E-mail address | 0 | 0 |
+| Non-loopback network address (IPv4 and IPv6) | 0 | 0 |
+| Secret assignment or token | 0 | 0 |
+| Key block | 0 | 0 |
+| Long encoded run other than a hexadecimal hash | 0 | 0 |
+
+Result: 0 hits in every class and both columns, so the scan does not block the commit.
+
+A push of the commit that holds this subsection is recorded by the first ledger update after it, because a commit cannot contain its own id (see the note after PUSH-003).
+
 ## Capability register
 
 | Capability | Status |
