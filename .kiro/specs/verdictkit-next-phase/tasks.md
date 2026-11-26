@@ -4,7 +4,7 @@
 
 This plan turns `.kiro/specs/verdictkit-next-phase/design.md` into coding and test tasks for `.kiro/specs/verdictkit-next-phase/requirements.md`. It has seven phases. Phases 1 to 6 each end in a checkpoint, and Phase 7 ends in the final release report (PH7-18). All work happens on the Phase_Branch `feature/kiro-next-phase`, from the baseline commit `84df25c68198e496889b5892a03555ec7d2d860a`.
 
-Status: Task PH1-01 (start-of-phase preflight, read-only) is complete. Its box is ticked and its records E-201 to E-222 are in `docs/next-phase/EXECUTION_EVIDENCE.md`. No other task has started, so every other box is unchecked and nothing else is implemented or verified. This revision applies the independent task-plan review (31 findings, TPR-C-1 to TPR-L-5, design D10.11). It changes documentation only. It is DESIGNED and UNVERIFIED, and it is not accepted until the owner records OA-00 (4.10). Completing this revision is not that acceptance.
+Status: Task PH1-01 (start-of-phase preflight, read-only) is complete. Its box is ticked and its records E-201 to E-222 are in `docs/next-phase/EXECUTION_EVIDENCE.md`. No other task has started, so every other box is unchecked and nothing else is implemented or verified. This revision applies the independent task-plan review (31 findings, TPR-C-1 to TPR-L-5, design D10.11). It changes documentation only. It is DESIGNED and UNVERIFIED. The owner recorded OA-00 as `ACCEPTED_WITH_CONDITIONS` on 2026-11-26 and froze the scope of the enhanced release (section "Scope freeze" below, design D10.12, `docs/next-phase/OWNER_DECISIONS.md`). That acceptance makes nothing implemented or verified.
 
 Execution-evidence rule. A box is ticked only when the Execution_Record for that task shows every linked criterion SUCCEEDED (4.9). A box is never ticked without evidence. A criterion that several tasks verify in parts is judged for each task by that task's acceptance tests. The track record at the phase checkpoint (4.4) judges the whole criterion. A row that has a Windows leg and a Linux leg is two rows (D10.11 TR-1). The Windows leg and every row that the agent runs on the Windows host or on a reachable Linux_Docker_Host are autonomous completion rows, and only they decide a task's box and every later dependency. A Linux full-checkout leg is a deferred row (DLV-1 to DLV-4 in the Notes). It stays UNVERIFIED until a `SUCCEEDED` record that names a Linux source exists, it blocks no box of Phases 1 to 6, it is a mandatory release gate that PH7-17 runs again on S, and a deferred row that fails unticks its task in the same change as the `FAILED` record. A Windows result never sets a deferred row. A row that needs an owner action stays UNVERIFIED until the owner's record exists. It blocks a box only where the task names the OA id in Depends on. An owner item is `OPEN`, `PROVIDED` or `NOT_PROVIDED` (D10.11 TR-8). A GATE item (OA-00, OA-07a, OA-08 for the tasks that name it, and OA-09) must be `PROVIDED` before a task that names it starts. An EVIDENCE item may be `NOT_PROVIDED`, which keeps its rows `UNVERIFIED` and its blockers open. The agent never writes an owner record and never approves its own hashes.
 
@@ -43,9 +43,19 @@ Task-plan review rules (design D10.11) and the tasks that carry them. These are 
 
 Evidence-commit gate EG-1 (TPR-H-10). From the first commit after the PH1-03 record, every commit that publishes evidence or a document passes the PH1-03 scan on all files to be published (3.14), and every task except PH1-01 (already complete), PH1-02 and PH1-03 depends on PH1-03, directly or through another task. The evidence commits of PH1-02 and PH1-03 are covered by a disclosed scratch scan, as the PH1-01 finalization was. PH1-01 stays completed bootstrap evidence with its documented scan, and no later task rewrites it.
 
+## Scope freeze
+
+The owner recorded OA-00 as `ACCEPTED_WITH_CONDITIONS` on 2026-11-26 for the checkpoint `fff6db49fb6f7f51080ca4fdb5e0ee7c1d37a581` and froze the scope of the enhanced release. The record is `docs/next-phase/OWNER_DECISIONS.md` and the design reading is D10.12. Specification planning is frozen. Implementation begins at PH1-02 in a Spec execution session.
+
+- Queued: Phase 1 security remediation, Phase 2 MCP hardening, Phase 3 signed Bundles and signer trust, Phase 4 Kiro hooks and evidence tooling, Phase 5 Judge UI and local deployment hardening, the legacy replay checkpoint PH6-12 and Phase 7 release verification. That is 92 tasks, all mandatory: 1 complete (PH1-01) and 91 remaining. Ten owner items stay in the graph for traceability (OA-00 to OA-06 and OA-08 to OA-10).
+- Deferred, not queued, not implemented and not verified: 15 tasks (PH1-07 and PH6-01 to PH6-11, including PH6-08a, PH6-09a and PH6-10a), 5 owner items (OA-07a to OA-07e) and 9 conditional public deployment items (CD-01 to CD-09). The Claim_Plugin_SDK, the Conformance_Suite, scaffolding, the loader rules, the fail-closed public loader, Texas completion, snapshot loader v2 and the California, Florida and New York adapters are deferred. The existing Texas adapter and historical replay stay intact and are guarded by D7-AC-1, D8-AC-15 and P-g in PH6-12.
+- Marking: a deferred task keeps its id and its text, has no checkbox so that no task runner queues it, and carries a `Status: DEFERRED` line. No queued task or owner item names a deferred item in a `Depends on` line. A mention of a deferred item in the text of a queued task is a forward reference and creates no dependency. A criterion that only a deferred task could verify is listed `UNVERIFIED` with the reason `deferred scope`, never `SUCCEEDED`.
+- Kept as release gates: the Linux full-checkout rows DLV-1 to DLV-4 stay mandatory. OA-02 is `NOT_PROVIDED`, so PH7-09a is the route. The reading of criterion 4.9 that the owner accepted is the one in the Overview: autonomous rows decide an autonomous task's box, and a deferred Linux row stays `UNVERIFIED` and is never reported as passed.
+- Known limitation KL-1 (baseline entry-point loading in the public profile). The baseline loader (`core/src/verdictkit/cli.py`, `_load_registry`) imports every entry point of the group `verdictkit.claim_types` and every module named in `VK_CLAIM_TYPES`, in every Security_Profile, in the custodian and in the examiner. It has no allowlist and no provenance check, and an exception raised while loading the group is swallowed without a message. The fail-closed public loader (PH6-04, criteria 11.16 to 11.18) and its tests (PD-1 to PD-12, FC-10 and FC-12) are deferred, so secure public operation with respect to plugin loading is `UNVERIFIED`. The release report lists KL-1 under the known limitations (PH7-12). Public deployment is not authorized. While CD-01 to CD-09 are deferred, RB-16 and RB-17 stay open (no hosting decision, monitoring, rehearsed rollback or go decision is recorded), so Public_Deployment_Readiness stays `NOT_VERIFIED`. A later authorization of public deployment must first assess KL-1: if the retained loading behavior prevents secure public operation, public deployment stays blocked.
+
 ## Task Dependency Graph
 
-Waves follow the Depends on lines. A task sits in a later wave than every task and OA item it depends on, and the graph has no cycle. Tasks in one wave do not depend on each other and no two of them name the same source file in their Objective; where the Depends on lines leave two tasks unordered and both name one file, the later wave is used (see Notes, same-file placement). An OA id carries its own Depends on line (the tasks that give the owner the material) and sits in a later wave than each of them and in an earlier wave than the first task that names it in Depends on. Where a task names an OA id, the task starts only after that item is `PROVIDED`, or after the owner has recorded an EVIDENCE item as `NOT_PROVIDED`. CD ids and OA-10 sit in the last wave because nothing in this plan authorizes them. OA and CD ids are listed for traceability only, and none of them is queued.
+Waves follow the Depends on lines. A task sits in a later wave than every task and OA item it depends on, and the graph has no cycle. Tasks in one wave do not depend on each other and no two of them name the same source file in their Objective; where the Depends on lines leave two tasks unordered and both name one file, the later wave is used (see Notes, same-file placement). An OA id carries its own Depends on line (the tasks that give the owner the material) and sits in a later wave than each of them and in an earlier wave than the first task that names it in Depends on. Where a task names an OA id, the task starts only after that item is `PROVIDED`, or after the owner has recorded an EVIDENCE item as `NOT_PROVIDED`. OA-10 sits in the last wave because nothing in this plan authorizes it. The deferred items (PH1-07, PH6-01 to PH6-11 with PH6-08a, PH6-09a and PH6-10a, OA-07a to OA-07e and CD-01 to CD-09) are not in the graph. The graph holds 92 tasks and 10 owner items in 52 waves. OA ids are listed for traceability only, and none of them is queued.
 
 ```json
 {
@@ -55,7 +65,7 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     { "id": 2, "tasks": ["PH1-03"] },
     { "id": 3, "tasks": ["PH1-02a", "PH1-04", "PH1-04a", "PH1-08"] },
     { "id": 4, "tasks": ["PH1-03a", "PH1-05", "PH1-09", "PH1-11"] },
-    { "id": 5, "tasks": ["PH1-06", "PH1-07", "PH1-12"] },
+    { "id": 5, "tasks": ["PH1-06", "PH1-12"] },
     { "id": 6, "tasks": ["PH1-10", "PH1-12a"] },
     { "id": 7, "tasks": ["PH1-13"] },
     { "id": 8, "tasks": ["PH1-14", "PH1-17"] },
@@ -80,31 +90,28 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     { "id": 27, "tasks": ["PH3-07", "PH5-03"] },
     { "id": 28, "tasks": ["PH3-09", "PH3-11", "PH3-13", "PH5-04"] },
     { "id": 29, "tasks": ["PH3-10", "PH3-12"] },
-    { "id": 30, "tasks": ["PH3-14", "PH5-05", "PH5-08", "PH6-01", "PH6-06"] },
-    { "id": 31, "tasks": ["PH5-06", "PH5-09", "PH6-02", "PH6-07", "OA-07a"] },
-    { "id": 32, "tasks": ["PH5-07", "PH5-10", "PH6-03", "PH6-05"] },
-    { "id": 33, "tasks": ["PH5-11", "PH6-04", "PH6-08", "OA-07b"] },
-    { "id": 34, "tasks": ["PH5-12", "OA-07c"] },
-    { "id": 35, "tasks": ["PH5-13", "PH6-08a"] },
-    { "id": 36, "tasks": ["PH5-14", "PH6-09", "PH6-11"] },
-    { "id": 37, "tasks": ["PH5-15", "PH5-16", "OA-07d"] },
-    { "id": 38, "tasks": ["PH5-17", "PH6-09a"] },
-    { "id": 39, "tasks": ["PH6-10"] },
-    { "id": 40, "tasks": ["OA-07e"] },
-    { "id": 41, "tasks": ["PH6-10a"] },
-    { "id": 42, "tasks": ["PH6-12"] },
-    { "id": 43, "tasks": ["PH7-01", "PH7-06"] },
-    { "id": 44, "tasks": ["PH7-02", "PH7-08"] },
-    { "id": 45, "tasks": ["PH7-03", "PH7-04", "PH7-07", "PH7-09", "PH7-10"] },
-    { "id": 46, "tasks": ["PH7-05", "PH7-09a", "PH7-11", "PH7-16", "OA-02"] },
-    { "id": 47, "tasks": ["PH7-12"] },
-    { "id": 48, "tasks": ["PH7-13", "PH7-14", "PH7-15"] },
-    { "id": 49, "tasks": ["OA-09"] },
-    { "id": 50, "tasks": ["OA-01"] },
-    { "id": 51, "tasks": ["PH7-17"] },
-    { "id": 52, "tasks": ["OA-03"] },
-    { "id": 53, "tasks": ["PH7-18"] },
-    { "id": 54, "tasks": ["OA-10", "CD-01", "CD-02", "CD-03", "CD-04", "CD-05", "CD-06", "CD-07", "CD-08", "CD-09"] }
+    { "id": 30, "tasks": ["PH3-14", "PH5-05", "PH5-08"] },
+    { "id": 31, "tasks": ["PH5-06", "PH5-09"] },
+    { "id": 32, "tasks": ["PH5-07", "PH5-10"] },
+    { "id": 33, "tasks": ["PH5-11"] },
+    { "id": 34, "tasks": ["PH5-12"] },
+    { "id": 35, "tasks": ["PH5-13"] },
+    { "id": 36, "tasks": ["PH5-14"] },
+    { "id": 37, "tasks": ["PH5-15", "PH5-16"] },
+    { "id": 38, "tasks": ["PH5-17"] },
+    { "id": 39, "tasks": ["PH6-12"] },
+    { "id": 40, "tasks": ["PH7-01", "PH7-06"] },
+    { "id": 41, "tasks": ["PH7-02", "PH7-08"] },
+    { "id": 42, "tasks": ["PH7-03", "PH7-04", "PH7-07", "PH7-09", "PH7-10"] },
+    { "id": 43, "tasks": ["PH7-05", "PH7-09a", "PH7-11", "PH7-16", "OA-02"] },
+    { "id": 44, "tasks": ["PH7-12"] },
+    { "id": 45, "tasks": ["PH7-13", "PH7-14", "PH7-15"] },
+    { "id": 46, "tasks": ["OA-09"] },
+    { "id": 47, "tasks": ["OA-01"] },
+    { "id": 48, "tasks": ["PH7-17"] },
+    { "id": 49, "tasks": ["OA-03"] },
+    { "id": 50, "tasks": ["PH7-18"] },
+    { "id": 51, "tasks": ["OA-10"] }
   ]
 }
 ```
@@ -204,7 +211,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Findings: L-3
     - _Requirements: 13.25, 13.11_
 
-  - [ ]* 1.7 PH1-07 Timeboxed S-AUTHZ spike (AuthzAccessCheck)
+  - 1.7 PH1-07 Timeboxed S-AUTHZ spike (AuthzAccessCheck) [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Optional spike (DD8-7, OD-D8-5): evaluate `AuthzAccessCheck` against a synthetic client context in a helper of at most 120 lines under `tests/contract/` or `tests/windows/`, with no new dependency. Adopt it only on exact agreement with O1 on six constructed access lists, including an Everyone entry and an inherited entry. Otherwise record `NOT_ADOPTED` with the reason.
     - Acceptance tests: Agreement with O1 on 6 of 6 constructed lists, helper at most 120 lines, 0 added dependencies, or a recorded `NOT_ADOPTED` with the reason. Its absence does not block BE-1 closure (13.25).
     - Environment: Windows.
@@ -295,7 +303,7 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - _Requirements: 2.14, 13.17, 2.13_
 
   - [ ] 1.15 PH1-15 One Security_Profile resolver and fail-closed start-up
-    - Objective: Add one Security_Profile resolver used by the custodian and the examiner (AM-D6-4, one function, no second mechanism). `deploy/entrypoint.sh` passes the profile to the examiner. At start-up the custodian compares the examiner-reported profile and claim-type digest (SHA-256 over sorted `type_id` and `schema_version`) with its own. An unknown value, `VK_JUDGE_MODE=1` with `VK_PROFILE=local`, or any mismatch refuses start with a `VK_STARTUP_ERROR` code. `serve` prints `VK_STARTUP_OK isolation=ENFORCED` exactly once, before the first request. Add the vault-key missing or malformed refusal and the FC-1 to FC-9 and FC-11 tests (FC-10 and FC-12 are in PH6-04) and property P-l.
+    - Objective: Add one Security_Profile resolver used by the custodian and the examiner (AM-D6-4, one function, no second mechanism). `deploy/entrypoint.sh` passes the profile to the examiner. At start-up the custodian compares the examiner-reported profile and claim-type digest (SHA-256 over sorted `type_id` and `schema_version`) with its own. An unknown value, `VK_JUDGE_MODE=1` with `VK_PROFILE=local`, or any mismatch refuses start with a `VK_STARTUP_ERROR` code. `serve` prints `VK_STARTUP_OK isolation=ENFORCED` exactly once, before the first request. Add the vault-key missing or malformed refusal and the FC-1 to FC-9 and FC-11 tests (FC-10 and FC-12 are in PH6-04, which is deferred) and property P-l.
     - Acceptance tests: D8-AC-17 for FC-1 to FC-9 and FC-11: non-zero exit, a `VK_STARTUP_ERROR` line with a code, no `VK_STARTUP_OK`, no open listener, no file written. D8-AC-19 and D2-AC-1, D2-AC-2: `VK_STARTUP_OK` count is 1 on the positive start. P-l: resolution is total and no other variable turns `public` into `local` (200 of 200 examples).
     - Environment: Linux_Docker_Host.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for the container run of the FC tests (`-rA`, `--network none`), the P-l run (HYPOTHESIS_PROFILE=ci) and the positive start capture. D8-AC-17 (FC-1 to FC-9, FC-11), D8-AC-19, D2-AC-1 and D2-AC-2 SUCCEEDED.
@@ -326,7 +334,7 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
 
   - [ ] 1.18 PH1-18 Phase 1 checkpoint
     - Objective: Run the targeted regression on Windows and on the Linux_Docker_Host that the agent reaches (the image, the extended `gate-isolation` and the container gates), `ruff check .`, the ledger lint, the publication scan, the frozen-ref and Submission_Artifacts check, write the track Execution_Record for Phase 1 (4.4) with one status per criterion, the rollback fields (4.5) and one attribution row for each Kiro feature (specs, steering, task execution, sub-agents, MCP tools, hooks) with `observed running inside Kiro` or `not observed running inside Kiro` (4.7), list the deferred rows DLV-1 and DLV-2 as UNVERIFIED with their routes (TPR-C-1), update the Phase 1 checkboxes in the same change (4.9), and name the verified checkpoint commit.
-    - Acceptance tests: D8-AC-30 and D8-AC-29: each host's result recorded separately, 0 unexplained divergence, 0 changed lines in existing tests except the approved hunks (BE-1 Windows branch, the BE-2 port hunk). 13.12, 13.13 and 13.26 are `UNVERIFIED` in the track record (one leg only) and DLV-1 and DLV-2 are listed `UNVERIFIED` (D10-AC-28). No owner EVIDENCE item (OA-01 to OA-07e) and no DLV record is among the dependencies of this task, directly or through another task, so no deferred Linux row and no owner evidence blocks it. The only owner items behind it are the GATE decisions OA-00 (the plan) and OA-08 (for PH1-11, PH1-16 and PH1-17), which the owner records before the tasks that name them start. The counts of `gate-isolation-counts.json` are recorded (D10-AC-13). `ruff check .` has 0 violations. The ledger lint and the scan exit 0. D9-AC-16: 4 of 4 ref values and 0 Submission_Artifacts differences.
+    - Acceptance tests: D8-AC-30 and D8-AC-29: each host's result recorded separately, 0 unexplained divergence, 0 changed lines in existing tests except the approved hunks (BE-1 Windows branch, the BE-2 port hunk). 13.12, 13.13 and 13.26 are `UNVERIFIED` in the track record (one leg only) and DLV-1 and DLV-2 are listed `UNVERIFIED` (D10-AC-28). No owner EVIDENCE item (OA-01 to OA-06) and no DLV record is among the dependencies of this task, directly or through another task, so no deferred Linux row and no owner evidence blocks it. The only owner items behind it are the GATE decisions OA-00 (the plan) and OA-08 (for PH1-11, PH1-16 and PH1-17), which the owner records before the tasks that name them start. The counts of `gate-isolation-counts.json` are recorded (D10-AC-13). `ruff check .` has 0 violations. The ledger lint and the scan exit 0. D9-AC-16: 4 of 4 ref values and 0 Submission_Artifacts differences.
     - Environment: Both.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for the regression set on each host (`-rA`), `uv run --no-sync ruff check .`, the lint, the scan and the frozen-ref commands. The track record lists each criterion of Phase 1 as SUCCEEDED, FAILED or UNVERIFIED. The checkpoint commit is a verified checkpoint only when its regression set has a SUCCEEDED record.
     - Rollback: RP-1 `git revert` of the phase's commit range back to the previous verified checkpoint. If the rollback does not complete, the RP row is FAILED, the track is incomplete and RB-18 stays open until the branch is recovered to a verified checkpoint by a new commit that restores its tree and a rerun of the regression set (OD-D10-3, 4.6).
@@ -538,7 +546,7 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - _Requirements: 10.20, 9.8, 10.33_
 
   - [ ] 3.12 PH3-12 Contract 2.0.0 in one lockstep change
-    - Objective: Change every statement of the contract version in one commit (AM-D5-12): a dependency-free `CONTRACT_VERSION` module read by `api/server.py`, `api/presenter.py` and `mcp_server.py`; `info.version` and `ContractVersion` in `api/openapi.yaml`; the constant in `ui-kit/src/api.ts`; `contractVersion` in `api/examples/*.json`; the MCP replay result; the tests that pin `1.1.0`. Describe the D5.8 rows in the schema (authenticity fields, health `commitSha` and the 503 `unavailable` body, the owner cookie, 429 `RATE_LIMITED`). Add a migration section to `docs/API_CONTRACT.md` with a before example, an after example and a client checklist for each BREAKING row, with COMPATIBLE and BREAKING labels (AM-D5-10). Change `ui/judge/app.js` (`CONTRACT`) and the visible label in `ui/judge/index.html` only.
+    - Objective: Change every statement of the contract version in one commit (AM-D5-12): a dependency-free `CONTRACT_VERSION` module read by `api/server.py`, `api/presenter.py` and `mcp_server.py`; `info.version` and `ContractVersion` in `api/openapi.yaml`; the constant in `ui-kit/src/api.ts`; `contractVersion` in `api/examples/*.json`; the MCP replay result; the tests that pin `1.1.0`. Describe the D5.8 rows in the schema (authenticity fields, health `commitSha` and the 503 `unavailable` body, the owner cookie, 429 `RATE_LIMITED`). Classify the Examination_Semantics id that PH3-02 adds as COMPATIBLE or BREAKING in the same event (D5.12 form). The classification moved here from the deferred PH6-11, and the `as_of` key and the snapshot retrieval date are deferred with PH6-07 and PH6-11. Add a migration section to `docs/API_CONTRACT.md` with a before example, an after example and a client checklist for each BREAKING row, with COMPATIBLE and BREAKING labels (AM-D5-10). Change `ui/judge/app.js` (`CONTRACT`) and the visible label in `ui/judge/index.html` only.
     - Acceptance tests: D5-AC-11: examples and responses validate against `api/openapi.yaml` and every version constant is equal, with the old `VERIFIED` mutation row still failing. D5-AC-12: 0 schema errors including the 503 and 429 bodies. D5-AC-18: 0 unlabelled changes. D5-AC-19: only the constant and the label differ in `ui/judge`, `tests/ui/test_judge_preview.py` passes, 0 changed submission lines, 0 changed refs. D10-AC-7: a tolerant 1.1.0 client works, a strict 1.1.0 validator fails on exactly the BREAKING rows, each refusal names both versions, 1.1.0 Bundles verify and replay.
     - Environment: Both.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for `uv run --no-sync pytest -q -p no:cacheprovider -rA tests/contract tests/api tests/ui` on each host, `npm test` for `ui-kit`, `git diff 84df25c -- ui/judge` and the frozen-ref commands. D5-AC-11, D5-AC-12, D5-AC-18, D5-AC-19 and D10-AC-7 SUCCEEDED.
@@ -823,11 +831,12 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Depends on: PH5-01, PH5-02, PH5-03, PH5-04, PH5-05, PH5-06, PH5-07, PH5-08, PH5-09, PH5-10, PH5-11, PH5-12, PH5-13, PH5-14, PH5-15, PH5-16
     - _Requirements: 13.15, 4.4, 4.5, 4.7, 4.9_
 
-- [ ] 6. Phase 6: Plugin SDK and regulatory expansion
-  - Goal: Ship the Claim_Plugin_SDK with a Conformance_Suite, a scaffolding command and a fail-closed public loader, then complete Texas coverage and add California, Florida and New York in that order, only from reviewed official sources, without changing any historical replay result.
-  - _Requirements: 2.9, 2.12, 4.4, 4.9, 7.19, 10.34, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7, 11.8, 11.9, 11.10, 11.11, 11.12, 11.13, 11.14, 11.15, 11.16, 11.17, 11.18, 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 12.11, 12.12, 12.13, 12.14, 12.15, 12.16, 12.17, 12.18, 12.19, 12.20, 12.21, 12.22, 12.23, 12.24, 13.5, 13.15, 13.20, 13.24_
+- [ ] 6. Phase 6: Legacy replay checkpoint (Plugin SDK and regulatory expansion DEFERRED)
+  - Goal: Replay the legacy corpus on the retained code and close the phase at a checkpoint (PH6-12). The Claim_Plugin_SDK, the Conformance_Suite, the scaffolding command, the loader rules, the fail-closed public loader, Texas completion and the California, Florida and New York adapters are DEFERRED by the owner scope freeze: they are not queued, not implemented and not verified. The existing Texas adapter and historical replay stay intact (12.13, 12.23).
+  - _Requirements: 4.4, 4.9, 12.13, 12.23, 13.15_
 
-  - [ ] 6.1 PH6-01 Claim_Plugin_SDK surface and Conformance_Suite
+  - 6.1 PH6-01 Claim_Plugin_SDK surface and Conformance_Suite [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Add `core/src/verdictkit/sdk/` (`__init__.py`, `__main__.py`, `validate.py`, `conformance.py`) and `docs/SDK.md`. Document the `ClaimType` protocol, its optional hooks, the entry-point group `verdictkit.claim_types`, `VK_CLAIM_TYPES`, the trust model, the public rule and the exit codes. `run_suite` runs checks CS-01 to CS-10 (blinding, disjoint fields, determinism across `PYTHONHASHSEED` values, no float, `CLAIMANT` forbidden, golden replay `REPRODUCED`), continues after a failure, names the failed check and the offending field and never a claim value, and `python -m verdictkit.sdk check` exits 0, 1, 2 or 3 as D6.7 states. The protocol and existing contracts are not changed. The Examiner process never imports `sdk.conformance` or `sdk.scaffold`. Add `tests/contract/test_sdk_fence.py`.
     - Acceptance tests: D6-AC-1: 10 of 10 checks pass for each of `quote.finance.v1`, `quote.lease.v1`, `reel.mechanical.v1` and `example.receipt.v1`. A `NO_VALID_OUTCOME_VARIANT` result is resolved by a recorded maintainer decision and never by weakening a check. D6-AC-10: each of 5 mutants fails its check, the suite continues and exits 1. D6-AC-11: 0 parameters or returns carry outcomes, the vault, a key or a socket, and the two modules are absent from `sys.modules` after importing `verdictkit.examiner.worker`. D6-AC-12: 0 changed lines in `plugin.py`, `test_blinding.py` and `test_llm_fence.py`. D6-AC-13: 0 violations in `sdk/` and scaffold output and equal banned-name sets. D6-AC-14: the 4 `list_claim_types` entries are unchanged and `docs/SDK.md` holds the group, `VK_CLAIM_TYPES`, protocol, trust model, public rule and exit codes. `test_llm_fence.py` passes with 0 failures (2.12).
     - Environment: Both.
@@ -836,7 +845,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Depends on: PH2-02, PH3-10
     - _Requirements: 11.1, 11.7, 11.8, 11.9, 11.10, 11.11, 11.13, 11.14, 11.15, 2.9, 2.12_
 
-  - [ ] 6.2 PH6-02 Scaffolding command
+  - 6.2 PH6-02 Scaffolding command [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Add `core/src/verdictkit/sdk/scaffold.py` and `templates.py` and the `new` subcommand (`python -m verdictkit.sdk new` with a `type_id`, `--dest` and an optional `--package`). With a valid identifier and a destination that does not exist or is empty it writes the 5 files of D6.6 and exits 0. A non-empty destination exits 3 and changes nothing. An invalid identifier exits 2 and creates nothing. A forbidden destination or an injected failure exits 4 or 5 and leaves the repository tree unchanged. It writes only inside the destination through the shared secure-filesystem module of PH1-04a (the module that PH2-02 applies to MCP), with no containment code of its own and edits nothing under `core/src/verdictkit/`. Generated `examine` and `findings` hold no float, no LLM client import and no wall-clock read, and output is deterministic (LF, no timestamp, path or random value). Add property P-e.
     - Acceptance tests: D6-AC-2: a fresh scaffold of `example.line_total.v1` passes 10 of 10 checks with no edit, exits 0, and the 5 files exist. D6-AC-4: uppercase, dash, keyword, stdlib name, device name, 41 characters, control characters, path separators and reserved namespace each exit 2 with 0 files and a message of at most 80 echoed characters. D6-AC-5: 0 differing bytes across the four trees (two runs on each host). D6-AC-6: exit 3 and the existing file byte-identical. D6-AC-7: exit 4 or 5 with the repository tree unchanged. P-e: 200 of 200 examples (CP-37).
     - Environment: Both.
@@ -845,7 +855,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Depends on: PH6-01
     - _Requirements: 11.2, 11.3, 11.4, 11.5, 11.6, 11.12, 13.5_
 
-  - [ ] 6.3 PH6-03 Loader rules
+  - 6.3 PH6-03 Loader rules [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Add `core/src/verdictkit/sdk/loader.py` (`discover(policy)` returns the loaded types and issues `(code, entry_point, distribution)`) and make `cli.py` `_load_registry` delegate to it. A duplicate `type_id` rejects every colliding registration in every mode, so the result never depends on load order (AM-D6-2). Local mode reports the collision and leaves the types unregistered. Public mode refuses start with a `VK_STARTUP_ERROR` code (wired in PH6-04). A reserved `type_id` namespace (`quote`, `reel`, `verdictkit`, `vk`) from another distribution is rejected. A failing entry point between two good ones does not stop the good ones in local mode. Messages carry a code, the entry-point name and the distribution name and never exception text, a path or a claim value. Add property P-m.
     - Acceptance tests: D6-AC-3: with fake distributions, both duplicates and the reserved id are rejected, both good plugins load and each issue is one line. P-m: for all orderings of the same entry points the loader registers the same types and rejects the same duplicates (200 of 200 examples, CP-35). PD-1, PD-9 and PD-11 are asserted again in PH6-04.
     - Environment: Both.
@@ -854,7 +865,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Depends on: PH6-01
     - _Requirements: 11.17, 13.20_
 
-  - [ ] 6.4 PH6-04 Public plugin loading fails closed
+  - 6.4 PH6-04 Public plugin loading fails closed [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: In the `public` Security_Profile import a plugin only when an allowlist entry names it, and bind that entry to its Plugin_Provenance: distribution name, exact version, entry-point name, entry-point value and `provenance_sha256` (AM-D6-3). The image build writes a root-owned, read-only provenance manifest (installed files with SHA-256, `RECORD` checked against disk, `__pycache__` excluded, kind `workspace-tree`) in the `Dockerfile`, and its hash goes into an image label. The loader verifies the files before any import and checks afterwards that the module file belongs to the verified set and that no other module claims the plugin's top-level name, else it refuses with `PLUGIN_PROVENANCE_MISMATCH`. An unlisted entry point is never imported and is only counted (`PLUGIN_NOT_ALLOWLISTED`). `VK_CLAIM_TYPES` in the public profile, a failing allowlisted plugin, an unreadable manifest or a duplicate `type_id` refuse start with `VK_STARTUP_ERROR`, a non-zero exit and no listener. Add PD-1 to PD-12 and the start-up cases FC-10 and FC-12.
     - Acceptance tests: D8-AC-12: PD-1 to PD-12 each end in the result 11.16 to 11.18 require (CP-36). D8-AC-17 for FC-10 and FC-12: non-zero exit, a `VK_STARTUP_ERROR` line with a code, no `VK_STARTUP_OK`, no open listener, no written file. D6-AC-8: a fake distribution whose module writes a canary file on import leaves 0 canary files and `PLUGIN_NOT_ALLOWLISTED` in public mode, and 1 canary file in local mode. D6-AC-9: `VK_JUDGE_MODE=1` with `VK_CLAIM_TYPES` set, and one allowlisted type made to fail, each give a non-zero exit and a `VK_STARTUP_ERROR` line with no key value in the output.
     - Environment: Linux_Docker_Host.
@@ -863,7 +875,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Depends on: PH6-03, PH1-15
     - _Requirements: 11.16, 11.18, 7.19, 13.20, 13.24_
 
-  - [ ] 6.5 PH6-05 Texas completion
+  - 6.5 PH6-05 Texas completion [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Retrieve the text of 7 TAC section 84.205 from the Texas Secretary of State by a read-only HTTPS GET to a host on the reviewed official-domain list, with no authentication, payment, new account or cloud provisioning, or record it `UNVERIFIED` with the reason (the registry of PH6-06 must exist and OA-07a must have reviewed the host entry, otherwise retrieve nothing). Record each retrieval (tool and version, HTTP status, byte count, SHA-256). Keep the $225 documentary-fee treatment and every Texas finding unchanged. The retrieved text is `UNREVIEWED` material: it is stored and hashed, and it changes no rule value, finding or UI text until OA-07b records its independent review (TPR-H-6). A change that the reviewed text supports is a separate step after that record. A text that contradicts the amount makes the sidecar entry `AMBIGUOUS`, stops Phase 6 and goes to the maintainer. Write the sidecar `rules/v2/US-TX.legacy-evidence.json` for the four sources of `TX.json` (URI, `sha256_of_source`, media type, excerpt, class, stated effective date or `UNVERIFIED`). The verdict path never reads the sidecar.
     - Acceptance tests: D7-AC-15: the 4 URIs and hashes match `TX.json` or are flagged, 84.205 is retrieved or `UNVERIFIED`, and no Texas finding changes. D7-AC-17: every `VERIFIED` value matches its excerpt, and a scan of documents and UI text (`wording-scan` rule WS-5 of PH1-03a) finds 0 support statements without a `SUCCEEDED` record.
     - Environment: Windows. Official HTTPS GET only.
@@ -873,7 +886,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Findings: TPR-H-6
     - _Requirements: 12.11, 12.17, 12.15, 12.22_
 
-  - [ ] 6.6 PH6-06 Snapshot loader v2 and storage
+  - 6.6 PH6-06 Snapshot loader v2 and storage [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Add `apps/quote-autopsy/src/quote_autopsy/rules_v2.py` and `sources_v2.py`, `scripts/rules_snapshot.py`, `rules/v2/` (including `official_hosts.json`) and the `.gitattributes` entry that keeps stored bytes unchanged. This task establishes the official-host registry before any retrieval: every entry names its `basis` and starts `UNREVIEWED`, OA-07a records its review, and no retrieval (PH6-05, PH6-08, PH6-09, PH6-10) happens from a host whose entry has no such record (TPR-H-6). Accept a source only from an exact official host of the registry (else `HOST_NOT_OFFICIAL`), record URI, retrieval date, SHA-256, media type and an excerpt of 1 to 2,000 characters, check excerpt containment, reject a script shell or error page and identical content under two URIs, recompute every hash on load, record effective dates, and store the bytes and headers where the terms permit (else only the hash, the excerpt and `rights: NOT_ESTABLISHED` with the dependent rules `UNVERIFIED`). Verification runs offline. The update script is deterministic. No Texas file is edited. Fixtures use the fictional jurisdiction `US-ZZ` and are labelled constructed.
     - Acceptance tests: D7-AC-1: 0 changed lines in `TX.json`, `rules/MANIFEST.json`, `rules.py` and `sources.py`, and an equal Verdict_Hash for a Texas claim. D7-AC-3, D7-AC-4, D7-AC-5 (7 of 7 host cases give `HOST_NOT_OFFICIAL`), D7-AC-6, D7-AC-7 (a flipped byte in any stored file gives `evidence_integrity` or no use, 0 `SUPPORTED`, 0 `REFUTED`), D7-AC-8 (0 differing bytes, manifest unchanged), D7-AC-9, D7-AC-13 (equal findings and 0 outbound connections) and D7-AC-14 (`STALE` listed, verdict bytes unchanged).
     - Environment: Windows.
@@ -883,7 +897,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Findings: TPR-H-6
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.13, 12.14, 12.15, 12.16, 12.19, 12.24_
 
-  - [ ] 6.7 PH6-07 Rule semantics
+  - 6.7 PH6-07 Rule semantics [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: In `apps/quote-autopsy/src/quote_autopsy/claim_type.py` and `rules_v2.py` (no Texas function is edited) give an unsupported jurisdiction `INDETERMINATE` with reason `unsupported_jurisdiction` and 0 evidence items, give a rule that needs a filing the system cannot obtain `INDETERMINATE` with a `missing_filing` reason and never `REFUTED`, sweep an unstated locality over the full official published range from minimum to maximum inclusive as a `DEFAULT_POLICY` assumption with the swept bounds listed, and state no speculative legal conclusion. The new unsupported-jurisdiction wording applies only under a newer Examination_Semantics id, and the `legacy-1` text stays (AM-D7-3). Add the `as_of` key and four-outcome tests (`SUPPORTED`, `REFUTED`, `CONDITIONAL`, `INDETERMINATE`) for each added jurisdiction, with expected values computed with `Decimal` from the snapshot. Where a real jurisdiction cannot produce an outcome use a `US-ZZ` fixture and say why (OD-D7-7).
     - Acceptance tests: D7-AC-2: `ZZ`, an absent code, a `SUSPENDED` and a `WITHDRAWN` jurisdiction and claims with no `ACTIVE` snapshot give `INDETERMINATE` with `unsupported_jurisdiction` and 0 evidence items, and `C`, `CAL` and `C1` give `SchemaError` at intake. D7-AC-10: 4 of 4 outcomes with 0 `float`. D7-AC-11: sweep over the full range with bounds listed, an exact rate when the locality is in the table, and `unknown_locality` when it is absent. D7-AC-12: a missing filing never gives `REFUTED`.
     - Environment: Windows.
@@ -892,7 +907,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Depends on: PH6-06
     - _Requirements: 12.8, 12.9, 12.10, 12.12, 12.20_
 
-  - [ ] 6.8 PH6-08 California retrieval and build (snapshots `PENDING_REVIEW`)
+  - 6.8 PH6-08 California retrieval and build (snapshots `PENDING_REVIEW`) [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Only after Texas completion (PH6-05) and with the host entries of the registry reviewed by OA-07a, retrieve the California official sources by read-only HTTPS GET, build the snapshots and run the jurisdiction gate on the build (criteria 12.1 to 12.16 and the four outcome tests, with `US-ZZ` fixtures and the retrieved excerpts). Every snapshot built here is `PENDING_REVIEW`. None is `ACTIVE`, and the material changes no finding, UI text or test expectation until OA-07c records an independent review (TPR-H-5, TPR-H-6). Promotion is PH6-08a.
     - Acceptance tests: D7-AC-1: equal Verdict_Hash for a Texas claim and `TX.json` unchanged. Every California snapshot is `PENDING_REVIEW` and 0 are `ACTIVE`. The jurisdiction gate of 12.1 to 12.16 runs on the build and its result is recorded. D8-AC-29: 0 changed lines in existing tests.
     - Environment: Windows. Official HTTPS GET only.
@@ -902,7 +918,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Findings: TPR-H-5, TPR-H-6
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.13, 12.18, 12.22_
 
-  - [ ] 6.8a PH6-08a California promotion (after the independent review)
+  - 6.8a PH6-08a California promotion (after the independent review) [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Only after OA-07c has recorded an independent review of the California snapshots that PH6-08 built, promote each reviewed snapshot to `ACTIVE`. The promotion step checks the review record's hash and that its reviewer is not the agent, and it refuses a snapshot without such a record (TPR-H-5). Where the record is absent, `NOT_PROVIDED` or negative, the jurisdiction is recorded `BLOCKED` and its rules `UNVERIFIED`. When California becomes supported, change the literal `CA` to `ZZ` only in `test_non_tx_external_findings_unsupported_jurisdiction` (`tests/integration/test_quote_b7_texas.py`), `test_external_only_claim_is_indeterminate` (`tests/api/test_http_run_lifecycle.py`) and any other test that a search shows uses `CA` only as an unsupported-jurisdiction example. Name, purpose and every assertion stay, and the ledger records a fixture-data change and not a loosening. Add a guard test that fails if `ZZ` ever appears among the supported jurisdictions. The Bundles of the legacy corpus keep replaying unchanged.
     - Acceptance tests: D7-AC-1: equal Verdict_Hash for a Texas claim and the Texas test file differs from the baseline only by the AM-D7-1 hunk. D7-AC-16: marking a later jurisdiction `ACTIVE` while an earlier one is neither `ACTIVE` nor `BLOCKED` is refused. Promotion of a snapshot with no review record, or with a record whose reviewer is the agent, is refused (negative control). D8-AC-29: 0 changed lines in existing tests except the approved hunks. The legacy corpus replays with an equal Verdict_Hash and `REPRODUCED` or `REPRODUCED_ACROSS_ENV` (P-g).
     - Environment: Windows. Official HTTPS GET only.
@@ -912,7 +929,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Findings: TPR-H-5
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.18, 12.21, 12.13, 12.23_
 
-  - [ ] 6.9 PH6-09 Florida retrieval and build (snapshots `PENDING_REVIEW`)
+  - 6.9 PH6-09 Florida retrieval and build (snapshots `PENDING_REVIEW`) [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Only after PH6-08a has recorded California `ACTIVE` or `BLOCKED`, and with the Florida host entries reviewed by OA-07a, repeat the retrieval and build of PH6-08 for Florida: official-host retrieval, snapshots recorded `PENDING_REVIEW`, the jurisdiction gate on the build, four outcome tests with `US-ZZ` fixtures, and replay of the legacy corpus. Promotion is PH6-09a, after OA-07d. The retrieved material is unreviewed and is used for nothing until that record exists.
     - Acceptance tests: D7-AC-16: the order gate refuses Florida while California is neither `ACTIVE` nor `BLOCKED`. The jurisdiction gate (12.1 to 12.16) and 4 of 4 outcome tests pass on the build, every snapshot is `PENDING_REVIEW` and 0 are `ACTIVE`, or the result is `BLOCKED`. The legacy corpus replays with an equal Verdict_Hash and `REPRODUCED` or `REPRODUCED_ACROSS_ENV`.
     - Environment: Windows. Official HTTPS GET only.
@@ -922,7 +940,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Findings: TPR-H-5, TPR-H-6
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.18, 12.23_
 
-  - [ ] 6.9a PH6-09a Florida promotion (after the independent review)
+  - 6.9a PH6-09a Florida promotion (after the independent review) [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Only after OA-07d has recorded an independent review of the Florida snapshots that PH6-09 built, promote each reviewed snapshot to `ACTIVE`, with the checks and the refusal rule of PH6-08a. Without such a record the jurisdiction is recorded `BLOCKED` and its rules `UNVERIFIED`.
     - Acceptance tests: D7-AC-16: promotion of a snapshot with no review record, or with a record whose reviewer is the agent, is refused (negative control), and a later jurisdiction cannot become `ACTIVE` while Florida is neither `ACTIVE` nor `BLOCKED`. The legacy corpus replays with an equal Verdict_Hash and `REPRODUCED` or `REPRODUCED_ACROSS_ENV`.
     - Environment: Windows.
@@ -932,7 +951,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Findings: TPR-H-5
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.18, 12.23_
 
-  - [ ] 6.10 PH6-10 New York retrieval and build (snapshots `PENDING_REVIEW`)
+  - 6.10 PH6-10 New York retrieval and build (snapshots `PENDING_REVIEW`) [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Only after PH6-09a has recorded Florida `ACTIVE` or `BLOCKED`, and with the New York host entries reviewed by OA-07a, repeat the retrieval and build of PH6-08 for New York. Every snapshot is `PENDING_REVIEW`, and the retrieved material is used for nothing until OA-07e records its review. Promotion is PH6-10a.
     - Acceptance tests: D7-AC-16: the order gate refuses New York while Florida is neither `ACTIVE` nor `BLOCKED`. The jurisdiction gate (12.1 to 12.16) and 4 of 4 outcome tests pass on the build, every snapshot is `PENDING_REVIEW` and 0 are `ACTIVE`, or the result is `BLOCKED`. The legacy corpus replays with an equal Verdict_Hash and `REPRODUCED` or `REPRODUCED_ACROSS_ENV`.
     - Environment: Windows. Official HTTPS GET only.
@@ -942,7 +962,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Findings: TPR-H-5, TPR-H-6
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.18, 12.23_
 
-  - [ ] 6.10a PH6-10a New York promotion (after the independent review)
+  - 6.10a PH6-10a New York promotion (after the independent review) [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Only after OA-07e has recorded an independent review of the New York snapshots that PH6-10 built, promote each reviewed snapshot to `ACTIVE`, with the checks and the refusal rule of PH6-08a. Without such a record the jurisdiction is recorded `BLOCKED` and its rules `UNVERIFIED`.
     - Acceptance tests: D7-AC-16: promotion of a snapshot with no review record, or with a record whose reviewer is the agent, is refused (negative control). The legacy corpus replays with an equal Verdict_Hash and `REPRODUCED` or `REPRODUCED_ACROSS_ENV`.
     - Environment: Windows.
@@ -952,7 +973,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Findings: TPR-H-5
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.18, 12.23_
 
-  - [ ] 6.11 PH6-11 Regulatory display and documentation
+  - 6.11 PH6-11 Regulatory display and documentation [DEFERRED]
+    - Status: DEFERRED by the owner scope freeze (OA-00, design D10.12). Not queued, not implemented, not verified. The text below is kept as the specification of a later release.
     - Objective: Show the retrieval date next to each finding that relies on a snapshot in the UI_Kit, state in the UI and in `docs/REGULATORY_SNAPSHOTS.md` that each snapshot is a point-in-time copy, and classify the contract-visible fields (the `as_of` key, the snapshot retrieval date on the evidence DTO and the Examination_Semantics id) as COMPATIBLE or BREAKING inside the 2.0.0 event in `docs/API_CONTRACT.md`, `api/openapi.yaml` and `api/examples/` (D5.12 form). The contract version stays 2.0.0.
     - Acceptance tests: D7-AC-18: a UI test asserts the label text and the retrieval date next to a finding, and every added field has a classification. D5-AC-18: 0 unlabelled contract changes.
     - Environment: Windows.
@@ -961,21 +983,21 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - Depends on: PH6-08a, PH5-05
     - _Requirements: 12.14, 12.16, 10.34_
 
-  - [ ] 6.12 PH6-12 Phase 6 checkpoint
-    - Objective: Replay the legacy corpus after each jurisdiction addition (P-g), record the Threat_Model inputs for the snapshot and plugin threats (rows T8-16, T8-17, T8-22 and T8-23 of D8.4, each with its control and test id) for PH7-01, and run the Phase 6 targeted regression on both host classes, `ruff check .`, the ledger lint, the publication scan and the frozen-ref check. Write the track Execution_Record for Phase 6 (4.4) with the rollback fields (4.5) and the Kiro attribution rows (4.7) as in PH1-18, update the Phase 6 checkboxes in the same change (4.9), and name the verified checkpoint commit.
-    - Acceptance tests: D8-AC-15 (DR-5): every legacy corpus Bundle has an equal Verdict_Hash and `REPRODUCED` or `REPRODUCED_ACROSS_ENV`, with 0 `DIVERGED` and 0 `UNVERIFIABLE`. P-g: 200 of 200 examples (CP-40). D7-AC-1: equal Texas Verdict_Hash. D8-AC-30: each host recorded separately with 0 unexplained divergence. D8-AC-29: 0 changed lines in existing tests except the approved hunks.
+  - [ ] 6.12 PH6-12 Phase 6 checkpoint (legacy replay checkpoint)
+    - Objective: Replay the legacy corpus on the retained code (P-g). Phase 6 adds no code and no jurisdiction, so the replay checks that the changes of Phases 1 to 5 leave every historical Bundle at an equal Verdict_Hash. Record the Threat_Model inputs for rows T8-16, T8-17, T8-22 and T8-23 of D8.4 as `UNTESTED` with the reason `deferred scope` for PH7-01 (their controls and tests belong to the deferred PH6-01, PH6-03, PH6-04 and PH6-06). Run the targeted regression on both host classes, `ruff check .`, the ledger lint, the publication scan and the frozen-ref check. Write the track Execution_Record for Phase 6 (4.4) with the rollback fields (4.5) and the Kiro attribution rows (4.7) as in PH1-18. List every criterion of Requirements 11 and 12 except 12.13 and 12.23 as `UNVERIFIED` with the reason `deferred scope`, never as `SUCCEEDED`. Update the Phase 6 checkbox in the same change (4.9) and name the verified checkpoint commit.
+    - Acceptance tests: D8-AC-15 (DR-5): every legacy corpus Bundle has an equal Verdict_Hash and `REPRODUCED` or `REPRODUCED_ACROSS_ENV`, with 0 `DIVERGED` and 0 `UNVERIFIABLE`. P-g: 200 of 200 examples (CP-40). D7-AC-1: equal Texas Verdict_Hash. D8-AC-30: each host recorded separately with 0 unexplained divergence. D8-AC-29: 0 changed lines in existing tests except the approved hunks. D8-AC-1 input: rows T8-16, T8-17, T8-22 and T8-23 carry `UNTESTED` and a non-empty reason. 0 criteria of Requirements 11 and 12 other than 12.13 and 12.23 are listed `SUCCEEDED`.
     - Environment: Both.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for the corpus replays on each host, the regression set on each host (`-rA`), `uv run --no-sync ruff check .`, the lint and the scan. The track record lists each Phase 6 criterion as SUCCEEDED, FAILED or UNVERIFIED. The checkpoint commit is verified only when its regression set has a SUCCEEDED record.
-    - Rollback: RP-1 `git revert` of the phase's commit range back to the previous verified checkpoint, RP-4 and RP-9. If the rollback does not complete, the RP row is FAILED, the track is incomplete and RB-18 stays open until the branch is recovered to a verified checkpoint (OD-D10-3, 4.6).
-    - Depends on: PH6-01, PH6-02, PH6-03, PH6-04, PH6-05, PH6-06, PH6-07, PH6-08, PH6-08a, PH6-09, PH6-09a, PH6-10, PH6-10a, PH6-11
-    - _Requirements: 13.15, 12.23, 4.4, 4.5, 4.7, 4.9_
+    - Rollback: RP-1 `git revert` of the phase's commit range back to the previous verified checkpoint (the phase adds no code, so the range holds only its evidence commit). RP-4 and RP-9 do not apply, because this release adds no rules manifest and no plugin allowlist. If the rollback does not complete, the RP row is FAILED, the track is incomplete and RB-18 stays open until the branch is recovered to a verified checkpoint (OD-D10-3, 4.6).
+    - Depends on: PH3-14, PH5-17
+    - _Requirements: 13.15, 12.13, 12.23, 4.4, 4.5, 4.7, 4.9_
 
 - [ ] 7. Phase 7: Complete integration, property tests, regression tests, security gates and release verification
   - Goal: Complete the Threat_Model and the property, adversarial, canary and replay suites, build the release tooling, verify one Release_Candidate S on both host classes with counts taken only from its runner output, and write the final release report and blocker list. No tag, merge, publication or provisioning happens in this plan.
   - _Requirements: 1.2, 1.3, 1.14, 2.2, 2.3, 2.8, 2.11, 2.13, 2.14, 3.2, 3.8, 3.11, 3.12, 3.13, 3.14, 4.1, 4.2, 4.3, 4.6, 4.8, 4.9, 7.13, 7.14, 7.20, 12.21, 13.1, 13.2, 13.3, 13.4, 13.5, 13.6, 13.7, 13.8, 13.9, 13.10, 13.14, 13.22, 13.23, 13.24, 13.28, 14.1, 14.2, 14.3, 14.5, 14.6, 14.7, 14.8, 14.9, 14.10, 14.11, 14.12, 14.13, 14.14, 14.15, 14.16, 14.17, 14.18, 14.19, 14.20, 14.21, 14.22, 14.23, 14.24, 14.25, 14.26, 14.27, 15.1, 15.2, 15.3, 15.4, 15.5, 15.6, 15.7, 15.8, 15.9, 15.10, 16.1, 16.2, 16.3, 16.4, 16.5_
 
   - [ ] 7.1 PH7-01 Threat_Model
-    - Objective: Write `docs/next-phase/THREAT_MODEL.md` from the rows T8-1 to T8-35 of D8.4, with the inputs recorded at the PH6-12 checkpoint. It has one row per threat, a non-empty value in every column, `UNTESTED` with a non-empty reason where no automated test exists (T8-34, and the residual risk of T8-35 where the egress probe cannot block), and it covers the 17 threats that 13.2 names. Map every new control (the key-file mechanism, replay isolation, upload admission, the Approved_Root helper, the profile resolver, the peer check, plugin provenance and the sanitizer) to at least one row, and remove a control that has none. No new runtime dependency.
+    - Objective: Write `docs/next-phase/THREAT_MODEL.md` from the rows T8-1 to T8-35 of D8.4, with the inputs recorded at the PH6-12 checkpoint. It has one row per threat, a non-empty value in every column, `UNTESTED` with a non-empty reason where no automated test exists (T8-34, the residual risk of T8-35 where the egress probe cannot block, and T8-16, T8-17, T8-22 and T8-23 with the reason `deferred scope`), and it covers the 17 threats that 13.2 names. Map every new control (the key-file mechanism, replay isolation, upload admission, the Approved_Root helper, the profile resolver, the peer check, plugin provenance and the sanitizer) to at least one row, and remove a control that has none. No new runtime dependency.
     - Acceptance tests: D8-AC-1: one row per threat, 0 empty cells, a reason on every `UNTESTED` row, and each of the 17 named threats present. D8-AC-28: `uv.lock` shows 0 added runtime packages and every D8.3 control maps to a D8.4 row.
     - Environment: Both.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for the document check test with `-rA` on each host, `uv lock --check` and `git diff --stat 84df25c -- uv.lock`. D8-AC-1 and D8-AC-28 SUCCEEDED.
@@ -985,8 +1007,8 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - _Requirements: 13.1, 13.2, 13.3, 13.28_
 
   - [ ] 7.2 PH7-02 Property suite completeness
-    - Objective: Add a meta-test under `tests/` that finds each of the properties P-a to P-o as exactly one Hypothesis test, in the task that owns the property in the Notes (a second test of the same property fails the meta-test, TPR-M-3), whose docstring cites the property statement and at least one requirement id (13.4) and carries the comment "Feature: verdictkit-next-phase, Property P-x". Check that the `ci` profile is derandomized with `max_examples` of 200 (13.7) and that each property has a mutation guard for its underlying check. P-a is stated over the verified region (OD-D10-4). The new tests are collected by the existing CI workflow (wired in PH7-11).
-    - Acceptance tests: D8-AC-2: P-a to P-e hold for 200 of 200 examples and the mutation guard shows a failure once a check is disabled. The meta-test finds 15 of 15 properties with docstring, tag and guard, and 0 properties that run under another profile.
+    - Objective: Add a meta-test under `tests/` that finds each of the 13 properties P-a to P-d, P-f to P-l, P-n and P-o as exactly one Hypothesis test, in the task that owns the property in the Notes (a second test of the same property fails the meta-test, TPR-M-3), whose docstring cites the property statement and at least one requirement id (13.4) and carries the comment "Feature: verdictkit-next-phase, Property P-x". Check that the `ci` profile is derandomized with `max_examples` of 200 (13.7) and that each property has a mutation guard for its underlying check. P-a is stated over the verified region (OD-D10-4). The new tests are collected by the existing CI workflow (wired in PH7-11).
+    - Acceptance tests: D8-AC-2: P-a to P-d hold for 200 of 200 examples and the mutation guard shows a failure once a check is disabled. The meta-test finds 13 of 13 properties with docstring, tag and guard, and 0 properties that run under another profile. P-e and P-m belong to the deferred PH6-02 and PH6-03, are listed `DEFERRED` and are not counted.
     - Environment: Both.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for the property run with `-rA` and `HYPOTHESIS_PROFILE=ci` on each host and the meta-test. D8-AC-2 SUCCEEDED on both hosts.
     - Rollback: RP-1 `git revert`. A failed rollback: OD-D10-3.
@@ -994,7 +1016,7 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - _Requirements: 13.4, 13.5, 13.7_
 
   - [ ] 7.3 PH7-03 Malformed-input kinds, adversarial surfaces and profile matrix
-    - Objective: Add a coverage test that maps each of the seven malformed-input kinds of 13.6 (malformed zip entry, duplicate zip name, absolute member name, parent-directory member name, truncated signature, wrong-algorithm signature, malformed Trust_Store file) and each of the seven adversarial surfaces of 13.14 (API, MCP_Server, Bundle parsing, Trust_Store, signature envelopes, plugin scaffolding, regulatory snapshots) to at least one negative test that asserts a rejection, `INDETERMINATE` or `UNVERIFIABLE`. Fail when a kind or surface has no test. Mark every test that needs a container `isolation` (13.8). Add the profile propagation matrix (D2-AC-1 cases extended by AM-D6-4, plus FC-3 and FC-4). Add the grid-cap negative control of criterion 2.10 (TPR-M-2): a grid one point above the configured cap is rejected whole with an error that names the cap and the observed size, evaluates 0 grid points and does not subsample, and a mutant that subsamples the grid fails the test.
+    - Objective: Add a coverage test that maps each of the seven malformed-input kinds of 13.6 (malformed zip entry, duplicate zip name, absolute member name, parent-directory member name, truncated signature, wrong-algorithm signature, malformed Trust_Store file) and each of the five retained adversarial surfaces of 13.14 (API, MCP_Server, Bundle parsing, Trust_Store, signature envelopes; plugin scaffolding and regulatory snapshots are deferred) to at least one negative test that asserts a rejection, `INDETERMINATE` or `UNVERIFIABLE`. Fail when a kind or surface has no test. Mark every test that needs a container `isolation` (13.8). Add the profile propagation matrix (D2-AC-1 cases extended by AM-D6-4, plus FC-3 and FC-4). Add the grid-cap negative control of criterion 2.10 (TPR-M-2): a grid one point above the configured cap is rejected whole with an error that names the cap and the observed size, evaluates 0 grid points and does not subsample, and a mutant that subsamples the grid fails the test.
     - Acceptance tests: D8-AC-3: each kind is rejected or gives `UNVERIFIABLE`, with 0 `REPRODUCED`, `REPRODUCED_ACROSS_ENV` or `VALID` and existing stored data unchanged. D8-AC-19: every profile combination resolves per AM-D6-4 or refuses to start. Criterion 2.10: the grid-cap negative control passes with 0 evaluated grid points and the subsampling mutant fails.
     - Environment: Both.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for the coverage and negative-test run with `-rA` on each host (HYPOTHESIS_PROFILE=ci). D8-AC-3 and D8-AC-19 SUCCEEDED.
@@ -1014,12 +1036,12 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - _Requirements: 13.23, 7.20, 2.3, 10.25_
 
   - [ ] 7.5 PH7-05 Final security matrix (after the last security-relevant change)
-    - Objective: Run the whole extended `gate-isolation` (D10.11 TR-3 and TR-6, TPR-H-2) on a tree that holds the last change of `deploy/entrypoint.sh`, `Dockerfile`, `examiner/worker.py` and the signing path, that is after PH5-14, PH5-15, PH5-17 and PH7-10, and that includes the plugin loader of PH6-04. The matrix is KT-1 to KT-8 for the vault key and, as the variant KT-S of each case, for a canary signing key, then FC-1 to FC-12, IS-1 to IS-8, CA-1 to CA-7, RI-1 to RI-8 and property P-l. Add no new code unless a defect is found. A defect is recorded with its failing input, fixed, and the test is kept (13.9). The results of PH1-12 to PH1-15, PH3-04 and PH6-04 are development results, and they do not establish the security of the final candidate. PH7-17 runs the gate again on S.
-    - Acceptance tests: D8-AC-17: 12 of 12 start-up cases give a non-zero exit, a `VK_STARTUP_ERROR` line with a code, no `VK_STARTUP_OK`, no listener and no written file. D8-AC-18: 15 of 15. D8-AC-19 and P-l: 200 of 200 examples (CP-14 to CP-17). D10-AC-15: KT-1 to KT-8 for the vault key and for the canary signing key give 0 matches, the counts of `gate-isolation-counts.json` equal the manifest (collected equals executed, 0 skipped), and the record names the commit of the tree that it ran on.
+    - Objective: Run the whole extended `gate-isolation` (D10.11 TR-3 and TR-6, TPR-H-2) on a tree that holds the last change of `deploy/entrypoint.sh`, `Dockerfile`, `examiner/worker.py` and the signing path, and that is after PH5-14, PH5-15, PH5-17 and PH7-10. The matrix is KT-1 to KT-8 for the vault key and, as the variant KT-S of each case, for a canary signing key, then FC-1 to FC-9 and FC-11 (ten start-up cases, because FC-10 and FC-12 belong to the deferred PH6-04), IS-1 to IS-8, CA-1 to CA-7, RI-1 to RI-8 and property P-l. Add no new code unless a defect is found. A defect is recorded with its failing input, fixed, and the test is kept (13.9). The results of PH1-12 to PH1-15 and PH3-04 are development results, and they do not establish the security of the final candidate. PH7-17 runs the gate again on S.
+    - Acceptance tests: D8-AC-17: 10 of 10 start-up cases (FC-1 to FC-9 and FC-11) give a non-zero exit, a `VK_STARTUP_ERROR` line with a code, no `VK_STARTUP_OK`, no listener and no written file. D8-AC-18: 15 of 15. D8-AC-19 and P-l: 200 of 200 examples (CP-14 to CP-17). D10-AC-15: KT-1 to KT-8 for the vault key and for the canary signing key give 0 matches, the counts of `gate-isolation-counts.json` equal the manifest (collected equals executed, 0 skipped), and the record names the commit of the tree that it ran on.
     - Environment: Linux_Docker_Host.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for the extended `gate-isolation` run (`-rA`, `--network none`), the P-l run (HYPOTHESIS_PROFILE=ci) and `gate-isolation-counts.json`. D8-AC-8 (both keys), D8-AC-17, D8-AC-18, D8-AC-19 and D10-AC-15 SUCCEEDED.
     - Rollback: RP-1 `git revert` of any fix commit. A failed rollback: OD-D10-3.
-    - Depends on: PH6-04, PH1-15, PH3-04, PH5-14, PH5-15, PH5-17, PH7-10
+    - Depends on: PH1-15, PH3-04, PH5-14, PH5-15, PH5-17, PH7-10
     - Findings: TPR-H-2
     - _Requirements: 13.24, 2.13, 2.14, 13.16, 7.20, 10.25_
 
@@ -1033,13 +1055,13 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - _Requirements: 13.22, 2.2, 2.8_
 
   - [ ] 7.7 PH7-07 Existing tests unmodified, lint and steering
-    - Objective: Check that `git diff 84df25c` over the test tree shows only the approved hunks: the BE-1 Windows branch and guard, the `CA` to `ZZ` hunks (AM-D7-1), the BE-2 port hunk that 13.26 and D5-AC-19 require, and the contract-version literal changes from `1.1.0` to `2.0.0` that 10.34 and D5-AC-1 require. Check that `ruff check .` has 0 violations for all new code, that `.kiro/steering` changed only by added files, and that no existing check was weakened, skipped or deleted (13.9). `tests/contract/test_llm_fence.py` passes.
+    - Objective: Check that `git diff 84df25c` over the test tree shows only the approved hunks: the BE-1 Windows branch and guard, the BE-2 port hunk that 13.26 and D5-AC-19 require, and the contract-version literal changes from `1.1.0` to `2.0.0` that 10.34 and D5-AC-1 require. The `CA` to `ZZ` hunks (AM-D7-1) are not applied, because California stays unsupported (deferred) and criterion 12.21 is not triggered. Check that `ruff check .` has 0 violations for all new code, that `.kiro/steering` changed only by added files, and that no existing check was weakened, skipped or deleted (13.9). `tests/contract/test_llm_fence.py` passes.
     - Acceptance tests: D8-AC-29: 0 changed lines in existing tests except the approved hunks, and 0 `ruff` violations on new code. D10-AC-9: `git diff --name-status 84df25c` over `.kiro/steering` shows only added files, 0 modified and 0 deleted, and each added file is a new rule.
     - Environment: Both.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for `git diff 84df25c` over the test tree, `git diff --name-status 84df25c` over `.kiro/steering`, `uv run --no-sync ruff check .` and `uv run --no-sync pytest -q -p no:cacheprovider -rA tests/contract/test_llm_fence.py` on each host. D8-AC-29 and D10-AC-9 SUCCEEDED.
     - Rollback: RP-1 `git revert`. A failed rollback: OD-D10-3.
     - Depends on: PH7-02
-    - _Requirements: 13.9, 13.10, 2.11, 4.8, 12.21_
+    - _Requirements: 13.9, 13.10, 2.9, 2.11, 2.12, 4.8_
 
   - [ ] 7.8 PH7-08 Release tooling
     - Objective: Extend `scripts/release_verify.py` (stdlib only, DD9-10) with tests under `tests/release/`: the exact-commit and clean-tree check (`git rev-parse HEAD` equals S, `git status --porcelain` empty before and after each run, every record carries the same 40-character S); per-step Execution_Record writing by the recorder `run` of PH1-02, with counts copied from the runner output; the baseline comparison (each step whose passing count is lower than its baseline count is listed with both counts); `check-run` (the run record's `headSha`, `headBranch`, `event` and `status` against S, the Phase_Branch, `workflow_dispatch` and `completed`); `frozen`; and `report-lint`. `report-lint` checks the exact command text, the Execution_Index id, counts equal to the runner line, `recorded_utc` within 5 s (OD-D10-2), that each Evidence_Commit names the full tested SHA S (OD-D9-1) and is never described as S, with `check-evidence-commit --base S --tip E` (D10.11 TR-2) as the only route to accept a later commit and with both SHAs named in the report, the open blockers RB-18 (OD-D10-3), RB-19 and RB-20, the checkbox rule (4.9), and the separation of the two readiness results. Add `check-evidence-commit` (only Evidence_Output_Set paths, only the two checkbox lines of `tasks.md`, 0 deleted ledger lines, no record that names E), `check-checkpoints` (the six checkpoint records of PH1-18, PH2-10, PH3-14, PH4-10, PH5-17 and PH6-12 are `SUCCEEDED`, or `UNVERIFIED` with an accepted reason, else exit non-zero and list RB-19) and `collect-check` (D10.11 TR-12). `report-lint` runs its S-time checks (VM-15a) without a report, and its report checks (VM-15b) only once the report exists (TPR-M-10).
@@ -1091,7 +1113,7 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
     - _Requirements: 14.20, 14.1, 14.3, 14.17, 13.7, 13.8, 13.29_
 
   - [ ] 7.12 PH7-12 Provenance and release report generator
-    - Objective: Add the `provenance` subcommand to `scripts/release_verify.py` and the report generator for `docs/next-phase/RELEASE_REPORT.md`. The provenance block holds the commit S, the image ID (local and CI runs listed separately, with the image label equal to S), the `uv.lock` and `package-lock.json` hashes from the committed blobs, the tool versions including the Python patch, the host class of each run, the plugin provenance manifest hash and the contract version. The report has the two readiness lines, the Outcome_Class of every acceptance criterion for each of the nine tracks with its record id, the baseline comparison, every UNVERIFIED item with its reason (Browser E2E, `gate_nov22.sh`, the five skipped Linux cases, automatic hook execution), every FAILED step and unremediated Baseline_Exception, blockers RB-1 to RB-20 with level (RB-18 per OD-D10-3, RB-19 and RB-20 per D10.11) and each unresolved owner decision with the tasks that it blocks, the known limitations, RP-1 to RP-9 with confirmations and the no-hosted-demonstration statement.
+    - Objective: Add the `provenance` subcommand to `scripts/release_verify.py` and the report generator for `docs/next-phase/RELEASE_REPORT.md`. The provenance block holds the commit S, the image ID (local and CI runs listed separately, with the image label equal to S), the `uv.lock` and `package-lock.json` hashes from the committed blobs, the tool versions including the Python patch, the host class of each run, the plugin provenance manifest hash (the value `NOT_BUILT` while PH6-04 is deferred, never an invented hash) and the contract version. The report has the two readiness lines, the Outcome_Class of every acceptance criterion for each of the nine tracks with its record id, the baseline comparison, every UNVERIFIED item with its reason (Browser E2E, `gate_nov22.sh`, the five skipped Linux cases, automatic hook execution), every FAILED step and unremediated Baseline_Exception, blockers RB-1 to RB-20 with level (RB-18 per OD-D10-3, RB-19 and RB-20 per D10.11) and each unresolved owner decision with the tasks that it blocks, the known limitations (always including KL-1, the baseline entry-point loading in the public profile), RP-1 to RP-9 with confirmations (RP-9 is listed `NOT_APPLICABLE`, because no plugin allowlist exists while PH6-04 is deferred) and the no-hosted-demonstration statement.
     - Acceptance tests: D9-AC-13: 7 of 7 provenance fields present and the recomputed hashes equal the recorded ones. D9-AC-11: an unrun item is `SUCCEEDED` with a record of S or `UNVERIFIED` with a reason, and a `VERIFIED` level with an open blocker is rejected. D9-AC-14: every criterion of the nine tracks listed with its Outcome_Class and record id. D9-AC-18: 2 separate readiness lines, 0 combined, and 0 release records containing `aws`, `terraform`, `certbot`, `docker push`, `gh release`, `gh pr create`, a tag-creating `git tag` or a `git merge` other than `git merge-base`. D9-AC-19: 9 of 9 RP rows with a confirmation check.
     - Environment: Both.
     - Completion evidence: Execution_Records (3.2, 3.12, OD-D10-2: exact command, exit code, runner counts, commit SHA, UTC start, recorded_utc within 5 s) for `uv run --no-sync pytest -q -p no:cacheprovider -rA tests/release` on each host, the generator run on a sample ledger and `uv run --no-sync ruff check .`. D9-AC-11, D9-AC-13, D9-AC-14, D9-AC-18 and D9-AC-19 SUCCEEDED for the generator and its negative controls. The final report is PH7-18.
@@ -1159,7 +1181,7 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
 
 ## Owner-only actions
 
-These items need the repository owner, a reviewer or a maintainer. They have no checkbox, so a task runner never queues them. "Blocks" names the tasks whose owner rows or capability statements stay UNVERIFIED until the owner's record exists. A task's box depends on an OA item only where that task names it in Depends on. The agent records what the owner supplies and never writes, alters or waives an owner record. Each item has a Kind and a Depends on line (D10.11 TR-8). A GATE item must be `PROVIDED` before a task that names it starts. An EVIDENCE item may be recorded `NOT_PROVIDED` by the owner, which keeps its rows `UNVERIFIED` and its blockers open. Every status below is `OPEN`: no owner record exists, and none was inferred.
+These items need the repository owner, a reviewer or a maintainer. They have no checkbox, so a task runner never queues them. "Blocks" names the tasks whose owner rows or capability statements stay UNVERIFIED until the owner's record exists. A task's box depends on an OA item only where that task names it in Depends on. The agent records what the owner supplies and never writes, alters or waives an owner record. Each item has a Kind and a Depends on line (D10.11 TR-8). A GATE item must be `PROVIDED` before a task that names it starts. An EVIDENCE item may be recorded `NOT_PROVIDED` by the owner, which keeps its rows `UNVERIFIED` and its blockers open. Statuses: OA-00 is `PROVIDED` (`ACCEPTED_WITH_CONDITIONS`) and OA-08 is `PROVIDED` for OD-D8-1 to OD-D8-4. The agent transcribed both from the owner's request of 2026-11-26 into `docs/next-phase/OWNER_DECISIONS.md` and made no decision of its own. OA-02 is `NOT_PROVIDED`, OA-07a to OA-07e are `DEFERRED`, and every other item is `OPEN`: no record exists for it, and none was inferred.
 
 ### OA-00 Owner acceptance of D8 to D10 and of the corrected task plan
 
@@ -1170,7 +1192,7 @@ These items need the repository owner, a reviewer or a maintainer. They have no 
 - Requirements: 4.10, 4.2, 4.3
 - Findings: TPR-H-7
 - Owner provides: A record with its identifier, its date, its verdict, the commit of `tasks.md` that it covers and the SHA-256 of `design.md`, `requirements.md` and `tasks.md` at that commit. The agent never writes, alters or waives it.
-- Status: OPEN
+- Status: PROVIDED. Verdict `ACCEPTED_WITH_CONDITIONS`, recorded 2026-11-26 in `docs/next-phase/OWNER_DECISIONS.md`, which holds the covered commit and the SHA-256 values of the three documents.
 
 ### OA-01 Authorize each Phase_Branch push and CI dispatch
 
@@ -1191,7 +1213,7 @@ These items need the repository owner, a reviewer or a maintainer. They have no 
 - Blocks: No box. It supplies the deferred rows that PH7-09a cannot supply, and PH7-17 uses it as supplied. The Windows-leg boxes of PH1-04, PH1-08, PH1-09 and PH1-10 never wait for it. RB-1 and RB-3 stay open until a record that names a Linux source exists.
 - Requirements: 13.13, 14.22, 1.12, 1.16
 - Owner provides: For each run, the exact command text, the `-rA` per-test listing, the pytest exit code captured directly (no pipe), the full commit SHA, the UTC time, the host class, and the output of `git rev-parse HEAD` and `git status --porcelain`. For the baseline, the `--collect-only` output as a Private_Original with its SHA-256.
-- Status: OPEN
+- Status: NOT_PROVIDED. The owner supplies no separate owner-host Linux execution (recorded 2026-11-26 in `docs/next-phase/OWNER_DECISIONS.md`). This is not a waiver: DLV-1 to DLV-4 stay `UNVERIFIED`, and RB-1, RB-3 and RB-13 stay open until PH7-09a, or a later record, supplies a `SUCCEEDED` record that names a Linux source.
 
 ### OA-03 External_Review_Record kept outside the repository
 
@@ -1246,7 +1268,7 @@ These items need the repository owner, a reviewer or a maintainer. They have no 
 - Requirements: 12.4, 12.22
 - Findings: TPR-H-5, TPR-H-6
 - Owner provides: A review record for each registry host entry (reviewer, date, host, `basis`, decision).
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not queued.
 
 ### OA-07b Review of the Texas 7 TAC section 84.205 text
 
@@ -1257,7 +1279,7 @@ These items need the repository owner, a reviewer or a maintainer. They have no 
 - Requirements: 12.22, 12.24
 - Findings: TPR-H-5, TPR-H-6
 - Owner provides: A review record (reviewer, date, source URI, SHA-256, the rule values read against the excerpt, stated effective dates, rights decision).
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not queued.
 
 ### OA-07c California snapshot review
 
@@ -1268,7 +1290,7 @@ These items need the repository owner, a reviewer or a maintainer. They have no 
 - Requirements: 12.4, 12.22, 12.24
 - Findings: TPR-H-5
 - Owner provides: For each snapshot a review record (reviewer, date, source URI, SHA-256, the rule values read against the excerpt, stated effective dates, rights decision) that the loader's review-record hash check accepts.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not queued.
 
 ### OA-07d Florida snapshot review
 
@@ -1279,7 +1301,7 @@ These items need the repository owner, a reviewer or a maintainer. They have no 
 - Requirements: 12.4, 12.22, 12.24
 - Findings: TPR-H-5
 - Owner provides: A review record for each snapshot, in the form of OA-07c.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not queued.
 
 ### OA-07e New York snapshot review
 
@@ -1290,18 +1312,18 @@ These items need the repository owner, a reviewer or a maintainer. They have no 
 - Requirements: 12.4, 12.22, 12.24
 - Findings: TPR-H-5
 - Owner provides: A review record for each snapshot, in the form of OA-07c.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not queued.
 
 ### OA-08 Maintainer decision records for assumed open decisions
 
 - Purpose: Record maintainer decisions for the open decisions that tasks consume (D10.8). OD-D8-1 to OD-D8-4 must be resolved before the tasks that implement them start, because their values change the implementation (TPR-L-5). The other decisions that tasks assume by recommendation (OD-D8-5, OD-D8-6, OD-D9-3 and OD-D9-6) stay visible: a decision that differs from the assumed value reopens the tasks that name it.
 - Kind: GATE for OD-D8-1 to OD-D8-4. EVIDENCE for the others.
 - Depends on: none
-- Blocks: PH1-11 (OD-D8-1, the key file mechanism), PH1-16 (OD-D8-2 and OD-D8-4, the replay namespace and the quotas), PH1-17 (OD-D8-4, the upload slots) and PH2-02 (OD-D8-3, the default Approved_Root). A recommendation that a task assumes without a record is PH1-07 (OD-D8-5), PH1-09 (OD-D8-6), PH7-11 (OD-D9-3) and PH7-16 (OD-D9-6). An unresolved decision is a visible blocker (RB-20) and is listed in the release report.
+- Blocks: PH1-11 (OD-D8-1, the key file mechanism), PH1-16 (OD-D8-2 and OD-D8-4, the replay namespace and the quotas), PH1-17 (OD-D8-4, the upload slots) and PH2-02 (OD-D8-3, the default Approved_Root). A recommendation that a task assumes without a record is PH1-09 (OD-D8-6), PH7-11 (OD-D9-3) and PH7-16 (OD-D9-6). OD-D8-5 belongs only to the deferred PH1-07. An unresolved decision is a visible blocker (RB-20) and is listed in the release report.
 - Requirements: 7.20, 7.21, 7.22, 9.21, 13.12, 13.25
 - Findings: TPR-L-5
 - Owner provides: One decision record for each open decision (identifier, chosen option, date), which the agent writes into a new file under `docs/next-phase/` from the maintainer's message.
-- Status: OPEN
+- Status: PROVIDED for OD-D8-1 to OD-D8-4 (approved as designed, recorded 2026-11-26 in `docs/next-phase/OWNER_DECISIONS.md`). The recommendations for OD-D8-5, OD-D8-6, OD-D9-3 and OD-D9-6 are retained and stay visible. A numeric total replay quota is not part of the approved decision (see the record).
 
 ### OA-09 Select the Release_Candidate S
 
@@ -1326,7 +1348,7 @@ These items need the repository owner, a reviewer or a maintainer. They have no 
 
 ## Conditional public deployment tasks
 
-These items are not authorized by this work. Nothing here provisions infrastructure, spends money, creates a DNS record or certificate, opens a public listener or announces a deployment. They have no checkbox. Each stays closed until the owner authorizes it by a separate recorded decision. Until every blocker RB-15, RB-16 and RB-17 is clear, Public_Deployment_Readiness is NOT_VERIFIED and the documentation states that no hosted demonstration is available (7.14).
+These items are not authorized by this work. Nothing here provisions infrastructure, spends money, creates a DNS record or certificate, opens a public listener or announces a deployment. They have no checkbox. Each stays closed until the owner authorizes it by a separate recorded decision. Scope freeze: all nine items are DEFERRED by the owner (OA-00) and are not authorized. Until every blocker RB-15, RB-16 and RB-17 is clear, Public_Deployment_Readiness is NOT_VERIFIED and the documentation states that no hosted demonstration is available (7.14).
 
 ### CD-01 Hosting, domain, certificate, budget, monitoring and credential-distribution decisions
 
@@ -1334,7 +1356,7 @@ These items are not authorized by this work. Nothing here provisions infrastruct
 - Blocks: PH7-12 and PH7-18 (the Public_Deployment_Readiness line only, RB-16).
 - Requirements: 7.17
 - Owner provides: A decision record for each item.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not authorized.
 
 ### CD-02 Fargate probe task
 
@@ -1342,7 +1364,7 @@ These items are not authorized by this work. Nothing here provisions infrastruct
 - Blocks: PH7-12 and PH7-18 (the Public_Deployment_Readiness line only).
 - Requirements: 7.17, 7.18
 - Owner provides: The probe record with gate exit codes, or the `REJECTED` record with its reason.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not authorized.
 
 ### CD-03 Deployment, secret store, TLS and HSTS check
 
@@ -1350,7 +1372,7 @@ These items are not authorized by this work. Nothing here provisions infrastruct
 - Blocks: PH7-12 and PH7-18 (the Public_Deployment_Readiness line only, RB-15).
 - Requirements: 7.6, 7.9
 - Owner provides: The deployment record, the canary search result with counts, and the SM-3 result.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not authorized.
 
 ### CD-04 Deployment security gates and smoke tests on a deployed instance
 
@@ -1358,7 +1380,7 @@ These items are not authorized by this work. Nothing here provisions infrastruct
 - Blocks: PH7-12 and PH7-18 (the Public_Deployment_Readiness line only).
 - Requirements: 14.26, 7.13
 - Owner provides: One Execution_Record for each gate and smoke test, with the exact command text, exit code, commit SHA and UTC times.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not authorized.
 
 ### CD-05 Invitation credential issuance out of band
 
@@ -1366,7 +1388,7 @@ These items are not authorized by this work. Nothing here provisions infrastruct
 - Blocks: PH7-12 and PH7-18 (the Public_Deployment_Readiness line only).
 - Requirements: 7.24
 - Owner provides: The issuance record without any credential value, and the revocation rehearsal record.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not authorized.
 
 ### CD-06 Monitoring, alarms and budget alarm
 
@@ -1374,7 +1396,7 @@ These items are not authorized by this work. Nothing here provisions infrastruct
 - Blocks: PH7-12 and PH7-18 (the Public_Deployment_Readiness line only).
 - Requirements: 14.26
 - Owner provides: The monitoring configuration record and a test alarm record.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not authorized.
 
 ### CD-07 Rollback rehearsal on the deployed target
 
@@ -1382,7 +1404,7 @@ These items are not authorized by this work. Nothing here provisions infrastruct
 - Blocks: PH7-12 and PH7-18 (the Public_Deployment_Readiness line only).
 - Requirements: 7.15
 - Owner provides: The rehearsal record with both `commitSha` values and the elapsed time.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not authorized.
 
 ### CD-08 Public-URL Execution_Record
 
@@ -1390,7 +1412,7 @@ These items are not authorized by this work. Nothing here provisions infrastruct
 - Blocks: PH7-12 and PH7-18 (the no-hosted-demonstration statement and RB-14).
 - Requirements: 7.13, 7.14
 - Owner provides: The Execution_Record with the response time, the status and the `commitSha`.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not authorized.
 
 ### CD-09 Owner go decision
 
@@ -1398,19 +1420,19 @@ These items are not authorized by this work. Nothing here provisions infrastruct
 - Blocks: PH7-12 and PH7-18 (the Public_Deployment_Readiness line only).
 - Requirements: 14.26, 14.13
 - Owner provides: The recorded decision with its date and the commit it applies to.
-- Status: OPEN
+- Status: DEFERRED (owner scope freeze, OA-00). Not authorized.
 
 ## Notes
 
-- Untraced tasks: none. Each of the 107 tasks cites at least one criterion of `requirements.md` (4.3). The task-plan review round appended the criteria 3.15, 4.10, 7.27, 10.37, 13.29 and 13.30 and changed 13.11, 13.13, 14.16 and 14.21 in place.
-- Optional task: PH1-07 only, marked `- [ ]*`. Tests are not split into separate optional tasks. Each task carries the tests that verify it, and their rows are required for its box. This follows the request that overrides the default template.
+- Untraced tasks: none. Each of the 107 tasks (92 queued and 15 deferred) cites at least one criterion of `requirements.md` (4.3). The task-plan review round appended the criteria 3.15, 4.10, 7.27, 10.37, 13.29 and 13.30 and changed 13.11, 13.13, 14.16 and 14.21 in place.
+- Optional task: PH1-07 only, marked `- [ ]*` before the scope freeze. It is now DEFERRED and has no checkbox, so the 92 queued tasks are all mandatory. Tests are not split into separate optional tasks. Each task carries the tests that verify it, and their rows are required for its box. This follows the request that overrides the default template.
 - Execution_Records and boxes: a box changes in the same commit as the Execution_Record that supports it (4.9). The Evidence_Ledger is append-only, so a wrong record is superseded and never edited, and the ledger is excluded from the same-file placement rule below.
 - Verified checkpoint: a Phase_Branch commit whose phase regression set has a SUCCEEDED Execution_Record. Before the first checkpoint the verified checkpoints are the design commit `aea7d06d11cf32f9f5abba7cbd3f33a3472c935a` (documentation only) and the code baseline `84df25c68198e496889b5892a03555ec7d2d860a` with BE-1 and BE-2 accepted.
 - Forbidden actions: no task may push, tag, merge, reset history, force-push, deploy or provision. A task that needs a push asks OA-01. Every rollback is a forward commit (RP-1 `git revert`), never a reset or a force push.
 - Same-file placement: waves follow the Depends on lines. Where those lines leave two tasks unordered and both name one source file, the later wave is used. The orderings added for this are PH2-03 before PH2-02 before PH2-04 before PH2-05 before PH2-06 (`core/src/verdictkit/mcp_server.py`), PH3-07 before PH3-11 (replay report fields), PH5-11 before PH5-12 (`core/src/verdictkit/api/server.py`) and PH7-09 before PH7-12 (`scripts/release_verify.py`). They do not change any Depends on line. After the task-plan review three orderings are explicit Depends on lines instead (TPR-M-11): PH1-13 before PH1-17 (the start-up and run path and `SafetyMiddleware` share `core/src/verdictkit/api/server.py`), PH1-15 and PH1-17 before PH1-16 (`deploy/entrypoint.sh`, `core/src/verdictkit/examiner/worker.py` and `api/server.py`), and PH3-08 before PH3-05 (`core/src/verdictkit/bundle.py`). The PH1-02 to PH1-03a chain and PH1-11, PH1-12a and PH1-15 are likewise ordered by Depends on lines, because they edit `scripts/release_verify.py` and `deploy/entrypoint.sh` in turn.
 - Evidence sources: rows marked CI/VM run on the local Linux_Docker_Host or on CI, and each record names its source. One source never stands in for another in the release run (DD9-7). A "container run" of isolation-marked tests means `gate-isolation`, or the same pytest command inside the image, with a `-rA` listing and `--network none`. Docker commands are issued as `docker` with the Docker Desktop client directory on the session path, so no command field holds an absolute path (3.14).
-- Property ownership (TPR-M-3): each property has one authoritative task, which holds its only Hypothesis test. P-a, P-b and P-c in PH3-09. P-d in PH2-03 (PH2-08 adds an example check over stdio and no property test). P-e in PH6-02. P-f in PH7-06. P-g in PH6-12. P-h in PH5-12. P-i in PH1-17. P-j in PH2-02. P-k in PH1-03 (PH7-04 adds example checks over the sanitizer and no property test). P-l in PH1-15 (PH7-05 reruns it and adds no second test). P-m in PH6-03. P-n in PH7-04. P-o in PH3-08. PH7-02 checks that all 15 exist exactly once with their tags and guards.
-- Plan readings to confirm: (1) The pre-change hash step DR-7 belongs to D5.9, and the replay matrix DR-1 to DR-6 belongs to D8.10, so PH3-01 cites D5.9 DR-7. (2) D8-AC-29 lists two approved test hunks, while 13.26, D5-AC-19 and 10.34 also require the BE-2 port hunk and the contract-version literal changes, so PH7-07 lists all four. (3) PH7-17 depends on the six phase checkpoints PH1-18, PH2-10, PH3-14, PH4-10, PH5-17 and PH6-12, on PH7-01 to PH7-16 including PH7-09a, and on OA-09, OA-01, OA-02, OA-05 and OA-06, so a missing checkpoint starts nothing and is listed as RB-19 (TPR-H-3).
+- Property ownership (TPR-M-3): each property has one authoritative task, which holds its only Hypothesis test. P-a, P-b and P-c in PH3-09. P-d in PH2-03 (PH2-08 adds an example check over stdio and no property test). P-e in PH6-02 (deferred). P-f in PH7-06. P-g in PH6-12. P-h in PH5-12. P-i in PH1-17. P-j in PH2-02. P-k in PH1-03 (PH7-04 adds example checks over the sanitizer and no property test). P-l in PH1-15 (PH7-05 reruns it and adds no second test). P-m in PH6-03 (deferred). P-n in PH7-04. P-o in PH3-08. PH7-02 checks that the 13 queued properties exist exactly once with their tags and guards (P-e and P-m are deferred).
+- Plan readings to confirm: (1) The pre-change hash step DR-7 belongs to D5.9, and the replay matrix DR-1 to DR-6 belongs to D8.10, so PH3-01 cites D5.9 DR-7. (2) D8-AC-29 lists two approved test hunks, while 13.26, D5-AC-19 and 10.34 also require the BE-2 port hunk and the contract-version literal changes, so PH7-07 lists all four, of which the AM-D7-1 hunk is not applied (California is deferred). (3) PH7-17 depends on the six phase checkpoints PH1-18, PH2-10, PH3-14, PH4-10, PH5-17 and PH6-12, on PH7-01 to PH7-16 including PH7-09a, and on OA-09, OA-01, OA-02, OA-05 and OA-06, so a missing checkpoint starts nothing and is listed as RB-19 (TPR-H-3).
 - Criteria that a task and an owner item both cite: 1.12 (PH7-09a and OA-02) and 13.27 (PH7-18 and OA-03). In earlier versions of this plan only the owner items cited them.
 
 TPR-M-2 mapping. The criteria 1.4, 1.5, 1.6, 1.7, 1.10, 1.11, 1.15, 1.16, 2.7, 2.10, 4.5, 4.7 and 14.4 were cited by no task in earlier versions of this plan. Each is now cited by the tasks below, with a measurable rule (D10-AC-29). The table also holds the design rows that the review found unmapped (TPR-M-1).
@@ -1447,23 +1469,23 @@ Deferred Linux verification register (TPR-C-1, D10.11 TR-1). Each row is `UNVERI
 | DLV-3 | The Linux per-test baseline at `84df25c` (`--collect-only` and `-rA`, direct exit code) and `TEST_INVENTORY.linux.txt` | PH7-09 | 14.22, 13.9; D9-AC-4 | RB-3 |
 | DLV-4 | The five cases that skip on Windows (the symlink case and four peer-credential cases) and the other Linux cases that need a full checkout (B-D8-1) | PH7-17 | 14.19, 1.12; D9-AC-2 | RB-13 |
 
-Requirement coverage. The table lists the tasks that cite at least one criterion of each requirement.
+Requirement coverage. The table lists the queued tasks that cite at least one criterion of each requirement. The deferred tasks are not listed, and a requirement with no queued task is marked.
 
 | Requirement | Tasks |
 |---|---|
 | R1 | PH1-01, PH1-02, PH1-02a, PH1-03, PH1-08, PH1-09, PH1-10, PH1-12a, PH1-18, PH3-12, PH3-14, PH5-07, PH7-09a, PH7-14, PH7-15, PH7-17 |
-| R2 | PH1-04, PH1-12a, PH1-13, PH1-14, PH1-15, PH2-03, PH3-02, PH3-10, PH5-02, PH5-07, PH5-09, PH5-10, PH5-11, PH5-14, PH5-15, PH6-01, PH7-03, PH7-04, PH7-05, PH7-06, PH7-07, PH7-17 |
+| R2 | PH1-04, PH1-12a, PH1-13, PH1-14, PH1-15, PH2-03, PH3-02, PH3-10, PH5-02, PH5-07, PH5-09, PH5-10, PH5-11, PH5-14, PH5-15, PH7-03, PH7-04, PH7-05, PH7-06, PH7-07, PH7-17 |
 | R3 | PH1-02, PH1-02a, PH1-03, PH1-03a, PH4-04, PH4-06, PH4-07, PH4-08, PH4-09, PH7-08, PH7-14 |
 | R4 | PH1-02, PH1-02a, PH1-03a, PH1-18, PH2-10, PH3-14, PH4-10, PH5-17, PH6-12, PH7-07, PH7-08, PH7-15, PH7-17, PH7-18 |
 | R5 | PH5-01, PH5-02, PH5-03, PH5-07 |
 | R6 | PH5-04, PH5-06, PH5-07 |
-| R7 | PH1-11, PH1-12, PH1-15, PH1-16, PH1-17, PH3-04, PH5-01, PH5-06, PH5-08, PH5-09, PH5-10, PH5-11, PH5-12, PH5-13, PH5-14, PH5-15, PH5-16, PH6-04, PH7-04, PH7-05, PH7-12, PH7-16 |
+| R7 | PH1-11, PH1-12, PH1-15, PH1-16, PH1-17, PH3-04, PH5-01, PH5-06, PH5-08, PH5-09, PH5-10, PH5-11, PH5-12, PH5-13, PH5-14, PH5-15, PH5-16, PH7-04, PH7-05, PH7-12, PH7-16 |
 | R8 | PH1-04, PH2-07, PH4-01, PH4-02, PH4-03, PH4-04, PH4-05, PH4-06, PH4-07, PH4-08 |
 | R9 | PH1-04a, PH2-01, PH2-02, PH2-03, PH2-04, PH2-05, PH2-06, PH2-07, PH2-08, PH2-09, PH2-10, PH3-11, PH4-09 |
-| R10 | PH1-03a, PH1-05, PH3-01, PH3-02, PH3-03, PH3-04, PH3-05, PH3-06, PH3-07, PH3-09, PH3-10, PH3-11, PH3-12, PH3-13, PH5-05, PH6-11, PH7-04, PH7-05 |
-| R11 | PH6-01, PH6-02, PH6-03, PH6-04 |
-| R12 | PH3-01, PH3-02, PH3-05, PH3-08, PH3-10, PH6-05, PH6-06, PH6-07, PH6-08, PH6-08a, PH6-09, PH6-09a, PH6-10, PH6-10a, PH6-11, PH6-12, PH7-07 |
-| R13 | PH1-04, PH1-04a, PH1-05, PH1-06, PH1-07, PH1-08, PH1-09, PH1-10, PH1-11, PH1-12, PH1-12a, PH1-14, PH1-15, PH1-16, PH1-17, PH1-18, PH2-01, PH2-02, PH2-10, PH3-01, PH3-04, PH3-05, PH3-06, PH3-08, PH3-09, PH3-10, PH3-14, PH4-10, PH5-10, PH5-12, PH5-14, PH5-17, PH6-02, PH6-03, PH6-04, PH6-12, PH7-01, PH7-02, PH7-03, PH7-04, PH7-05, PH7-06, PH7-07, PH7-08, PH7-09, PH7-09a, PH7-11, PH7-18 |
+| R10 | PH1-03a, PH1-05, PH3-01, PH3-02, PH3-03, PH3-04, PH3-05, PH3-06, PH3-07, PH3-09, PH3-10, PH3-11, PH3-12, PH3-13, PH5-05, PH7-04, PH7-05 |
+| R11 | none (every criterion of this requirement is deferred, and no queued task cites one) |
+| R12 | PH3-01, PH3-02, PH3-05, PH3-08, PH3-10, PH6-12 |
+| R13 | PH1-04, PH1-04a, PH1-05, PH1-06, PH1-08, PH1-09, PH1-10, PH1-11, PH1-12, PH1-12a, PH1-14, PH1-15, PH1-16, PH1-17, PH1-18, PH2-01, PH2-02, PH2-10, PH3-01, PH3-04, PH3-05, PH3-06, PH3-08, PH3-09, PH3-10, PH3-14, PH4-10, PH5-10, PH5-12, PH5-14, PH5-17, PH6-12, PH7-01, PH7-02, PH7-03, PH7-04, PH7-05, PH7-06, PH7-07, PH7-08, PH7-09, PH7-09a, PH7-11, PH7-18 |
 | R14 | PH1-01, PH1-10, PH1-18, PH5-14, PH7-08, PH7-09, PH7-09a, PH7-10, PH7-11, PH7-12, PH7-13, PH7-15, PH7-16, PH7-17, PH7-18 |
 | R15 | PH7-14 |
 | R16 | PH4-04, PH4-09, PH7-14 |

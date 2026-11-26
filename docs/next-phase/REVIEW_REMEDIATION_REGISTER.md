@@ -168,3 +168,47 @@ No owner record was written, inferred or assumed in this checkpoint. Every owner
 | OA-07a to OA-07e | The registry review and the independent reviews of the retrieved snapshots | Retrieval and promotion of regulatory snapshots |
 | OA-01, OA-09 | The authorization of the push of S and of the dispatch, and the selection of S | PH7-17 |
 | CD-01 to CD-09, OA-10 | Public deployment decisions. Not authorized by this work | Public_Deployment_Readiness |
+
+## Scope freeze and owner decisions (2026-11-26)
+
+Written after the task-plan remediation, and appended. It changes no text above it. The table "Owner decisions still open and blockers still outstanding" describes the state before the owner's decisions and is not edited. This section gives the state now. The records are in `docs/next-phase/OWNER_DECISIONS.md` and the design reading is D10.12. Nothing here is IMPLEMENTED or VERIFIED.
+
+| Item | State now |
+|---|---|
+| OA-00 | `PROVIDED`, verdict `ACCEPTED_WITH_CONDITIONS`, covered commit `fff6db49fb6f7f51080ca4fdb5e0ee7c1d37a581` |
+| OA-08 | `PROVIDED` for OD-D8-1 to OD-D8-4 (approved as designed). The recommendations for OD-D8-5, OD-D8-6, OD-D9-3 and OD-D9-6 are retained and visible. The total replay quota has no approved value (open item in the record). |
+| OA-02 | `NOT_PROVIDED`. DLV-1 to DLV-4 stay `UNVERIFIED` and RB-1, RB-3 and RB-13 stay open until PH7-09a supplies a record that names a Linux source. |
+| OA-01, OA-03, OA-04, OA-05, OA-06, OA-09 | `OPEN` |
+| OA-10 | `OPEN`, a decision only |
+| OA-07a to OA-07e, CD-01 to CD-09, PH1-07, PH6-01 to PH6-11 | `DEFERRED` by the scope freeze. Not queued, not implemented, not verified. |
+
+The 31 findings keep the status `RESOLVED IN PLAN`. The scope freeze neither reopens nor verifies any of them.
+
+Changes that the deferral made necessary beyond the items that the owner listed. Each keeps a security dependency or a release-integrity gate that a deferred task would otherwise have carried.
+
+| Change | Reason |
+|---|---|
+| PH6-12 depends on PH3-14 and PH5-17, and cites 12.13 | It named only deferred tasks. Without a retained dependency it had no path to PH1-03 (EG-1) and ran before the code that it replays. |
+| Row T8-1 names the baseline `tests/contract/test_blinding.py` | It cited only D6-AC-10 and D6-AC-11, which belong to the deferred PH6-01. Its status is unchanged. |
+| PH3-12 classifies the Examination_Semantics id in the 2.0.0 event | PH6-11 carried that classification, and PH3-02 adds the id. D5-AC-18 needs an owner. |
+| PH7-07 cites 2.9 and 2.12 and applies no `CA` to `ZZ` hunk | PH6-01 was the only task that cited 2.9 and 2.12 (the LLM fence), and PH7-07 runs the fence. California stays unsupported. |
+| PH7-12 and D9-AC-13, D9-AC-19: the plugin manifest hash is `NOT_BUILT` and RP-9 is `NOT_APPLICABLE` | Both rows would otherwise demand a deferred artifact or invite an invented value. |
+| KL-1 recorded (baseline entry-point loading in the public profile) | The owner asked for it. It is read from `core/src/verdictkit/cli.py`. No blocker row was added, because RB-16 and RB-17 stay open while CD-01 to CD-09 are deferred. |
+
+Validation of the scope freeze (2026-11-26). Method: a scratch Python script run from a directory outside the repository, not committed. It parses `tasks.md` (task headers, `Depends on` lines, owner items, the wave list, the `_Requirements_` lines and the coverage table) and checks the following.
+
+| Check | Result |
+|---|---|
+| Tasks in the file, queued, deferred, queued complete, queued remaining, queued optional | 107, 92, 15, 1, 91, 0 |
+| Queued tasks per phase | PH1 21, PH2 10, PH3 14, PH4 10, PH5 17, PH6 1, PH7 19 |
+| Owner items: in the graph, deferred, conditional items deferred | 10, 5, 9 |
+| Nodes in the wave list, waves, contiguous wave ids | 102, 52, yes |
+| Dependency edges checked, edges to a deferred item, wave-order violations, cycle members | 272, 0, 0, 0 |
+| Queued tasks (other than PH1-01, PH1-02, PH1-03) that do not reach PH1-03 (EG-1) | 0 |
+| Queued tasks (other than PH1-01, PH1-02) that do not reach PH1-02, which depends on OA-00 | 0 |
+| PH7-17 and OA-09 depend on all six phase checkpoints | yes |
+| Queued tasks that cite no criterion, or cite a deferred criterion | 0 |
+| Coverage table rows that differ from the rows derived from the `_Requirements_` lines | 0 of 16 |
+| Queued tasks that cite a criterion of Requirement 11, of Requirement 12 | 0, 6 |
+
+Before the freeze the same parser read 107 tasks, 55 waves, 131 nodes in the wave list and 0 cycles, so the figures of the earlier plan are reproduced.

@@ -473,6 +473,41 @@ Result: 0 hits in every class in the added lines, and no file has more hits than
 
 A push of the commit that holds this subsection is recorded by the first ledger update after it, because a commit cannot contain its own id (see the note after PUSH-003).
 
+### Push of the task-plan remediation commit and the owner scope freeze (observation, 14.13)
+
+Status: a reading of recorded data plus a publication scan, written 2026-11-26 (UTC date of the system clock). It is the first ledger update after the commit that holds the PUSH-006 subsection, and it records the push of that commit. It adds no Execution_Record, no E-id and no Outcome_Class. It does not change records E-201 to E-222 or any text above it.
+
+This row is an observation of a ref update and not an Execution_Record: it has no command, exit code or Outcome_Class, as for PUSH-001 to PUSH-006. The time is the timestamp of the last line of the local reflog of `refs/remotes/origin/feature/kiro-next-phase`, converted to UTC. That line is an `update by push` entry and carries Unix time 1795713872. The time is when the local tracking ref was updated after the push, and it is not a server timestamp. It is not the commit time of the After commit.
+
+| Record | Ref | Before | After | Updated (UTC) | Owner authorization |
+|---|---|---|---|---|---|
+| PUSH-007 | `refs/heads/feature/kiro-next-phase` | `b4d150272c6c6b0efc50c8038e9bdfdb6d49d4cb` | `fff6db49fb6f7f51080ca4fdb5e0ee7c1d37a581` | 2026-11-26 17:24:32 | Owner-executed manual PowerShell push. Stated by the repository owner in the request of 2026-11-26 that asked for this record. The text of the statement is not stored in this repository. |
+
+Reading. The Before value equals the After value of PUSH-006 and the parent of the After commit. The After commit is the commit titled "docs(spec): resolve implementation dependency and verification findings". It holds the PUSH-006 subsection and the documentation changes of the task-plan review remediation. This push was not recorded before, and the row PUSH-006 is unchanged. At the time of this record the local reflog of the tracking ref holds 7 entries, all `update by push`, and they are the 7 rows PUSH-001 to PUSH-007. The local branch, the local tracking ref and the output of `git ls-remote origin refs/heads/feature/kiro-next-phase` all showed the After value when these values were read for this record. That read, and the conversion of the Unix time to UTC, are state checks and not Execution_Records.
+
+Scope freeze and owner decisions. The commit that holds this subsection also holds the owner decisions of 2026-11-26 and the scope reconciliation that follows from them: `requirements.md`, `design.md` (section D10.12), `tasks.md`, `REVIEW_REMEDIATION_REGISTER.md`, the new `OWNER_DECISIONS.md` and this ledger. It changes no application code, no test, no script, no configuration and no lock file. It adds no Execution_Record and does not change records E-201 to E-222. The box of task 1.1 PH1-01 stays ticked and no other box is ticked. OA-00 (`ACCEPTED_WITH_CONDITIONS`) and OA-08 (for OD-D8-1 to OD-D8-4) are recorded `PROVIDED`, and OA-02 is recorded `NOT_PROVIDED`, in `OWNER_DECISIONS.md`. The agent transcribed them from the owner's request and made none of those decisions. OA-01, OA-03, OA-04, OA-05, OA-06, OA-09 and OA-10 stay `OPEN`. The deferred items (15 tasks, OA-07a to OA-07e and CD-01 to CD-09) are not implemented and not verified. Kiro credits for this work: NOT_AVAILABLE (no Kiro usage record was read, 16.2). The owner's request says that nearly 2,000 credits have been consumed in total. That statement is approximate and carries no unit, session identifier or request-identifier count, so it is not a Credit_Record and no figure is added (16.2, 16.5).
+
+Push of this commit. The owner authorized one ordinary non-force push of the Phase_Branch for the commit that holds this subsection, through the normal Kiro approval controls, in the request of 2026-11-26. The text of the authorization is not stored in this repository. The push is recorded by the first ledger update after it, because a commit cannot contain its own id (see the note after PUSH-003).
+
+Publication scan (3.14). The files published by the commit that holds this subsection are `requirements.md`, `design.md`, `tasks.md`, `REVIEW_REMEDIATION_REGISTER.md`, `OWNER_DECISIONS.md` and this ledger. They were scanned for the eight classes of 3.14, for other absolute local paths (drive-letter, UNC and home-style) and for long encoded runs other than hexadecimal hashes, by a scratch script that is not part of the repository (the permanent scan is task PH1-03, and it is not implemented). The values of the local checkout path, the user-profile path, the user names and the host name were read from the environment and from the version-control configuration at run time and are not written in any file. The scanner was first run on a planted sample built in memory: 10 of 10 classes detected, 0 hits on a clean sample. The scan ran on the text of this subsection before it was written into the ledger and again on the six written files. The first run on the draft reported 2 matches that were false positives of the scanner's own rules: a repository reference path was read as a long encoded run, and a time of day was read as a network address. The two rules were narrowed (an IPv6 address needs eight groups or a `::`, and a long run needs an upper-case letter, a lower-case letter and a digit and is not hexadecimal). The planted-sample test was run again with 10 of 10 classes detected and 0 hits on a clean sample that includes a time of day and a reference path. Both runs below use the narrowed scanner and give the counts below. The result is one count per class and never a matched value.
+
+| Class | Lines added by this commit, six files | Hits above the HEAD count, any file |
+|---|---|---|
+| User-profile path (RR-2, RR-3 and profile-style paths) | 0 | 0 |
+| Repository-root path (RR-1) | 0 | 0 |
+| Other absolute local path (drive-letter, UNC, home-style) | 0 | 0 |
+| User name (account, version-control and hosting identities) | 0 | 0 |
+| Host name | 0 | 0 |
+| E-mail address | 0 | 0 |
+| Non-loopback network address (IPv4 and IPv6) | 0 | 0 |
+| Secret assignment or token | 0 | 0 |
+| Key block | 0 | 0 |
+| Long encoded run other than a hexadecimal hash | 0 | 0 |
+
+Result: 0 hits in every class in the added lines, and no file has more hits than its HEAD version. The hits that exist in the whole files at HEAD are unchanged: 7 user-profile-style and 11 other absolute-path matches in the specification files, which are the documented constructed example paths of `design.md` and the environment-variable placeholders of `requirements.md` (see `EVIDENCE_REDACTION.md`, "Not redacted, and why"). Under the earlier, looser long-run rule the specification files at HEAD had 70 matches, and each of them contained a path or identifier separator, with a highest entropy of 4.69 bits per character, so none looks like an encoded secret. The scan result does not block the commit.
+
+A push of the commit that holds this subsection is recorded by the first ledger update after it, because a commit cannot contain its own id (see the note after PUSH-003).
+
 ## Capability register
 
 | Capability | Status |
