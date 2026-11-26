@@ -440,6 +440,39 @@ Result: 0 hits in every class and both columns, so the scan does not block the c
 
 A push of the commit that holds this subsection is recorded by the first ledger update after it, because a commit cannot contain its own id (see the note after PUSH-003).
 
+### Push of the PH1-01 record commit and the task-plan remediation (observation, 14.13)
+
+Status: a reading of recorded data plus a publication scan, written 2026-11-26 (UTC date of the system clock). It is the first ledger update after the commit that holds the PUSH-005 row, and it records the push of that commit. It adds no Execution_Record, no E-id and no Outcome_Class. It does not change records E-201 to E-222 or any text above it.
+
+This row is an observation of a ref update and not an Execution_Record: it has no command, exit code or Outcome_Class, as for PUSH-001 to PUSH-005. The time is the timestamp of the last line of the local reflog of `refs/remotes/origin/feature/kiro-next-phase`, converted to UTC. That line is an `update by push` entry and carries Unix time 1795679353. The time is when the local tracking ref was updated after the push, and it is not a server timestamp.
+
+| Record | Ref | Before | After | Updated (UTC) | Owner authorization |
+|---|---|---|---|---|---|
+| PUSH-006 | `refs/heads/feature/kiro-next-phase` | `07cdac4d28ed001080e2299541bdf937eabe8b35` | `b4d150272c6c6b0efc50c8038e9bdfdb6d49d4cb` | 2026-11-26 07:49:13 | Explicitly authorized by the repository owner as an ordinary feature-branch push through Kiro. Stated in the request of 2026-11-26 that asked for this record. The text of the statement is not stored in this repository. |
+
+Reading. The Before value equals the After value of PUSH-005 and the parent of the After commit. The After commit is the commit titled "docs(evidence): record PUSH-005 for the PH1-01 finalization commit". It changed only this ledger, with 31 added lines, which are the PUSH-005 subsection. At the time of this record the local reflog of the tracking ref holds 6 entries, all `update by push`, and they are the 6 rows PUSH-001 to PUSH-006. The local branch, the local tracking ref and the output of `git ls-remote origin refs/heads/feature/kiro-next-phase` all showed the After value when these values were read for this record. That read, and the conversion of the Unix time to UTC, are state checks and not Execution_Records.
+
+Task-plan remediation. The commit that holds this subsection also holds the documentation changes of the task-plan review remediation (31 findings, TPR-C-1 to TPR-L-5): `requirements.md`, `design.md` (section D10.11), `tasks.md`, `REVIEW_REMEDIATION_REGISTER.md` and this ledger. It changes no application code, no test, no script, no configuration and no lock file. It adds no Execution_Record and does not change records E-201 to E-222. The box of task 1.1 PH1-01 stays ticked and no other box is ticked. The register records the result of the document checks. Nothing in the commit is an owner approval: OA-00 and every other owner item are `OPEN`. Kiro credits for this work: NOT_AVAILABLE (no Kiro usage record was read, 16.2).
+
+Publication scan (3.14). The files published by the commit that holds this subsection are `requirements.md`, `design.md`, `tasks.md`, `REVIEW_REMEDIATION_REGISTER.md` and this ledger. They were scanned for the eight classes of 3.14, for other absolute local paths (drive-letter, UNC and home-style) and for long encoded runs other than hexadecimal hashes, by a scratch script that is not part of the repository (the permanent scan is task PH1-03, and it is not implemented). The values of the local checkout path, the temporary directory path, the user-profile path, the user names and the host name were read from the environment and from the version-control configuration at run time and are not written in any file. The scanner was first run on a planted sample built in memory: 10 of 10 classes detected, 0 hits on a clean sample. The scan ran on the text of this subsection before it was written into the ledger and again on the five written files. Both runs give the counts below. The result is one count per class and never a matched value.
+
+| Class | Lines added by this commit, five files | Hits above the HEAD count, any file |
+|---|---|---|
+| User-profile path (RR-2, RR-3 and profile-style paths) | 0 | 0 |
+| Repository-root path (RR-1) | 0 | 0 |
+| Other absolute local path (drive-letter, UNC, home-style) | 0 | 0 |
+| User name (account, version-control and hosting identities) | 0 | 0 |
+| Host name | 0 | 0 |
+| E-mail address | 0 | 0 |
+| Non-loopback network address (IPv4 and IPv6) | 0 | 0 |
+| Secret assignment or token | 0 | 0 |
+| Key block | 0 | 0 |
+| Long encoded run other than a hexadecimal hash | 0 | 0 |
+
+Result: 0 hits in every class in the added lines, and no file has more hits than its HEAD version. The hits that exist in the whole files at HEAD are unchanged: the documented constructed example paths of `design.md` and the environment-variable placeholders of `requirements.md` (see `EVIDENCE_REDACTION.md`, "Not redacted, and why"). The scan result does not block the commit.
+
+A push of the commit that holds this subsection is recorded by the first ledger update after it, because a commit cannot contain its own id (see the note after PUSH-003).
+
 ## Capability register
 
 | Capability | Status |
