@@ -84,7 +84,7 @@ Waves follow the Depends on lines. A task sits in a later wave than every task a
   - Goal: Close BE-1 and BE-2 on the Windows leg, take the vault key out of every argument list, fix isolation, replay, upload and evidence-publication findings, and end at a verified checkpoint.
   - _Requirements: 1.1, 1.2, 1.3, 1.9, 1.13, 1.14, 1.17, 1.18, 1.19, 2.4, 2.5, 2.6, 2.11, 2.13, 2.14, 3.1, 3.2, 3.3, 3.5, 3.9, 3.11, 3.12, 3.14, 4.4, 4.9, 7.7, 7.8, 7.9, 7.10, 7.19, 7.20, 7.21, 7.22, 7.25, 8.13, 13.10, 13.11, 13.12, 13.13, 13.15, 13.16, 13.17, 13.18, 13.24, 13.25, 13.26, 14.10, 14.14_
 
-  - [ ] 1.1 PH1-01 Start-of-phase preflight
+  - [x] 1.1 PH1-01 Start-of-phase preflight
     - Objective: Record in the Evidence_Ledger the branch, HEAD, the Frozen_Release refs (tag object and peeled commit of `v1.0.0-submission`, `master`, `verified-quote-e2e-20261118`), `git status --porcelain` and the tool versions (Python patch, uv, Node, npm, git, ruff, pytest, Hypothesis, locked `mcp`, Docker engine `Server.Os`). Confirm each Submission_Artifacts file equals its content at `84df25c`. No code change.
     - Acceptance tests: D9-AC-16 at phase start: 4 of 4 ref values equal 1.2 (tag object `e9ca8d2bac4a65483f3a7357e00600a1210a6f4f`, peeled commit and `master` `84df25c68198e496889b5892a03555ec7d2d860a`, `verified-quote-e2e-20261118` `407478be97a8979a8e3555bba3b3ab302229f91d`). `git diff --quiet 84df25c HEAD` over `docs/SUBMISSION_DRAFT.md`, `docs/SUBMISSION_READINESS.md`, `docs/JUDGE_DEMO.md`, `docs/RELEASE_READINESS.md` and `docs/KIRO_USAGE.md` (the Submission_Artifacts of the Glossary) exits 0. `git status --porcelain` lists only new phase documents (1.9).
     - Environment: Windows. The Docker engine version is read through Docker Desktop.
