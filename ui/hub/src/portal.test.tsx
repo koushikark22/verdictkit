@@ -162,9 +162,26 @@ describe("VerifyLab", () => {
     expect(screen.queryByTestId("lab-report")).toBeNull();
   });
 
+  it("does not claim the lab is disabled while its status is unknown (loading or backend offline)", () => {
+    const client = fakeClient(vi.fn() as unknown as Client["demoVerify"]);
+    // The backend has not answered at all: loading, or unreachable. Unknown is not the same as disabled.
+    const offline = render(<VerifyLab client={client} health={null} lab={null} labError={null} image="x" />);
+    expect(screen.queryByTestId("lab-disabled")).toBeNull();
+    expect(screen.getByTestId("lab-pending").textContent).toMatch(/Waiting for the backend/);
+    expect(screen.getByTestId("no-scenarios").textContent).not.toMatch(/not enabled/);
+    expect(screen.getByTestId("verify-button").hasAttribute("disabled")).toBe(true);
+    offline.unmount();
+    // The backend is up and /demo/status has not answered yet.
+    render(<VerifyLab client={client} health={health} lab={null} labError={null} image="x" />);
+    expect(screen.getByTestId("lab-pending").textContent).toMatch(/Checking whether/);
+    expect(screen.queryByTestId("lab-disabled")).toBeNull();
+  });
+
   it("without the lab, scenario verification is unavailable and the reason is stated", () => {
     render(<VerifyLab client={fakeClient(vi.fn() as unknown as Client["demoVerify"])} health={health} lab={null} labError="The demonstration lab is not enabled on this server." image="x" />);
     expect(screen.getByTestId("lab-disabled").textContent).toMatch(/not enabled/);
+    expect(screen.queryByTestId("lab-pending")).toBeNull();
+    expect(screen.getByTestId("no-scenarios").textContent).toMatch(/not enabled/);
     expect(screen.getByTestId("verify-button").hasAttribute("disabled")).toBe(true);
   });
 });

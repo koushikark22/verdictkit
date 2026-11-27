@@ -387,12 +387,14 @@ export function EvidenceTable({ items }: { items: EvidenceDTO[] }) {
   );
 }
 
+/** A stroke painted behind the glyphs, in the card colour: the start label stays readable where the series line crosses it. */
+const HALO = { stroke: "#ffffff", strokeWidth: 3.5, strokeLinejoin: "round", paintOrder: "stroke" } as const;
 /** Draws an EQUITY_SERIES key record. Always illustrative: never a counterexample. */
 export function EquityChart({ record }: { record: KeyRecord }) {
   const raw = (record.payload.equity as string[] | undefined) ?? [];
   const values = raw.map(Number).filter(Number.isFinite);
   if (values.length < 2) return null;
-  const w = 720, h = 250, padL = 58, padR = 18, padT = 16, padB = 34;
+  const w = 720, h = 250, padL = 58, padR = 80, padT = 16, padB = 34;
   const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
   // Labels show at most two decimals by truncating the engine's decimal string (no float round trip).
   const short = (s: string) => s.replace(/^(-?\d+\.\d{2})\d*$/, "$1");
@@ -413,12 +415,13 @@ export function EquityChart({ record }: { record: KeyRecord }) {
           </g>
         ))}
         <line x1={padL} x2={w - padR} y1={y(values[0])} y2={y(values[0])} stroke="#c9a35b" strokeWidth="1.5" strokeDasharray="5 4" />
-        <text x={w - padR} y={y(values[0]) - 5} textAnchor="end" fontSize="11" fill="#7a5c1c">start {short(raw[0])}</text>
+        <text x={w - padR} y={y(values[0]) - 5} textAnchor="end" fontSize="11" fill="#7a5c1c" {...HALO}>start {short(raw[0])}</text>
         <polygon points={area} fill="currentColor" opacity=".12" />
         <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
         <circle cx={x(last)} cy={y(values[last])} r="4.5" fill="currentColor" />
-        {/* The end label sits on the side of the end point that has free space, so it never meets the bar-number axis labels. */}
-        <text x={x(last) - 8} y={y(values[last]) + (y(values[last]) > h / 2 ? -10 : 18)} textAnchor="end" fontSize="11" fill="currentColor">end {short(raw[raw.length - 1])}</text>
+        {/* The end label sits in the right margin, level with the end point. The series stops at that point, so the line can never
+            run through the label, and the label never meets the bar-number axis labels. */}
+        <text x={x(last) + 9} y={y(values[last]) + 4} textAnchor="start" fontSize="11" fill="currentColor">end {short(raw[raw.length - 1])}</text>
         <text x={padL} y={h - 10} fontSize="11" fill="#52615f">bar 1</text>
         <text x={w - padR} y={h - 10} textAnchor="end" fontSize="11" fill="#52615f">bar {values.length}</text>
       </svg>

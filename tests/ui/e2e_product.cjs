@@ -56,6 +56,26 @@ function guard(page, label, sink) {
 const headline = (page, word, timeout = 90000) =>
   page.waitForFunction((w) => document.querySelector("[data-testid=headline]")?.textContent?.includes(w), word, { timeout });
 
+/** Scrolls the element to the top of the page (below the sticky bar) so a viewport screenshot shows the result, not the form above it. */
+const focus = async (page, selector) => {
+  // Repeats until the element rests just below the bar: content above it can still settle (fonts, event lists) after the first scroll.
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await page.evaluate((sel) => document.querySelector(sel)?.scrollIntoView({ block: "start", behavior: "instant" }), selector);
+    await page.waitForTimeout(350);
+    const rests = await page.evaluate((sel) => {
+      const bar = document.querySelector("header.vk-topbar").getBoundingClientRect().bottom;
+      const el = document.querySelector(sel);
+      return !!el && Math.abs(el.getBoundingClientRect().top - (bar + 14)) <= 3;
+    }, selector);
+    if (rests) return;
+  }
+};
+/** True when the first element matching `selector` starts below the sticky top bar, i.e. nothing is hidden under the bar. */
+const clearOfTopbar = (page, selector) => page.evaluate((sel) => {
+  const bar = document.querySelector("header.vk-topbar").getBoundingClientRect().bottom;
+  const el = document.querySelector(sel);
+  return !!el && el.getBoundingClientRect().top >= bar - 0.5;
+}, selector);
 function freePort() {
   return new Promise((resolve, reject) => {
     const s = net.createServer();
@@ -147,6 +167,7 @@ async function quoteFinanceAndLease(browser, errors, downloads) {
   const vals = [await meta.getByTestId("integrity-status").textContent(), await meta.getByTestId("signature-validity").textContent(),
     await meta.getByTestId("signer-trust").textContent(), await meta.getByTestId("authenticity-status").textContent(), await meta.getByTestId("isolation-mode").textContent()];
   check(vals.join("|") === "VERIFIED|VALID|TRUSTED|ESTABLISHED|ENFORCED", `quote: the real bundle verifies as written (${vals.join(" / ")})`);
+  await focus(page, "[data-testid=verdict]");
   await shot(page, "02-quote-contradicted-desktop.png");
   await shot(page, "02-quote-contradicted-desktop-full.png", true);
   await page.getByRole("button", { name: "Replay on server (no network)" }).click();
@@ -250,6 +271,7 @@ async function reel(browser, errors) {
   check((await text(page, "headline")).includes("Mathematical bound"), "reel demo: the verdict names its kind (mathematical bound)");
   const ceiling = await text(page, "why-verdict");
   check(ceiling.includes("perfect foresight") && ceiling.includes("does not say the claimant lied"), "reel demo: the explanation states the ceiling and does not accuse anyone");
+  await focus(page, "[data-testid=verdict]");
   await shot(page, "03-reel-impossible-desktop.png");
   await shot(page, "03-reel-impossible-desktop-full.png", true);
 
@@ -291,6 +313,8 @@ async function verifyLab(browser, errors, downloads, expectedKeyId) {
   check((await report.getByTestId("signer-key-id").textContent()) === expectedKeyId, "verify: the signer shown is the server's demonstration key, by public key id");
   check((await text(page, "bundle-signer")).includes(expectedKeyId), "verify: the bundle card names that same key");
   check((await text(page, "lab-explanation")).includes("does not show that the claim is true"), "verify: the explanation never says the claim is true");
+  await page.waitForTimeout(1500); // the guided run scrolls smoothly to the result
+  check(await clearOfTopbar(page, "[data-testid=lab-report] h5"), "verify: after the guided run the first result tile's label is below the sticky bar, not hidden under it");
 
   // Download the real bundle and the public trust store.
   const d1 = page.waitForEvent("download");
@@ -334,6 +358,7 @@ async function verifyLab(browser, errors, downloads, expectedKeyId) {
   check((await text(page, "reason-codes")).includes("KEY_NOT_IN_TRUST_STORE"), "verify: the unknown scenario reports KEY_NOT_IN_TRUST_STORE (an embedded key is never trusted)");
   await page.locator('[data-scenario="tampered-bundle"]').click();
   check((await text(page, "lab-tested")).includes("first character of the sealed verdict hash"), "verify: the tampered scenario says exactly what was changed");
+  await focus(page, "[data-testid=lab-result]");
   await shot(page, "04-verify-lab-desktop.png");
   await shot(page, "04-verify-lab-desktop-full.png", true);
 
@@ -438,7 +463,7 @@ async function responsive(browser, errors) {
     await headline(page, "IMPOSSIBLE");
     const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(over <= 1, `responsive ${name}: a complete Reel verdict, with chart and tables, fits the width (${over}px over)`);
-    if (name === "mobile") await shot(page, "07-reel-verdict-mobile.png");
+    if (name === "mobile") { await focus(page, "[data-testid=verdict]"); await shot(page, "07-reel-verdict-mobile.png"); }
     await ctx.close();
   }
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -448,6 +473,8 @@ async function responsive(browser, errors) {
   await page.getByTestId("lab-result").waitFor({ timeout: 120000 });
   const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   check(over <= 1, `responsive mobile: the Verify Lab result fits the width (${over}px over)`);
+  await page.waitForTimeout(1500);
+  check(await clearOfTopbar(page, "[data-testid=lab-report] h5"), "responsive mobile: the wrapped (taller) sticky bar does not hide the first result tile either");
   check((await page.getByTestId("lab-report").getByTestId("integrity-status").textContent()) === "FAILED", "guided demo link: the tampered scenario ran end to end from one URL");
   await shot(page, "08-verify-tampered-mobile.png");
   await ctx.close();

@@ -235,7 +235,9 @@ details.vk-help p { margin: 6px 0 0; }
 .vk-explain table { background: #fff; }
 .vk-uncertain { border-left: 4px solid var(--vk-warn); background: var(--vk-warn-bg); border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-size: .9rem; }
 .vk-uncertain p { margin: 2px 0; }
-.vk-results-anchor { scroll-margin-top: 78px; }
+/* The top bar is sticky and wraps on narrow screens (about 57px on a wide one, 127px at 390px). AppShell publishes its measured
+   height as --vk-topbar-h, so every scroll to a result or an #anchor stops below the bar instead of under it. */
+html { scroll-padding-top: calc(var(--vk-topbar-h, 60px) + 14px); }
 
 /* ---- responsive ---- */
 @media (max-width: 900px) {

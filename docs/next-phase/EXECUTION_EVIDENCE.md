@@ -673,6 +673,83 @@ Private evidence archive. Raw logs are not in this repository. A sanitised local
 - Kiro credits for this batch: `NOT_AVAILABLE`. No usage record was readable (the archive index records the search).
 - The IDE's MCP server processes are stale (see "Kiro capabilities") and need a restart in Kiro; this was not done by the agent.
 
+## Final Batch 3 (release validation and submission preparation)
+
+Scope: final inspection of the running product, an independent security review, Kiro MCP and hook evidence, a documents and evidence audit, the release gates, and the competition documents. No architecture change, no specification change, no new dependency, no public deployment. The ids B3-01 to B3-18 belong to this batch only. Raw logs are in the private archive (`KIRO_EVIDENCE`, Batch 3 files indexed by `evidence-index-batch3.json`; the Batch 2 index and files are untouched); this section holds the summaries.
+
+### PUSH-010 (observation, 14.13)
+
+This row records the push of the Batch 2 commit, which the Batch 2 section said the first ledger update after it would record. It is an observation of a ref update and not an Execution_Record, as for PUSH-001 to PUSH-009. The time is the Unix time of the newest line of the local reflog of `refs/remotes/origin/feature/kiro-next-phase` (`1795755249`, read with `git reflog show refs/remotes/origin/feature/kiro-next-phase --date=unix`), converted to UTC. It is when the local tracking ref was updated, not a server timestamp and not the commit time.
+
+| Record | Ref | Before | After | Updated (UTC) | Owner authorization |
+|---|---|---|---|---|---|
+| PUSH-010 | `refs/heads/feature/kiro-next-phase` | `f42a6d016202c0864a19dde1ee866a0d71d0f88a` | `78f3f583a71f87f5034f35157294694ed479168c` | 2026-11-27 04:54:09 | The owner's one authorized push of the Batch 2 commit (stated in the Batch 2 request). Whether it ran through Kiro or by hand is not recorded in git and stays `UNVERIFIED`. |
+
+Reading. Before equals the After value of PUSH-009 and the parent of the After commit, "feat(product): unified portal, signed-bundle Verify Lab, one-command start and browser e2e (batch 2)". The reflog holds 10 entries, all `update by push`, which are the 10 rows PUSH-001 to PUSH-010. The push result is that git recorded the tracking ref as updated by a push. Remote verification, read at the start of Batch 3 and again later: `git ls-remote origin refs/heads/feature/kiro-next-phase` returned `78f3f583a71f87f5034f35157294694ed479168c`, and the GitHub API (`git/ref/heads/feature/kiro-next-phase`) returned the same commit. The frozen refs were unchanged at both readings: `master` and tag `v1.0.0-submission` (commit) at `84df25c68198e496889b5892a03555ec7d2d860a`, the tag object at `e9ca8d2bac4a65483f3a7357e00600a1210a6f4f`, tag `verified-quote-e2e-20261118` at `407478be97a8979a8e3555bba3b3ab302229f91d`. PUSH-011, the push of the commit that holds this section, and the CI run on it are recorded by the first ledger update after it (a commit cannot contain its own id); until then they are in the private archive and the batch report.
+
+### Execution records
+
+Hosts. `Windows`: the owner's Windows host, Python 3.12.10, Node 24.14.1, system Chrome 158.0.8127.37 driven by `playwright-core` 1.65.1. `Linux container`: Docker Desktop, image `verdictkit:batch3` (`sha256:d6deed1c620311d83f26c32341b49734e8405c025c6bbc186f2c5b72a8ae577c`), built during this batch, with no Python file differing from the Batch 2 commit; run with `--network none` unless stated. Neither is the Linux_Docker_Host full-checkout run that DLV-1 to DLV-4 require.
+
+| Id | Host | What ran | Exit | Result | Class |
+|---|---|---|---|---|---|
+| B3-01 | Windows, Chrome | independent inspection of the live stack at 1440, 768 and 390 px: 27 scenes and 4 follow-up probes covering landing, Quote finance and lease, Reel (three demos, equity chart), all five Verify Lab scenarios, the side-by-side table, empty and error states, upload of a non-bundle, loading, rate limit, backend offline (a second gateway with a closed API port), gateway path probes; every screenshot was looked at | 0 | 0 page errors and 0 failed requests in the normal flows; the five scenarios read from the page matched the designed results; a real 429 appeared at request 121 and the page said "The backend is busy"; four presentation defects found (see "Defects found and fixed") | SUCCEEDED, defects found |
+| B3-02 | Windows | `npm run typecheck`, `npm test` after the four fixes; the new and changed tests first run against the original sources | 0 | typecheck clean in 4 workspaces; 53 tests passed (ui-kit 32, portal 11, quote 6, reel 4; 49 before); on the original sources 4 of the new or changed tests failed as intended | SUCCEEDED |
+| B3-03 | Windows, Chrome | re-check of the fixes on the rebuilt UI | 0 | no `/favicon.ico` request and 0 console errors; after a guided run the first result label sat at 116 px below a 57 px bar (desktop) and at 185 px below a 127 px bar (390 px), the published bar height equal to the measured one; on both demo charts 0 series points fall inside the end label's box; "not enabled" no longer shown while the lab status is pending or the backend is offline | SUCCEEDED |
+| B3-04 | Windows | black-box probes of a second gateway instance: 40 hostile paths, 11 `Host` forms, 8 methods, 3 request-smuggling shapes | 0 | no hang, no escape from `dist`, foreign hosts 421; the instance still served afterwards | SUCCEEDED, no finding above NON-BLOCKER |
+| B3-05 | Linux container (throwaway backend, 1 GiB cap) | API probes: malformed requests, oversize and lying `Content-Length`, archives with 4097 entries, 70 MiB declared, 400000-deep JSON, duplicate members, slot exhaustion with two stalled uploads | 0 | every archive case answered with a FAILED report in under 0.15 s, no 500; third upload 429 with `Retry-After: 5`; stalled uploads ended with 408 at 28.5 s and the slot came back; cross-site simple POST accepted (NB-1) | SUCCEEDED, NB-1 and NB-2 reproduced |
+| B3-06 | Linux container (live backend, read-only) | processes, environment names, directory modes, container logs (606 lines), image environment and contents; reads and writes as `vk-examiner` | 0 | no secret in arguments, logs or image; examiner denied the signing key, vault, drafts and the API's environment and descriptors; examiner can read evidence and cannot write evidence, vault or trust stores | SUCCEEDED |
+| B3-07 | Linux container (throwaway backend) | one real Quote examination, then a search of every table and column of the draft database for four claimed or recomputed figures | 0 | pre-reveal tables hold none; only the post-reveal `runs.outcome` does (NB-4) | SUCCEEDED |
+| B3-08 | Kiro IDE | the four MCP tools through the IDE's MCP client, stub claim, server as it was running | 0 | `CONTRADICTED`, integrity `VERIFIED`, `REPRODUCED`, hashes equal (`547fba0c67e3bcdfa7da58b914d36dc3301b7503fb1278753bbb0eb23d9aaa79`); `contractVersion` 1.1.0 and "unsigned in v1" wording; same private directory as in Batch 2, process started 2026-11-26 00:43 | SUCCEEDED, stale server confirmed |
+| B3-09 | Windows | restart attempt: the server's process tree (uv, python, python) ended after checking each id, creation time, command line and parent; then a tool call; then a timestamp-only touch of `.kiro/settings/mcp.json` | 0 | Kiro did not start a fresh server: "Not connected" at each later call; config content hash unchanged. Reconnect in the MCP Servers panel is a UI action (`_kiro/mcp/resetServer`) | BLOCKED, UNVERIFIED after restart |
+| B3-10 | Windows | fresh `python -m verdictkit.mcp_server` driven by the MCP SDK client (not Kiro's integration) | 0 | `contractVersion` 1.2.0, new authenticity wording, same verdict hash, equal original and replayed hashes, repository path refused with `PATH_NOT_ALLOWED` | SUCCEEDED (outside Kiro) |
+| B3-11 | Kiro IDE and Windows | hooks: agent saves of harmless `.py` files while an independent poller watched the process list, a temporary untracked pytest plugin recorded the exit status, a `.txt` save as negative control | 0 | IDE-spawned `cmd.exe /d /s /c "uv run pytest tests/contract/test_llm_fence.py -q"` with ancestry `Kiro.exe` (extension host) from `Kiro.exe`, ended after about 5.7 s; recorded exit status 0, 61 collected, 61 passed, 0 failed, parent id matching; two earlier saves gave the same records; `.txt` save started nothing | SUCCEEDED for the `llm-fence` hook |
+| B3-12 | Windows | `ruff check .`; `pytest -q -m "not isolation"` with `HYPOTHESIS_PROFILE=ci` (whole repository) | 0 | all checks passed; 642 passed, 16 skipped, 4 deselected, 57.37 s | SUCCEEDED |
+| B3-13 | Windows | `npm run build:portal`; `npm audit` and `npm audit --omit=dev`; `uvx pip-audit --no-deps --disable-pip` on the 51 pins exported from `uv.lock` | 0 | three builds; 0 vulnerabilities; no known vulnerabilities (the audit tool ran in a temporary environment and was not added to the project) | SUCCEEDED |
+| B3-14 | Linux container | `docker build`, then `gate-startup`, `gate-isolation`, `gate-sign`, `gate-http`, `gate-case` and `verdictkit replay` | 0 | `VK_STARTUP_OK isolation=ENFORCED`; 4 passed; `GATE-SIGN PASSED` (14 checks); `GATE-HTTP PASSED`, 926 polls, canary seen, 0 key hits; case bundle sha256 `89411957149cfa67a77853073456b8f4fb000fe5a37f4b781d8e91a1bd719db4` equal to the host file's; replay `REPRODUCED`, hash `547fba0c67e3bcdfa7da58b914d36dc3301b7503fb1278753bbb0eb23d9aaa79` | SUCCEEDED |
+| B3-15 | Linux container, user `vk-custodian` | `pytest tests/contract tests/api tests/integration tests/security tests/ui/test_start_scripts.py tests/ui/test_gateway.py -m "not isolation"`, the two repository-tree line-ending checks deselected as in Batch 2 | 0 | 623 passed, 15 skipped, 6 deselected, 39.45 s. A first run without the second deselection failed 1 test that reads `.gitattributes`, which the image does not contain (log kept) | SUCCEEDED |
+| B3-16 | Windows | `scripts\Start-VerdictKit.ps1 -Image verdictkit:batch3 -NoBrowser` | 0 | replaced its own earlier container and gateway only; backend on 8001 because an unrelated process holds 8000 (untouched); health `1.2.0`, `ENFORCED`, judge mode; a new demonstration key | SUCCEEDED |
+| B3-17 | Windows, real stack | `node tests/ui/e2e_product.cjs` against the stack on the batch 3 image, three runs (the later two after the screenshot helper was added and refined) | 0 | 105 checks passed, 0 failed, 0 browser console or page errors in each; two checks added (the first result label clears the sticky bar on desktop and at 390 px) | SUCCEEDED |
+| B3-18 | Windows | secret and privacy scan of the added lines and new files, and of every tracked text file | 0 | see "Privacy check of the published outputs" below | SUCCEEDED |
+
+### Defects found and fixed
+
+| Defect | Where | Fix | Evidence |
+|---|---|---|---|
+| After a guided Verify Lab run the result scrolled under the sticky bar, hiding the heading and the first tile labels (57 px bar on desktop, 127 px when the navigation wraps) | `ui-kit/src/shell.tsx`, `theme.css` | the shell publishes the bar's measured height and the page uses it as its scroll padding; the old fixed 78 px margin is gone | B3-01 screenshots, B3-02, B3-03, the two e2e checks of B3-17 |
+| `/verify` said "The demonstration lab is not enabled" while the lab status was still loading and when the backend was offline | `ui/hub/src/VerifyLab.tsx` | unknown and disabled are different states; "Checking whether the demonstration lab is enabled" or "Waiting for the backend" is shown until a definite answer | unit test, B3-03 |
+| The equity chart's end label was struck through by the series line | `ui-kit/src/components.tsx` | the label sits in a right margin level with the end point, so the line cannot cross it; the start label gets a halo | unit test, geometry check in B3-03 |
+| Every first page load logged a red `GET /favicon.ico 404` | the three `index.html` files | an inline brand icon (allowed by the existing `img-src data:`) | B3-03 |
+
+No Python file, security control, contract or dependency was changed. The browser end-to-end script gained a helper that scrolls a result into view before a screenshot, and the stills in `docs/screenshots/` were regenerated; each was looked at before it was kept.
+
+### Findings not fixed
+
+The independent security review (`docs/SECURITY_REVIEW_BATCH3.md`) found no BLOCKER. Seven NON-BLOCKER items are reproduced and listed there with the change that would close each; twelve hypotheses were NOT REPRODUCED. Remediation was therefore limited to the four presentation defects above, as the scope required.
+
+### Privacy check of the published outputs
+
+Method: a pattern scan for user-profile paths, the local user name, e-mail addresses, GitHub, cloud and chat token shapes, private-key headers, credential-like assignments and vault-key assignments. It ran over the lines this batch adds (13 modified files, 4 new text files) and over all 261 tracked text files. The private archive, the private originals file of the baseline (untracked and outside every image) and the screenshots (images of the application only) are not part of the published tree.
+
+Result. The added lines hold no match in any class. The 261 tracked files hold 13 matches that all predate this batch: 7 constructed example paths (`C:\Users\Jane`, `c:\Users\dev`, `/home/dev/`) in the next-phase design; 2 test e-mail strings and 2 credential-looking test canaries; and **one real local path that contains the Windows user name, `docs/KIRO_B7_PROMPT.md` line 9**. That last one is in frozen `master` and in tag `v1.0.0-submission` (commit `c399e36`, 2026-11-23). It was left unchanged: history cannot be rewritten under this batch's rules, so editing the branch tip would not remove it from the published record, and the file is a historical attribution record. It reveals a user name and a folder name, not a credential. No token, key or credential was found anywhere. The evidence index of the private archive is not published; the ledger and the sanitised baseline records are.
+### Deviations and limits
+
+1. The MCP restart was not done through the panel. The server's process tree was ended after checks, and Kiro did not restart it, so **the `verdictkit` server is disconnected in the IDE until Reconnect is pressed**. The post-restart calls from inside Kiro are `UNVERIFIED`; B3-10 shows what the current code answers, outside Kiro.
+2. The hook exit status needed instrumentation, because `PostFileSave` output is not forwarded to the agent: a temporary untracked pytest plugin (removed; a copy is in the private archive) and a process poller. Only the `llm-fence` hook was instrumented; the other three hook commands were not.
+3. The throwaway probe container and the extra gateway instances were removed after use. The live stack was restarted once, on the batch 3 image, with its own start script.
+4. The scripts' default image tag stays `verdictkit:batch2`, so a judge's fresh build creates it; the batch 3 tag was used for this batch's gates and stack.
+5. Kiro credits for this batch: `NOT_AVAILABLE`. The IDE's agent log has content in window 1 (see C-012) but records no usage.
+6. `docs/KIRO_USAGE.md` gained a dated Batch 3 section and annotations that keep the earlier wording; `README.md` was rewritten; `docs/DEVPOST.md`, `docs/DEMO_STORYBOARD.md` and `docs/SECURITY_REVIEW_BATCH3.md` are new.
+
+### Open items and what is not verified
+
+- A post-restart MCP call from inside Kiro, for all four tools, is `UNVERIFIED` until Reconnect is pressed on the `verdictkit` row of Kiro's MCP Servers panel.
+- DLV-1 to DLV-4 stay `UNVERIFIED`: no full-checkout run on a Linux Docker host exists.
+- The pass or fail of the `core-contract-tests` and `app-contract-tests` hooks inside Kiro is `UNVERIFIED`.
+- The demo video is not recorded. The storyboard and checklist are in `docs/DEMO_STORYBOARD.md`.
+- Public deployment stays blocked (KL-1) and was not attempted.
+- Kiro credits for this batch: `NOT_AVAILABLE`.
+
 ## Capability register
 
 | Capability | Status |
@@ -698,6 +775,21 @@ The table above is the historical record and is not edited. These rows supersede
 | BE-2 | root cause measured (B2-01, B2-02) and fixed (B2-03, B2-04); a Linux per-test run from a full checkout is still missing |
 | Public demonstration | UNVERIFIED (none exists, none authorized) |
 
+### Capability register, Batch 3 update
+
+The two tables above are the historical record and are not edited. These rows supersede them where they differ.
+
+| Capability | Batch 3 status |
+|---|---|
+| Hook execution inside Kiro | OBSERVED with an exit status for the `llm-fence` hook (B3-11): IDE-spawned command, ancestry recorded, exit status 0, 61 of 61 passed. The other three hook commands were not instrumented: `UNVERIFIED` |
+| Kiro MCP calls | SUCCEEDED for all four tools before any restart (B3-08), with the stale server confirmed. After a restart: `UNVERIFIED` (B3-09); the server is disconnected until Reconnect is pressed in the MCP Servers panel. Current code checked outside Kiro (B3-10) |
+| Browser E2E | SUCCEEDED (B3-17): 105 checks, 0 console errors, three runs on the batch 3 stack |
+| Release gates on the batch 3 image | SUCCEEDED (B3-14, B3-15): startup, isolation, signed bundles, judge-mode HTTP lifecycle, case and replay; Python suite as the custodian user |
+| Independent security review | no BLOCKER; 7 NON-BLOCKER, 12 NOT REPRODUCED (`docs/SECURITY_REVIEW_BATCH3.md`) |
+| Dependency audits | `npm audit` 0 vulnerabilities; `pip-audit` no known vulnerabilities (B3-13) |
+| Demonstration video | not recorded; storyboard and checklist in `docs/DEMO_STORYBOARD.md` |
+| Public demonstration | UNVERIFIED (none exists, none authorized) |
+
 ## Corrections log (after independent review)
 
 | ID | Item | Original text | Correction | Reason |
@@ -711,6 +803,9 @@ The table above is the historical record and is not edited. These rows supersede
 | C-007 | Ledger rows E-009, E-012, E-013, E-014, E-020, E-023, E-024 | Command text abbreviated (`...`, `<gate>`, "Hook_Set command") | Text left unchanged. The exact command and the Execution_Index record id of every baseline row are in `baseline/LEDGER_COMMAND_RECONCILIATION.md`. Seconds and start times of all rows equal the canonical records (0 mismatches). | Independent review finding L-4. Requirement 3.12. |
 | C-008 | BE-2 host attribution in the ledger and the baseline report ("Windows") | BE-2 recorded as a Windows exception | Read as "observed on Windows". Attribution to the host is UNVERIFIED and the root cause is not established until a Linux per-test run from a full checkout exists. | Requirements 1.12 and 1.19. Independent review finding L-4. |
 | C-009 | Capability register row "Signed bundles, plugin SDK, regulatory expansion" | `not implemented` | Split into one row for signed bundles (`IMPLEMENTED` in Accelerated Batch 1) and one for the plugin SDK and regulatory expansion (`not implemented`) | Batch 1 implemented signed bundles. The old row would now be false. The section above it is unchanged. |
+| C-010 | `KIRO_USAGE.md`, Batch 2 section | "with a one-file change in the engine package" | One modified file (`core/src/verdictkit/api/server.py`) and one new module (`api/demo_lab.py`) | `git diff --name-status f42a6d0 78f3f58 -- core` lists exactly those two. The ledger's own deviation 2 of Batch 2 already said so. |
+| C-011 | `KIRO_USAGE.md`, Summary and Open items (statements dated 2026-11-24) | "No Kiro agent-hook run and no Kiro MCP tool call has been observed in any Kiro session" and the two matching open items | Wording kept, each marked "as of 2026-11-24" and superseded, pointing to Batch 2 and Batch 3 | B2-17, B2-18, B3-08, B3-11. The 2026-11-24 statements were true when written; read as present tense they are not. |
+| C-012 | Batch 2 ledger paragraph "Private evidence archive" and the archive's `unavailable` entry for the IDE logs | "the IDE's own hook and MCP log files for this run are 0 bytes" | Window 1's logs are not empty: `Kiro Logs.log` 41,994 bytes (last written 2026-11-26 22:09:32) and `Kiro - MCP Logs.log` 332 bytes (last written 00:43:50). Window 2's are 0 bytes. They record hook loading at session start and the server's connection, and no hook or tool-call outcome | Read in Batch 3; neither file changed after the Batch 2 archive was made, so the earlier statement probably read window 2. The private Batch 2 index is left as it was. |
 
 ## Accepted baseline exceptions
 
@@ -720,3 +815,5 @@ The table above is the historical record and is not edited. These rows supersede
 | BE-2 | `tests/ui/test_judge_preview.py::JudgePreviewTests::test_case_outcome_get_to_offline_backend` times out | Windows | Instrument, establish the root cause, fix the cause. A longer timeout alone is not a fix. |
 
 Batch 2 status of the exceptions. BE-1: unchanged (remediated in Batch 1). BE-2: the cause is measured (a refused loopback connect takes 2.02 to 2.07 s on the Windows host and under 13 ms on a Linux kernel, B2-01 and B2-02) and fixed in the bridge by a separate connect bound, without touching the test or its timeout (B2-03, B2-04). The remaining gap is a Linux per-test run from a full checkout.
+
+Batch 3 status of the exceptions. B3-12 ran the whole Windows suite with 0 failures, so neither BE-1 nor BE-2 reproduces on the final tree. For BE-2 the missing piece is still a Linux per-test run from a full checkout (DLV-1 to DLV-4, UNVERIFIED).

@@ -39,6 +39,8 @@ export function VerifyLab({ client, health, lab, labError, image }: {
   const verified = useRef(false);
   const busyExam = ["intake", "freezing", "evidence", "running"].includes(state.phase);
   const labReady = !!lab && lab.enabled;
+  // Unknown is not the same as disabled: only a definite answer (an error such as NOT_FOUND, or enabled=false) says the lab is off.
+  const labPending = lab === null && labError === null;
 
   // 1. A finished examination that wrote a bundle becomes the bundle under test.
   useEffect(() => {
@@ -117,6 +119,12 @@ export function VerifyLab({ client, health, lab, labError, image }: {
 
       {labReady ? (
         <div className="vk-banner vk-demo" role="note" data-testid="lab-notice">{lab!.demonstrationNotice}</div>
+      ) : labPending ? (
+        // Nothing has said the lab is off: /demo/status has not answered (still loading, or the backend is unreachable).
+        <div className="vk-banner vk-info" role="status" data-testid="lab-pending">
+          {health ? "Checking whether the demonstration lab is enabled…"
+            : "Waiting for the backend. The demonstration lab status is shown once it answers; the status pill above says whether it is reachable."}
+        </div>
       ) : (
         <div className="vk-banner vk-warn" data-testid="lab-disabled">
           {labError ?? "The demonstration lab is not enabled on this server."} Scenario verification needs the backend started by the VerdictKit
@@ -180,7 +188,9 @@ export function VerifyLab({ client, health, lab, labError, image }: {
             </button>
           ))}
         </div>
-        {!labReady ? <p className="vk-muted">No scenarios are available because the lab is not enabled.</p> : null}
+        {!labReady ? <p className="vk-muted" data-testid="no-scenarios">{labPending
+          ? "Scenarios appear once the backend reports the demonstration lab."
+          : "No scenarios are available because the lab is not enabled."}</p> : null}
         {profile ? <p className="vk-muted" data-testid="profile-note"><b>Verifier configuration:</b> {profile.label}. {profile.description}
           {" "}Trust store serial {profile.trustStore.serial}, sha256 <code>{profile.trustStore.sha256.slice(0, 16)}…</code></p> : null}
         <div className="vk-actions">

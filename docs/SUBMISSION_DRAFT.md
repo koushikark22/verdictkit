@@ -1,5 +1,7 @@
 # VerdictKit — public submission draft (not yet submitted)
 
+> **Superseded on 2026-11-27 by [`DEVPOST.md`](DEVPOST.md).** This draft predates signed bundles, the portal and the Verify Lab: it still says "contract 1.1.0" and "bundles are unsigned", which is no longer true of the current build. It is kept unchanged below as the record of the earlier wording.
+
 **Draft status:** This is prepared wording. **Do not submit until a genuine Kiro usage record and a public demonstration video exist.** Fill only placeholders with verified facts.
 
 ## Project title

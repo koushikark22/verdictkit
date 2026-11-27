@@ -3,7 +3,7 @@
  * empty and error states. The status pill shows what /api/v1/health returned and nothing else;
  * when the request fails it says so instead of guessing.
  */
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Client } from "./api";
 import { ApiError, BlockedError, ContractMismatchError } from "./api";
 import type { Health } from "./types";
@@ -92,13 +92,33 @@ export function LiveStatus({ health, error, loading }: { health: Health | null; 
   );
 }
 
+/**
+ * Publishes the sticky top bar's measured height as --vk-topbar-h. The bar wraps onto a second row on narrow screens, so no
+ * fixed number is right; theme.css uses the variable as the page's scroll-padding-top, so a result that is scrolled into
+ * view (or an #anchor) stops below the bar instead of being hidden by it.
+ */
+export function useTopbarHeight(ref: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const publish = () => document.documentElement.style.setProperty("--vk-topbar-h", `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    publish();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+}
+
 export function AppShell({ active, health, error, loading, children }: {
   active: NavId | null; health: Health | null; error: string | null; loading: boolean; children: ReactNode;
 }) {
+  const topbar = useRef<HTMLElement>(null);
+  useTopbarHeight(topbar);
   return (
     <>
       <a className="vk-skip" href="#main">Skip to content</a>
-      <header className="vk-topbar">
+      <header className="vk-topbar" ref={topbar}>
         <div className="vk-topbar-in">
           <a className="vk-brand" href="/" aria-label="VerdictKit home">
             <Mark /><span>VerdictKit<small>Claim autopsy engine</small></span>

@@ -14,7 +14,7 @@ who or what ran it. "Kiro" below means work the repository owner ran in the Kiro
 * All other implementation passes (2026-11-19, 2026-11-20, 2026-11-24 readiness pass)
   were done with Claude Code, not Kiro, and are listed below as such.
 * No Kiro agent-hook run and no Kiro MCP tool call has been observed in any Kiro
-  session. Hook commands and the MCP server have only been exercised outside Kiro.
+  session. Hook commands and the MCP server have only been exercised outside Kiro. **Superseded 2026-11-27:** a hook run and four MCP tool calls have since been observed inside Kiro (see "Batch 2" and "Batch 3" at the end of this file); the sentence is kept as the record of 2026-11-24.
 * Git metadata cannot by itself show which tool produced a commit: every B7 commit is
   authored and committed under the owner's identity with no tool trailer. Attribution of
   those commits to Kiro rests on the owner's session record below.
@@ -103,9 +103,9 @@ and the bash scripts), and corrected the Texas description in the Quote UI and d
 
 ## Open items
 
-* Kiro agent hooks have never been observed firing inside Kiro. To record one, save a
+* Kiro agent hooks have never been observed firing inside Kiro (**as of 2026-11-24; observed since, see Batch 3**). To record one, save a
   file under a hook's matcher in a Kiro session and note the hook output with the date.
-* The `verdictkit` MCP server has not been called from inside Kiro.
+* The `verdictkit` MCP server has not been called from inside Kiro (**as of 2026-11-24; called since, see Batch 2 and Batch 3**).
 * Reel tasks blocked on decision B1 (licensed market data) have not been run in Kiro.
 
 ## Honest attribution
@@ -124,4 +124,18 @@ The full record, with numbers, is in `docs/next-phase/EXECUTION_EVIDENCE.md` ("A
 
 **How to repeat the hook demonstration.** `.kiro/hooks/` holds three `PostFileSave` hooks (`llm-fence`, `core-contract-tests`, `app-contract-tests`). Ask Kiro to save any `.py` file, then look for the effect, because hook output is not forwarded to the agent: in PowerShell, `Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | Where-Object CommandLine -match 'uv run pytest'` while saving, or the modification time of `.pytest_cache/v/cache/nodeids` (only runs that enable the cache write it; pass `-p no:cacheprovider` in your own runs). Batch 2 saw both the `llm-fence` and the `core-contract-tests` commands start after one save of `core/src/verdictkit/api/demo_lab.py`; whether they passed is `UNVERIFIED`. Hooks created in a session start only with the next session.
 
-**Steering.** Five of the six steering files were applied as included rules (`money-math` was not included). **Specifications.** None created or edited; a Kiro spec workflow was not exercised. **Shared code.** One `ui-kit` serves the portal and both applications; one engine serves both applications and the demonstration lab, with a one-file change in the engine package.
+**Steering.** Five of the six steering files were applied as included rules (`money-math` was not included). **Specifications.** None created or edited; a Kiro spec workflow was not exercised. **Shared code.** One `ui-kit` serves the portal and both applications; one engine serves both applications and the demonstration lab, with one modified file (`api/server.py`) and one new module (`api/demo_lab.py`) in the engine package (corrected 2026-11-27, ledger C-010; the earlier text said "a one-file change").
+
+## Batch 3 (2026-11-27): hooks and MCP observed again, with limits
+
+Full record and numbers: `docs/next-phase/EXECUTION_EVIDENCE.md` ("Final Batch 3", records B3-08 to B3-11). The raw logs are in a private archive; only these summaries are published.
+
+**MCP, before any restart.** Through Kiro's MCP client the four tools were called in order on the server as it was running: `list_claim_types` (4 claim types), `verify_claim` with `examples/stub_claimtype/claim.json` (`CONTRADICTED`, verdict hash `547fba0c67e3bcdfa7da58b914d36dc3301b7503fb1278753bbb0eb23d9aaa79`), `explain_verdict` (integrity `VERIFIED`) and `replay_bundle` (`REPRODUCED`, original and replayed hashes equal). The answers were **stale**: `contractVersion` 1.1.0 and the "bundles are unsigned in v1" wording, from a server process started 2026-11-26 00:43, before the Batch 1 commit. The bundle path sat in the same private directory name as in Batch 2, so it was the same process. The IDE's MCP log records that process connecting (`mcp.connect.ok`, 00:43:50) and nothing per call.
+
+**MCP, restart.** Reconnecting is an action of Kiro's MCP Servers panel (it sends `_kiro/mcp/resetServer`), and an agent cannot press it. The agent ended that server's process tree (three processes; identity and parentage checked first, evidence kept) to see whether Kiro would start a fresh server by itself. It did not: the next tool call returned "Not connected", and a timestamp-only touch of `.kiro/settings/mcp.json` (content hash unchanged) changed nothing. **The server stays disconnected until someone presses Reconnect on the `verdictkit` row.** A post-restart call from inside Kiro is therefore `UNVERIFIED`. What the current code returns was checked through a fresh process and the MCP SDK client, which is not Kiro's integration: `contractVersion` 1.2.0, "signature: UNSIGNED; signer trust: NOT_EVALUATED" wording, the same verdict hash, equal original and replayed hashes, and `PATH_NOT_ALLOWED` for a repository path outside the approved roots.
+
+**Hooks.** Agent saves of harmless `.py` files under `artifacts/` (not tracked) were made while an independent observer polled the process list. The IDE (`Kiro.exe`, the extension host, a child of the main `Kiro.exe`) started `cmd.exe /d /s /c "uv run pytest tests/contract/test_llm_fence.py -q"`, which started `uv`, `pytest` and Python, and everything had ended about 5.7 seconds later. A temporary, untracked pytest plugin inside that run (removed afterwards) wrote the exit status: **0, with 61 collected, 61 passed, 0 failed**, and its parent process id matched the observed ancestry. Two earlier saves produced records with the same arguments and result, but their ancestry was not observed. A save of a `.txt` file started nothing. Hook output is still not forwarded to the agent, which is why the recorder was needed. The `core-contract-tests` and `app-contract-tests` hooks were not instrumented in this batch, so their pass or fail inside Kiro remains `UNVERIFIED`. The IDE's agent log (`Kiro Logs.log`) records that the four hooks loaded at session start, and no hook outcome.
+
+**Spec and steering.** No spec was created or edited. Five of the six steering files were again applied as included rules (`money-math` was not included).
+
+**Corrections made in this file** (ledger C-010 to C-012). The Batch 2 sentence "a one-file change in the engine package" was wrong: the change was one modified file (`api/server.py`) and one new module (`api/demo_lab.py`). The dated 2026-11-24 statements that no hook run or MCP call had been observed inside Kiro are marked superseded where they stand, with their wording kept. The Batch 2 statement that the IDE's log files are empty is not supported for window 1, whose logs have content.
