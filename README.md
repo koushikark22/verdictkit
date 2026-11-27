@@ -88,7 +88,7 @@ docker build -t verdictkit . && docker run --rm --network none verdictkit gate-h
 node tests/ui/e2e_product.cjs      # needs the stack running; see docs/PRODUCT_TOUR.md
 ```
 
-* Architecture and decision log: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Signing and trust: [`docs/SIGNING.md`](docs/SIGNING.md). HTTP contract (1.2.0): [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md), `api/openapi.yaml`.
+* How it works in one page: [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md). Architecture and decision log: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Signing and trust: [`docs/SIGNING.md`](docs/SIGNING.md). HTTP contract (1.2.0): [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md), `api/openapi.yaml`.
 * Judge reproduction: [`docs/JUDGE_DEMO.md`](docs/JUDGE_DEMO.md). Competition text and demo plan: [`docs/DEVPOST.md`](docs/DEVPOST.md), [`docs/DEMO_STORYBOARD.md`](docs/DEMO_STORYBOARD.md).
 * Layout: `core/src/verdictkit/` (custody, examiner, evidence, sweep, bundle, signing, API, MCP server), `apps/quote-autopsy`, `apps/reel-autopsy`, `ui/hub` (portal and Verify Lab), `ui-kit` (shared UI), `deploy/` (container entrypoint), `scripts/` (start, stop, gateway, gates).
 * MCP server: `python -m verdictkit.mcp_server` (stdio; tools `list_claim_types`, `verify_claim`, `explain_verdict`, `replay_bundle`; file access limited to approved roots).

@@ -685,7 +685,36 @@ This row records the push of the Batch 2 commit, which the Batch 2 section said 
 |---|---|---|---|---|---|
 | PUSH-010 | `refs/heads/feature/kiro-next-phase` | `f42a6d016202c0864a19dde1ee866a0d71d0f88a` | `78f3f583a71f87f5034f35157294694ed479168c` | 2026-11-27 04:54:09 | The owner's one authorized push of the Batch 2 commit (stated in the Batch 2 request). Whether it ran through Kiro or by hand is not recorded in git and stays `UNVERIFIED`. |
 
-Reading. Before equals the After value of PUSH-009 and the parent of the After commit, "feat(product): unified portal, signed-bundle Verify Lab, one-command start and browser e2e (batch 2)". The reflog holds 10 entries, all `update by push`, which are the 10 rows PUSH-001 to PUSH-010. The push result is that git recorded the tracking ref as updated by a push. Remote verification, read at the start of Batch 3 and again later: `git ls-remote origin refs/heads/feature/kiro-next-phase` returned `78f3f583a71f87f5034f35157294694ed479168c`, and the GitHub API (`git/ref/heads/feature/kiro-next-phase`) returned the same commit. The frozen refs were unchanged at both readings: `master` and tag `v1.0.0-submission` (commit) at `84df25c68198e496889b5892a03555ec7d2d860a`, the tag object at `e9ca8d2bac4a65483f3a7357e00600a1210a6f4f`, tag `verified-quote-e2e-20261118` at `407478be97a8979a8e3555bba3b3ab302229f91d`. PUSH-011, the push of the commit that holds this section, and the CI run on it are recorded by the first ledger update after it (a commit cannot contain its own id); until then they are in the private archive and the batch report.
+Reading. Before equals the After value of PUSH-009 and the parent of the After commit, "feat(product): unified portal, signed-bundle Verify Lab, one-command start and browser e2e (batch 2)". The reflog holds 10 entries, all `update by push`, which are the 10 rows PUSH-001 to PUSH-010. The push result is that git recorded the tracking ref as updated by a push. Remote verification, read at the start of Batch 3 and again later: `git ls-remote origin refs/heads/feature/kiro-next-phase` returned `78f3f583a71f87f5034f35157294694ed479168c`, and the GitHub API (`git/ref/heads/feature/kiro-next-phase`) returned the same commit. The frozen refs were unchanged at both readings: `master` and tag `v1.0.0-submission` (commit) at `84df25c68198e496889b5892a03555ec7d2d860a`, the tag object at `e9ca8d2bac4a65483f3a7357e00600a1210a6f4f`, tag `verified-quote-e2e-20261118` at `407478be97a8979a8e3555bba3b3ab302229f91d`. PUSH-011, the push of the commit that first held this section, and the CI run on it are recorded in the next subsection.
+
+### PUSH-011 and the CI run on the release candidate (observation, 14.13)
+
+PUSH-011 is the push of the commit that holds the first version of this section (`298ed8cd4e41c5a23600052a22d255c08503a76d`, "fix(ui): final release validation, security review and competition documents (batch 3)"). It is an observation of a ref update and not an Execution_Record. The time is the Unix time of the newest reflog line of the tracking ref (`1795799252`).
+
+| Record | Ref | Before | After | Updated (UTC) | Authorization and result |
+|---|---|---|---|---|---|
+| PUSH-011 | `refs/heads/feature/kiro-next-phase` | `78f3f583a71f87f5034f35157294694ed479168c` | `298ed8cd4e41c5a23600052a22d255c08503a76d` | 2026-11-27 17:07:32 | An ordinary push (no force) to the feature branch only, run by the agent in the Kiro IDE session `sess_5920a573-8bf7-4888-8504-8c3434164e9a` on the owner's Batch 3 instruction. git printed `78f3f58..298ed8c  feature/kiro-next-phase -> feature/kiro-next-phase`. |
+
+Remote verification: `git ls-remote origin` returned `298ed8cd4e41c5a23600052a22d255c08503a76d` for the branch, and the frozen refs were unchanged (`master` and the `v1.0.0-submission` commit at `84df25c68198e496889b5892a03555ec7d2d860a`, tag `verified-quote-e2e-20261118` at `407478be97a8979a8e3555bba3b3ab302229f91d`).
+
+CI. The existing `workflow_dispatch` trigger of `p0-integration.yml` ("Integration gate") was run on the branch with `gh workflow run p0-integration.yml --ref feature/kiro-next-phase`. Run `46039452426`, event `workflow_dispatch`, branch `feature/kiro-next-phase`, **head SHA `298ed8cd4e41c5a23600052a22d255c08503a76d`, the pushed commit**, created 2026-11-27 17:08:40 UTC, finished 17:10:11 UTC, conclusion `success` for both jobs and for every step. The step logs were downloaded and read, not only the check mark:
+
+| Step | What the log shows |
+|---|---|
+| checkout | fetched and checked out `298ed8cd…` |
+| lock, lint | `uv lock --check` resolved 56 packages; `ruff`: all checks passed |
+| startup and examiner negative tests | 16 passed |
+| full regression (Linux runner) | 654 passed, 4 skipped, 4 deselected in 26.09 s |
+| Docker isolation, enforced startup | 4 passed; `VK_STARTUP_OK isolation=ENFORCED` |
+| judge-mode HTTP lifecycle | `GATE-HTTP PASSED`; 486 process samples, canary seen, 0 key hits |
+| signed bundles under enforced isolation | `GATE-SIGN PASSED` |
+| Docker receipt and replay | `CONTRADICTED`, integrity `VERIFIED`, `REPRODUCED`; original and replayed hash `547fba0c67e3bcdfa7da58b914d36dc3301b7503fb1278753bbb0eb23d9aaa79` |
+| complete November gate | 232 passed, 4 deselected; `GATE-HTTP PASSED` again (479 samples, 0 key hits) |
+| web-ui | typecheck clean; 32, 11, 6 and 4 unit tests passed; builds; the earlier browser harness reported `UI-E2E PASSED` |
+
+The stub claim's sealed verdict hash is therefore the same in three environments: in-process on Windows, in the enforced Linux container on the owner's host, and on the GitHub Actions Linux runner. The browser end-to-end suite of this batch (105 checks) needs Docker and a system Chrome and is not part of the workflow; it ran locally (B3-17).
+
+PUSH-012, the push of the commit that holds this subsection, and the CI run on that commit are recorded by the first ledger update after it (a commit cannot contain its own id). Until then they are in the private archive and the batch report.
 
 ### Execution records
 
@@ -739,7 +768,7 @@ Result. The added lines hold no match in any class. The 261 tracked files hold 1
 3. The throwaway probe container and the extra gateway instances were removed after use. The live stack was restarted once, on the batch 3 image, with its own start script.
 4. The scripts' default image tag stays `verdictkit:batch2`, so a judge's fresh build creates it; the batch 3 tag was used for this batch's gates and stack.
 5. Kiro credits for this batch: `NOT_AVAILABLE`. The IDE's agent log has content in window 1 (see C-012) but records no usage.
-6. `docs/KIRO_USAGE.md` gained a dated Batch 3 section and annotations that keep the earlier wording; `README.md` was rewritten; `docs/DEVPOST.md`, `docs/DEMO_STORYBOARD.md` and `docs/SECURITY_REVIEW_BATCH3.md` are new.
+6. `docs/KIRO_USAGE.md` gained a dated Batch 3 section and annotations that keep the earlier wording; `README.md` was rewritten; `docs/DEVPOST.md`, `docs/DEMO_STORYBOARD.md`, `docs/HOW_IT_WORKS.md` and `docs/SECURITY_REVIEW_BATCH3.md` are new.
 
 ### Open items and what is not verified
 
