@@ -2,7 +2,7 @@ openapi: 3.1.0
 jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
 info:
   title: VerdictKit API
-  version: 1.1.0
+  version: 1.2.0
   description: >
     Presentation/HTTP adapter over the frozen VerdictKit domain. See docs/API_CONTRACT.md.
     All decimal values are strings. Judge mode requires no authentication.
@@ -264,7 +264,7 @@ components:
 
   schemas:
     # ---------- primitives ----------
-    ContractVersion: { const: "1.1.0" }
+    ContractVersion: { const: "1.2.0" }
     CaseId: { type: string, pattern: "^case_[0-9a-f]{32}$" }
     RunId: { type: string, pattern: "^run_[0-9a-f]{32}$" }
     Sha256: { type: string, pattern: "^[0-9a-f]{64}$" }
@@ -912,11 +912,39 @@ components:
     AuthenticityReport:
       type: object
       additionalProperties: false
-      required: [status, note]
-      description: Origin of the bundle. MVP bundles are unsigned.
+      required: [status, note, signatureValidity, signerTrust, reasonCodes, signer, trustStore]
+      description: >-
+        Origin of the bundle (contract 1.2.0). `signatureValidity` says whether the holder of a key
+        signed these exact manifest bytes. `signerTrust` says whether this operator's trust store
+        accepts that key. `status` is ESTABLISHED only when the signature is VALID, the signer is
+        TRUSTED and integrity is VERIFIED. It never says the claim is true. Unsigned bundles are
+        UNSIGNED and NOT_ESTABLISHED.
       properties:
-        status: { const: NOT_ESTABLISHED }
+        status: { enum: [NOT_ESTABLISHED, ESTABLISHED] }
         note: { type: string }
+        signatureValidity: { enum: [UNSIGNED, VALID, INVALID, UNSUPPORTED_ALGORITHM] }
+        signerTrust: { enum: [NOT_EVALUATED, TRUSTED, UNTRUSTED_SIGNER] }
+        reasonCodes: { type: array, items: { type: string } }
+        signer:
+          oneOf:
+            - { type: "null" }
+            - type: object
+              additionalProperties: false
+              required: [keyId, algorithm]
+              properties:
+                keyId: { $ref: "#/components/schemas/Sha256" }
+                algorithm: { const: ed25519 }
+        trustStore:
+          oneOf:
+            - { type: "null" }
+            - type: object
+              additionalProperties: false
+              required: [formatVersion, serial, sha256, evaluatedAt]
+              properties:
+                formatVersion: { type: integer, minimum: 1 }
+                serial: { type: integer, minimum: 1 }
+                sha256: { $ref: "#/components/schemas/Sha256" }
+                evaluatedAt: { type: string }
 
     BundleMetadata:
       type: object

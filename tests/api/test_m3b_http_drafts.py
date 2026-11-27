@@ -57,7 +57,7 @@ def test_http_create_and_get_are_redacted_and_durable(tmp_path):
             response = client.post("/api/v1/cases", json=_payload())
             assert response.status_code == 201, response.text
             body = response.json()
-            assert body["contractVersion"] == "1.1.0"
+            assert body["contractVersion"] == "1.2.0"
             assert body["caseId"].startswith("case_")
             assert body["state"] == "DRAFT"
             assert body["outcomeFields"] == [{"name": "monthly_payment", "captured": True}]
@@ -74,7 +74,7 @@ def test_http_create_and_get_are_redacted_and_durable(tmp_path):
             assert client.post(f"/api/v1/cases/{case_id}/freeze").status_code == 409
             evidence = client.post(f"/api/v1/cases/{case_id}/evidence")
             assert evidence.status_code == 200, evidence.text
-            assert evidence.json() == {"contractVersion": "1.1.0", "caseId": case_id, "evidence": []}
+            assert evidence.json() == {"contractVersion": "1.2.0", "caseId": case_id, "evidence": []}
             assert client.get(f"/api/v1/cases/{case_id}/evidence").json()["evidence"] == []
             assert client.post(f"/api/v1/cases/{case_id}/evidence").status_code == 409
             assert client.patch(f"/api/v1/cases/{case_id}", json={}).status_code == 409

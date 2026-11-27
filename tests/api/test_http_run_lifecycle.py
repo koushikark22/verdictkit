@@ -336,7 +336,7 @@ def test_unknown_runs_and_cases_are_not_found(client):
                  f"/api/v1/cases/{fake}/runs/../../x"):
         r = client.get(path)
         assert r.status_code == 404, path
-        assert r.json()["contractVersion"] == "1.1.0"
+        assert r.json()["contractVersion"] == "1.2.0"
 
 
 def test_run_of_other_case_is_not_disclosed(client):

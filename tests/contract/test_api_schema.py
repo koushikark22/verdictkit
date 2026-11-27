@@ -85,7 +85,7 @@ MUTATIONS = [
     ("health_judge.json", "Health", ["isolationMode"], "UNENFORCED", "9: judge mode requires isolation"),
     ("intake_reel_paste.json", "IntakeRequest", ["pastedText"], "x" * 2001, "8: pasted text capped"),
     ("intake_reel_paste.json", "IntakeRequest", ["claimType"], "quote.finance.v1", "8: quote has no free text"),
-    # --- contract 1.1.0 corrections ---
+    # --- contract 1.1.0 corrections (still enforced in 1.2.0) ---
     ("draft_reel_paste.json", "DraftCase", ["outcomeFields", 0, "value"], "340", "v1.1-1: draft never echoes asserted values"),
     ("intake_synthetic_fixture.json", "IntakeRequest", ["pastedText"], "SMA cross +340%", "no user claim on synthetic data"),
     ("intake_synthetic_fixture.json", "IntakeRequest", ["fixtureId"], None, "synthetic requires a fixture"),
@@ -122,7 +122,7 @@ def test_ledger_bound_events_carry_ledger_seq():
 def test_frozen_ledger_drops_source_spans():
     entry = load("draft_reel_paste.json")["parameterLedger"][0]  # has a span
     specimen = load("outcome_completed_quote.json")["specimen"]
-    frozen = {"contractVersion": "1.1.0", "specimen": specimen, "caseId": "case_" + "0" * 32, "state": "FROZEN", "specHash": "a" * 64,
+    frozen = {"contractVersion": "1.2.0", "specimen": specimen, "caseId": "case_" + "0" * 32, "state": "FROZEN", "specHash": "a" * 64,
               "commitment": {"alg": "sha256/vk-commit-v1", "digest": "b" * 64},
               "frozenAt": "2026-11-22T12:00:00Z", "ledgerSeq": 2, "parameterLedger": [entry]}
     assert not validator("FrozenCase").is_valid(frozen)

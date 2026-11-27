@@ -6,7 +6,6 @@ EXAMINATION_COMMITTED; compare_and_seal (reveal, verdict, diagnostics).
 """
 from __future__ import annotations
 
-import base64
 import os
 import uuid
 from dataclasses import dataclass, field
@@ -73,13 +72,10 @@ def run_case(
     if case_id is None:
         case_id = uuid.uuid4().hex
 
-    # Resolve vault key
+    # Resolve vault key: key file (read once) or environment, else a fresh random key.
     if vault_key is None:
-        raw_key = os.environ.get("VK_VAULT_KEY")
-        if raw_key is None:
-            vault_key = os.urandom(32)
-        else:
-            vault_key = base64.b64decode(raw_key)
+        from .custody.keyfile import load_vault_key
+        vault_key = load_vault_key() or os.urandom(32)
 
     # Initialise components
     ledger = Ledger(clock)

@@ -8,11 +8,10 @@ from __future__ import annotations
 import hashlib
 from typing import Mapping, Sequence
 
+from ..contract import CONTRACT_VERSION
 from ..model import Basis, DataMode, EvidenceItem, Finding, FrozenClaim, LicenseClass, SourceClass, Status
 from ..plugin import Examination
 from ..sweep import AggregateKind, PointOutcome, aggregate
-
-CONTRACT_VERSION = "1.1.0"
 
 DEMONSTRATION_NOTICE = (
     "DEMONSTRATION ONLY: synthetic price data generated for testing. "

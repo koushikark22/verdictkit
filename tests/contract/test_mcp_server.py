@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from verdictkit import mcp_server
+from verdictkit import mcp_server, safeio
 
 ROOT = Path(__file__).resolve().parents[2]
 STUB_CLAIM = json.loads((ROOT / "examples/stub_claimtype/claim.json").read_text())
@@ -27,7 +28,12 @@ def test_verify_replay_and_explain_roundtrip():
     bundle = Path(result["bundle_path"])
     assert bundle.is_file()
     assert bundle.parent == mcp_server._workdir()  # writes only in the private temp dir
-    assert oct(bundle.parent.stat().st_mode & 0o777) == "0o700"
+    if sys.platform == "win32":
+        # BE-1: POSIX mode bits carry no meaning on Windows. The equivalent check is an access
+        # control check: only the current user, SYSTEM and Administrators may be granted access.
+        assert safeio.is_private_dir(bundle.parent)
+    else:
+        assert oct(bundle.parent.stat().st_mode & 0o777) == "0o700"
 
     replay = mcp_server.replay_bundle(str(bundle))
     assert replay["integrity"]["status"] == "VERIFIED"
@@ -48,7 +54,9 @@ def test_float_claims_and_garbage_are_refused():
     assert "error" in mcp_server.replay_bundle("/nonexistent/bundle.vkb")
 
 
-def test_tampered_bundle_is_not_explained(tmp_path):
+def test_tampered_bundle_is_not_explained(tmp_path, monkeypatch):
+    # Paths outside the private working directory need an operator-approved root (design DD8-5).
+    monkeypatch.setenv("VK_MCP_BUNDLE_ROOTS", str(tmp_path))
     result = mcp_server.verify_claim(STUB_CLAIM)
     src = Path(result["bundle_path"])
     dst = tmp_path / "tampered.vkb"

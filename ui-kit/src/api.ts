@@ -1,6 +1,6 @@
 /**
  * Contract-checked client for /api/v1 (docs/API_CONTRACT.md). The UI refuses any response
- * whose contractVersion is not 1.1.0, never invents results, and surfaces blockers and
+ * whose contractVersion is not 1.2.0, never invents results, and surfaces blockers and
  * errors exactly as the server reports them.
  */
 import type {
@@ -8,7 +8,7 @@ import type {
   OutcomeResponse, ProgressEvent, ReplayReport, RunAccepted, RunRecord, Blocker,
 } from "./types";
 
-export const CONTRACT_VERSION = "1.1.0";
+export const CONTRACT_VERSION = "1.2.0";
 export const TERMINAL_STAGES = new Set(["RUN_COMPLETED", "RUN_INDETERMINATE", "RUN_BLOCKED", "RUN_FAILED"]);
 
 export class ApiError extends Error {

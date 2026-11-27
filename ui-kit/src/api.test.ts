@@ -12,7 +12,7 @@ describe("client", () => {
   });
 
   it("maps the error envelope", async () => {
-    const c = createClient("/api/v1", respond(422, { contractVersion: "1.1.0",
+    const c = createClient("/api/v1", respond(422, { contractVersion: "1.2.0",
       error: { code: "PRIVACY_REJECTED", message: "no", field: "pastedText" } }) as any);
     const err = await c.createCase({ claimType: "reel.mechanical.v1", dataMode: "LIVE_EVIDENCE" }).catch((e) => e);
     expect(err).toBeInstanceOf(ApiError);
@@ -21,7 +21,7 @@ describe("client", () => {
   });
 
   it("distinguishes a BLOCKED response from an error", async () => {
-    const c = createClient("/api/v1", respond(422, { contractVersion: "1.1.0", caseId: "case_x",
+    const c = createClient("/api/v1", respond(422, { contractVersion: "1.2.0", caseId: "case_x",
       executionStatus: "BLOCKED", blockers: [{ code: "EVIDENCE_UNAVAILABLE", message: "m" }] }) as any);
     const err = await c.acquireEvidence("case_x").catch((e) => e);
     expect(err).toBeInstanceOf(BlockedError);
@@ -36,7 +36,7 @@ describe("client", () => {
 
 describe("parseSseFrame", () => {
   it("parses a persisted progress event", () => {
-    const e = parseSseFrame('id: 3\nevent: progress\ndata: {"contractVersion":"1.1.0","runId":"r","seq":3,"stage":"VERDICT_SEALED","at":"t","ledgerSeq":6,"ledgerKind":"VERDICT_SEALED","detail":{}}');
+    const e = parseSseFrame('id: 3\nevent: progress\ndata: {"contractVersion":"1.2.0","runId":"r","seq":3,"stage":"VERDICT_SEALED","at":"t","ledgerSeq":6,"ledgerKind":"VERDICT_SEALED","detail":{}}');
     expect(e!.seq).toBe(3);
     expect(parseSseFrame(": keep-alive")).toBeNull();
     expect(() => parseSseFrame('data: {"contractVersion":"9"}')).toThrow(ContractMismatchError);

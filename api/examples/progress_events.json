@@ -7,7 +7,7 @@
     "ledgerSeq": null,
     "ledgerKind": null,
     "detail": {},
-    "contractVersion": "1.1.0"
+    "contractVersion": "1.2.0"
   },
   {
     "runId": "run_00000000000000000000000000000001",
@@ -20,7 +20,7 @@
       "pointsDone": 8,
       "pointsTotal": 16
     },
-    "contractVersion": "1.1.0"
+    "contractVersion": "1.2.0"
   },
   {
     "runId": "run_00000000000000000000000000000001",
@@ -30,7 +30,7 @@
     "ledgerSeq": 4,
     "ledgerKind": "EXAMINATION_COMMITTED",
     "detail": {},
-    "contractVersion": "1.1.0"
+    "contractVersion": "1.2.0"
   },
   {
     "runId": "run_00000000000000000000000000000001",
@@ -40,6 +40,6 @@
     "ledgerSeq": 6,
     "ledgerKind": "VERDICT_SEALED",
     "detail": {},
-    "contractVersion": "1.1.0"
+    "contractVersion": "1.2.0"
   }
 ]

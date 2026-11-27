@@ -88,3 +88,18 @@ The existing Texas adapter and the supported historical replay stay intact. The 
 ## Kiro credits
 
 Kiro credits for this work: `NOT_AVAILABLE` (no Kiro usage record was read, criterion 16.2). The owner's request states that nearly 2,000 credits have been consumed in total. That statement is approximate, carries no unit, session identifier or request-identifier count, and is not a Credit_Record, so no figure is added to the usage tables (16.2, 16.5).
+
+## OA-11 Accelerated Batch 1 execution scope
+| Field | Value |
+|---|---|
+| Identifier | OA-11 |
+| Date | 2026-11-26 to 2026-11-27 (UTC dates of the system clock while the work ran) |
+| Attribution | OWNER_STATED. The text of the request is not stored in this repository. The agent decided nothing here. |
+| Start state | Branch `feature/kiro-next-phase` at `327c5eb0064e2f9c686fa3765ed8bf85d53716ad`, verified before any change. Frozen `master`, the tag `v1.0.0-submission` and the tag `verified-quote-e2e-20261118` are untouched. |
+| Decision | An accelerated strategy replaces executing all 92 queued tasks one by one. The specifications stay as engineering references. Batch 1 is one consolidated pass over: security remediation (vault key off the argument list, examiner and custodian isolation, replay namespace isolation, path and file handling, MCP approved roots, upload limits, Windows and Linux permission handling), dependency security, Ed25519 signed bundles, and hardening of the four existing MCP tools. |
+| Effect on the plan | No task box is ticked by this batch. A requirement that the batch does not implement and verify stays deferred or `UNVERIFIED`. This record is not a claim of compliance with the enhanced-release scope of OA-00. The conditions of OA-00 still hold: no security acceptance criterion is weakened, public deployment is not authorized, and DLV-1 to DLV-4 stay `UNVERIFIED` until a `SUCCEEDED` record names a Linux source. |
+| Approved limits | 64 MiB per replay, 128 MiB aggregate replay storage, 2 concurrent uploads, atomic capacity reservation. This closes the open item under OA-08 (the total replay quota, RB-20): the owner approved the 128 MiB figure that OA-08 had named only as a suggestion. |
+| Publication | One ordinary non-force push of the Phase_Branch through the normal approval controls. No public deployment. No change to Kiro permission settings. |
+| Kiro credits | The owner states that nearly 2,000 credits were spent on planning, about 2,000 remain, and about 600 is the target for this batch. Measured value: `NOT_AVAILABLE` (no Kiro usage record is readable by the agent). The statement is approximate and is not a Credit_Record. |
+
+The execution record of Batch 1, the deviations from the reviewed designs and the residual risks are in `EXECUTION_EVIDENCE.md`, section "Accelerated Batch 1".

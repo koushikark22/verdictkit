@@ -508,6 +508,90 @@ Result: 0 hits in every class in the added lines, and no file has more hits than
 
 A push of the commit that holds this subsection is recorded by the first ledger update after it, because a commit cannot contain its own id (see the note after PUSH-003).
 
+## Accelerated Batch 1 (OA-11)
+
+Status: a record of work and runs, written 2026-11-27 (UTC date of the system clock) under the owner decision OA-11 in `OWNER_DECISIONS.md`. It adds no E-id and does not change records E-201 to E-222 or any section above it. The ids B1-01 to B1-18 below belong to this batch only: the minimal evidence recorder of PH1-02 is not implemented, so these rows are typed by hand from the tool output of the session. The raw logs are scratch files outside the repository and are not published. No task box of `tasks.md` is ticked by this batch.
+
+Start state, checked before any change: branch `feature/kiro-next-phase`, HEAD `327c5eb0064e2f9c686fa3765ed8bf85d53716ad`, the tags `v1.0.0-submission` and `verified-quote-e2e-20261118` and `master` untouched, and two untracked files (`.config.kiro`, `tasks.meta.json`) under `.kiro/specs/verdictkit-next-phase/` that this batch does not publish.
+
+### PUSH-008 (observation, 14.13)
+
+This row is an observation of a ref update and not an Execution_Record, as for PUSH-001 to PUSH-007. The time is the Unix time of the newest line of the local reflog of `refs/remotes/origin/feature/kiro-next-phase`, converted to UTC (`1795730917`; the same conversion reproduces the recorded time of PUSH-007). It is when the local tracking ref was updated, not a server timestamp and not the commit time.
+
+| Record | Ref | Before | After | Updated (UTC) | Owner authorization |
+|---|---|---|---|---|---|
+| PUSH-008 | `refs/heads/feature/kiro-next-phase` | `fff6db49fb6f7f51080ca4fdb5e0ee7c1d37a581` | `327c5eb0064e2f9c686fa3765ed8bf85d53716ad` | 2026-11-26 22:08:37 | The owner authorized one ordinary non-force push of this commit through the normal Kiro approval controls (the PUSH-007 subsection above). Whether it was executed through Kiro or by hand is not recorded in git and stays `UNVERIFIED`. |
+
+Reading. Before equals the After value of PUSH-007 and the parent of the After commit, "docs(scope): approve and freeze enhanced release implementation scope". The tracking-ref reflog holds 8 entries, all `update by push`, which are the 8 rows PUSH-001 to PUSH-008. `git ls-remote origin refs/heads/feature/kiro-next-phase` returned the After value when read. The push of the commit that holds this section is recorded by the first ledger update after it.
+
+### Execution records
+
+Hosts. `Windows`: the owner's Windows host, Python 3.12.10, Node 24.14.1, `uv run --frozen`. `Linux container`: Docker Desktop Linux container from an image built from the changed tree, run with `--network none`. This is not the Linux_Docker_Host full-checkout run that DLV-1 to DLV-4 require (see "Open items").
+
+| Id | Host | What ran | Exit | Result | Class |
+|---|---|---|---|---|---|
+| B1-01 | Windows | `pytest tests/contract tests/api tests/integration -q -x`, BE-1 test deselected, unmodified tree | 0 | 428 passed, 9 skipped, 1 deselected, 36.19 s | SUCCEEDED |
+| B1-02 | Windows | BE-2 test in a detached worktree of `327c5eb` | 1 | fails with a socket timeout, the 7 other tests of the file pass | FAILED, baseline exception BE-2 reproduced at the baseline commit |
+| B1-03 | Windows | `npm audit` before any dependency change | 1 | 5 findings: 2 critical (`tinypool`, `vitest`), 1 high (`vite`), 2 moderate (`esbuild`, `@vitest/mocker`) | SUCCEEDED |
+| B1-04 | Windows | collected test ids, baseline vs final tree | 0 | 438 vs 447 collected, 9 added (7 in `test_signed_bundle_http.py`, 2 in `test_llm_fence.py` for the new modules), 0 removed | SUCCEEDED |
+| B1-05 | Windows | same selection as B1-01 on the final tree, nothing deselected | 0 | 438 passed, 9 skipped, 40.5 s. The delta to B1-01 is the 9 added tests plus BE-1, which passes now. | SUCCEEDED |
+| B1-06 | Windows | `pytest tests/security tests/api/test_signed_bundle_http.py` | 0 | 160 passed, 11 skipped (POSIX-only or link-privilege cases), 7.6 s | SUCCEEDED |
+| B1-07 | Windows | `HYPOTHESIS_PROFILE=ci pytest -q -m "not isolation"` (whole repository) | 1 | 607 passed, 16 skipped, 4 deselected, 1 failed (BE-2, as in B1-02), 48.2 s | FAILED, only the baseline exception |
+| B1-08 | Windows | `ruff check .` | 0 | All checks passed | SUCCEEDED |
+| B1-09 | Windows | `npm run typecheck`, `npm test`, `npm run build`, `npm audit` after the upgrade | 0 | typecheck clean in 3 workspaces; 22 tests passed (ui-kit 12, quote 6, reel 4; 19 before, 3 added); both apps build; 0 vulnerabilities | SUCCEEDED |
+| B1-10 | Linux container, user `vk-custodian` | `pytest tests/contract tests/api tests/integration tests/security -m "not isolation"`, 2 line-ending tests deselected | 0 | 600 passed, 5 skipped (Windows-only checks, UI sources absent from the image), 6 deselected, 34.0 s. The POSIX-only tests ran here. | SUCCEEDED |
+| B1-11 | Linux container | `gate-isolation` | 0 | 4 passed, JUnit tests=4 failures=0 errors=0 | SUCCEEDED |
+| B1-12 | Linux container | `gate-startup` | 0 | `VK_STARTUP_OK isolation=ENFORCED` | SUCCEEDED |
+| B1-13 | Linux container | `gate-http` (judge mode through the socket examiner: a live Finance case, a Reel synthetic fixture, a blocked live Reel case, server replay of both bundles) | 0 | `GATE-HTTP PASSED`; live and demo server replays `REPRODUCED`; `/proc` scan: 604 polls, canary seen, 0 key hits | SUCCEEDED |
+| B1-14 | Linux container | `gate-sign` | 0 | `GATE-SIGN PASSED`: 14 checks, including a signed run under ENFORCED, offline verification as `vk-examiner`, unknown and revoked signer, three tamper cases, unsigned bundle replay, examiner cannot read the key, worker refusals | SUCCEEDED |
+| B1-15 | Linux container | `gate-case` then `verdictkit replay` of its bundle | 0 | isolation ENFORCED, headline CONTRADICTED, integrity VERIFIED, `REPRODUCED`, `signature: UNSIGNED`, `authenticity: NOT_ESTABLISHED` | SUCCEEDED |
+| B1-16 | Windows | 6 source mutations, each with its targeted test (admission after buffering, vault case-id check removed, `SealedRef.path` trusted, replay written to the trusted root, manifest binding removed, unknown signer trusted) | 0 | 6 of 6 detected; the files were verified byte-identical afterwards | SUCCEEDED |
+| B1-17 | Linux container | `gate-sign` against a worker with its client uid check removed | 1 | fails on exactly that check (a valid task from `vk-examiner` is served) | SUCCEEDED (the mutation is detected) |
+| B1-18 | Windows | the documented key and trust-entry commands of `docs/SIGNING.md` | 0 | an OpenSSL Ed25519 key is refused with `SIGNING_KEY_PERMISSIONS` until locked down with `icacls`, then loads; the trust-entry command prints a valid entry | SUCCEEDED |
+
+All container rows B1-11 to B1-15 and B1-17, and B1-10, used image `86e3419c67ef`, built from the code that this batch commits (the files committed after that build are documentation only).
+
+### Defects fixed
+
+| Defect | Where | Fix | Evidence |
+|---|---|---|---|
+| Vault key in process arguments (`env VK_VAULT_KEY=...`, and in the `env -i` list of `as_custodian`) | `deploy/entrypoint.sh` | tmpfs key file written with builtins, custodian reads it once and removes it (`custody/keyfile.py`); the entrypoint holds no key variable; the examiner worker refuses `VK_VAULT_KEY_FILE` | static test, B1-13 scan, B1-11 |
+| Examiner worker served any client in the socket's group; a stalled client blocked the single worker | `examiner/worker.py` | `SO_PEERCRED` check of the client (only `vk-custodian`), socket created `0660`, 60 s client timeout, refuses custodian secrets in its environment | B1-14 (valid task refused for the examiner, served for the custodian), B1-17 |
+| Uploaded replay evidence written into the trusted evidence root, so a bundle could pre-set metadata for hashes that live cases later use | `api/server.py` | per-replay namespace (32 hex) under a separate root, removed in `finally`, orphans swept, examiner reads it by validated namespace | unit and API tests, B1-13, B1-16 |
+| Whole upload buffered twice before any slot check; unbounded replay storage | `api/server.py` | slot before the first body byte, body streamed to a private spool file under a 30 s deadline, 2 slots, 64 MiB per replay, 128 MiB total, atomic reservation | async tests with a lazy ASGI client |
+| Vault used `case_id` as a file name and trusted `SealedRef.path` for reads | `custody/vault.py` | plain-identifier check, location derived from the id, atomic `0600` write, bounded read, no link following | tests, B1-16 |
+| Hash strings from an uploaded index became file names (replay cache, evidence store, examiner reader) | `bundle.py`, `evidence/store.py` | 64 lowercase hex only | tests with 10 hostile forms |
+| MCP tools opened any readable path (and expanded `~`) | `mcp_server.py` | approved roots (private directory plus `VK_MCP_BUNDLE_ROOTS`), safe open, size check on the open handle, work on a private copy, structured `errorCode`, bounded and sanitized explanations, malformed bundles never raise | 26 tests; a real junction was refused on Windows |
+| Private-directory check was POSIX-only (BE-1 on Windows) | `safeio.py`, `mcp_server.py` | Windows access-list check next to the unchanged POSIX `0700` check | tests on both hosts |
+
+Found by the new checks during the batch and fixed before this record: the container gate exposed `server replay DIVERGED` because a `0750` replay namespace carries the custodian's primary group, so the examiner could not read it (the namespace is now `0755` below a `0750` root, with a regression test); a first draft of the peer-credential gate used a malformed frame and could not tell the uid check from a parse failure (replaced by a valid-task probe with a positive control, B1-17).
+
+### Dependency finding (B1-03, B1-09)
+
+All five findings were in the development and build toolchain (`vitest`, `vite`, `esbuild`, `tinypool`, `@vitest/mocker`). The advisories concern the Vitest API and UI servers, the Vite dev server and its file-serving rules, and worker options of the test runner. The shipped UI output is static files, the Python image contains none of these packages, and the API does not load them. This describes exposure at the time of the audit and was not tested by exploiting any advisory. The fix that `npm audit` offered (`vitest 2.1.9`) would not have removed the critical `tinypool` advisories, because no 1.x `tinypool` is outside the vulnerable range and Vitest 2 and 3 depend on 1.x. The upgrade applied is `vitest 4.1.12` (drops `tinypool`) and `vite 6.4.6` in the three manifests, with `package-lock.json` regenerated by `npm install`. `npm audit fix --force` was not used. The 19 existing frontend tests, typecheck and both builds pass on the new versions.
+
+### Deviations from the reviewed designs
+
+1. Contract 1.2.0 carries only the `authenticity` change of D5. The other items of the joint event in D5.8 (health `commitSha`, owner cookie, new 429 routes) are not implemented. Strict 1.1.0 validators fail on the new required fields, as D5.8 states for any bump.
+2. Windows signing and key files get an access-list check; D5.5 had none (R-D5-1). This is stricter than the design.
+3. Replay metadata is written inside the namespace, because the examiner reads it; DD8-3 kept it in custodian scratch.
+4. D5.6 step 1 (reading every archive name by its raw form so that Windows and Linux agree) is applied only to the signature member names. The archive-wide tightening is not implemented.
+5. MCP errors keep the existing `error` string and add `errorCode`, so existing callers keep working.
+6. `tests/contract/test_mcp_server.py` was edited in two places. BE-1: a Windows branch asserts the access-list check, and the POSIX assertion is unchanged. `test_tampered_bundle_is_not_explained` sets `VK_MCP_BUNDLE_ROOTS` for its temporary directory, which the approved-root rule now requires. No assertion was removed or loosened.
+7. The tests that pin the contract version, `ui-kit`, `ui/judge` and the examples moved from 1.1.0 to 1.2.0 in lockstep. `README.md` and the submission documents keep stating 1.1.0 for the frozen release and are not edited.
+
+### Open items and what is not verified
+
+- BE-2 (`test_case_outcome_get_to_offline_backend` times out on Windows) fails at the baseline commit (B1-02) and is untouched. Its cause is not established.
+- DLV-1 to DLV-4 stay `UNVERIFIED`. The container runs above are not full-checkout runs on a Linux_Docker_Host.
+- The browser end-to-end run (`scripts/ui_e2e.sh`) was not run, so the changed UI is verified by typecheck, unit tests, builds and API-level tests only.
+- The `/proc` scan samples. It shows no key at 604 samples with a canary seen; it is not proof for every instant. The static test and the design carry the guarantee.
+- On Windows the permission checks are path-based and cannot close a race between check and open.
+- No trusted timestamp and no online revocation (D5.7). A stale trust store is the operator's risk.
+- KL-1 (plugin loading from entry points and `VK_CLAIM_TYPES`) is unchanged, so public deployment stays blocked. No public deployment was made.
+- Not implemented from the queued plan: PH1-02 to PH1-05 and PH1-08 to PH1-10 tooling (recorder, publication scanner, AST guard, BE closure records), PH1-13 and PH1-15 (Isolation_Mode and Security_Profile resolver), PH2-01 and PH2-04 to PH2-09, PH3-01 and PH3-02, and Phases 4 to 7.
+- Kiro credits for this batch: `NOT_AVAILABLE`. No usage record was readable.
+
 ## Capability register
 
 | Capability | Status |
@@ -517,7 +601,8 @@ A push of the commit that holds this subsection is recorded by the first ledger 
 | Kiro MCP calls | SUCCEEDED in the historical record (E-101); not repeated in this phase |
 | Browser E2E | UNVERIFIED |
 | Public demonstration | UNVERIFIED (none exists) |
-| Signed bundles, plugin SDK, regulatory expansion | not implemented |
+| Signed bundles (Ed25519, signer trust, offline verification) | IMPLEMENTED in Accelerated Batch 1; verified by B1-05, B1-06, B1-10, B1-14 (container) and B1-16/B1-17 (mutations). Contract 1.2.0 covers only the authenticity change. |
+| Plugin SDK, regulatory expansion | not implemented |
 ## Corrections log (after independent review)
 
 | ID | Item | Original text | Correction | Reason |
@@ -530,6 +615,7 @@ A push of the commit that holds this subsection is recorded by the first ledger 
 | C-006 | Raw record files: `BASELINE_REPORT.md` header and `baseline/EXECUTION_INDEX.md` | "Raw command records: `docs/next-phase/baseline/records.jsonl`"; "Both raw files are preserved byte for byte" (read as published in the repository) | The original `records.jsonl` is a Private_Original kept outside the published tree. Its hash in the Execution_Index is unchanged. The published file is `baseline/records.sanitized.jsonl` with its own hash. `records-first-pass-overlapping.jsonl` is published unchanged. Method, rules and hashes: `EVIDENCE_REDACTION.md`. | Four command fields held local user-profile paths. Requirements 1.14, 3.11 and 3.14. |
 | C-007 | Ledger rows E-009, E-012, E-013, E-014, E-020, E-023, E-024 | Command text abbreviated (`...`, `<gate>`, "Hook_Set command") | Text left unchanged. The exact command and the Execution_Index record id of every baseline row are in `baseline/LEDGER_COMMAND_RECONCILIATION.md`. Seconds and start times of all rows equal the canonical records (0 mismatches). | Independent review finding L-4. Requirement 3.12. |
 | C-008 | BE-2 host attribution in the ledger and the baseline report ("Windows") | BE-2 recorded as a Windows exception | Read as "observed on Windows". Attribution to the host is UNVERIFIED and the root cause is not established until a Linux per-test run from a full checkout exists. | Requirements 1.12 and 1.19. Independent review finding L-4. |
+| C-009 | Capability register row "Signed bundles, plugin SDK, regulatory expansion" | `not implemented` | Split into one row for signed bundles (`IMPLEMENTED` in Accelerated Batch 1) and one for the plugin SDK and regulatory expansion (`not implemented`) | Batch 1 implemented signed bundles. The old row would now be false. The section above it is unchanged. |
 
 ## Accepted baseline exceptions
 

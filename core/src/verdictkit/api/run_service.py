@@ -327,8 +327,9 @@ class RunFailed(RuntimeError):
 
 def execute_run(*, store: DraftStore, registry: Registry, examiner: Any, case_id: str,
                 run_id: str, judge_mode: bool, clock: Callable[[], str] = utc_now,
-                evidence_dir: Any = None) -> str:
-    """Execute a queued run to a terminal state. Returns the terminal run state."""
+                evidence_dir: Any = None, signer: Any = None) -> str:
+    """Execute a queued run to a terminal state. Returns the terminal run state.
+    ``signer`` (a loaded ``verdictkit.signing.Signer``) signs the bundle; None writes it unsigned."""
     seq = 0
 
     def emit(stage: str, *, ledger_entry=None, detail: dict | None = None,
@@ -403,7 +404,7 @@ def execute_run(*, store: DraftStore, registry: Registry, examiner: Any, case_id
         )
         path = store.bundle_path(case_id)
         tmp = path.with_suffix(".tmp")
-        write_bundle(case, tmp, clock=clock)
+        write_bundle(case, tmp, clock=clock, signer=signer)
         tmp.chmod(0o600)
         tmp.replace(path)
         emit("BUNDLE_WRITTEN", ledger_entry=ledger.entries[-1])

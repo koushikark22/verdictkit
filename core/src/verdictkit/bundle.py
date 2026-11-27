@@ -6,6 +6,7 @@ Layout and rules: docs/ARCHITECTURE.md §7. Zip entries sorted, timestamps fixed
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 import zlib
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from .model import (
 )
 from .pipeline import CaseFile
 from .plugin import Registry, examination_payload
+from .signing import SIGNATURE_MEMBER, Signer, build_envelope, bundle_authenticity, unsigned_authenticity
 
 # Fixed zip timestamp (1980-01-01 00:00:00)
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
@@ -96,7 +98,12 @@ def _assumption_from_dict(d: dict) -> Assumption:
     return Assumption(**kwargs)
 
 
-def write_bundle(case: CaseFile, path: Path, *, clock: Callable[[], str]) -> Path:
+def write_bundle(case: CaseFile, path: Path, *, clock: Callable[[], str],
+                 signer: "Signer | None" = None) -> Path:
+    """Write the bundle. ``signer`` (already loaded and validated by the caller, so a bad key
+    fails before any file or ledger entry exists) adds ``signature/envelope.json`` over the
+    exact manifest bytes. The envelope is not listed in the manifest and never feeds the
+    verdict hash, so unsigned bytes and every verdict hash are unchanged."""
     # Collect all file contents first so we can build the manifest
     files: dict[str, bytes] = {}
 
@@ -243,6 +250,8 @@ def write_bundle(case: CaseFile, path: Path, *, clock: Callable[[], str]) -> Pat
         "written_at": clock(),
     }
     files["manifest.json"] = canonical_bytes(manifest_data)
+    if signer is not None:
+        files[SIGNATURE_MEMBER] = build_envelope(signer, files["manifest.json"])
 
     # Write the zip
     buf = io.BytesIO()
@@ -253,7 +262,14 @@ def write_bundle(case: CaseFile, path: Path, *, clock: Callable[[], str]) -> Pat
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(buf.getvalue())
+    # Atomic: a failed write leaves neither a partial bundle nor a temporary file.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_bytes(buf.getvalue())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -351,7 +367,8 @@ def _integrity(zf: zipfile.ZipFile, names: set[str]) -> tuple[IntegrityResult, d
         if sha256_hex(_read_bounded(zf, fname)) != expected_hash:
             notes.append(f"hash mismatch: {fname}")
             manifest_ok = False
-    unlisted = sorted(names - listed - {"manifest.json"})
+    # The signature envelope is the one member the manifest never lists (design D5.4).
+    unlisted = sorted(names - listed - {"manifest.json", SIGNATURE_MEMBER})
     if unlisted:
         manifest_ok = False
         notes.append("bundle contains files not listed in the manifest")
@@ -476,7 +493,7 @@ def replay_bundle(
 
         try:
             from .model import FrozenClaim, LicenseClass, SourceClass
-            from .evidence.store import EvidenceMeta, EvidenceStore
+            from .evidence.store import EvidenceMeta, EvidenceStore, check_sha256
 
             claim_type = registry.get(frozen_dict["claim_type"])
             assumptions = tuple(_assumption_from_dict(a) for a in frozen_dict.get("assumptions", []))
@@ -502,6 +519,9 @@ def replay_bundle(
                     uri=ei["uri"], retrieved_at=ei["retrieved_at"], sha256=ei["sha256"],
                     media_type=ei["media_type"], license_class=LicenseClass(ei["license_class"]),
                 )
+                # The index comes from the uploaded bundle. Its hash becomes a member name and a
+                # cache file name, so it must be exactly 64 lowercase hex characters.
+                check_sha256(item.sha256)
                 blob_name = f"evidence/blobs/{item.sha256}"
                 if blob_name in names:
                     blob = _read_bounded(zf, blob_name)
@@ -605,12 +625,26 @@ def integrity_dict(result: "IntegrityResult | ReplayReport") -> dict:
     return {"status": "VERIFIED" if ok else "FAILED", "checks": checks}
 
 
-AUTHENTICITY = {"status": "NOT_ESTABLISHED", "note": "Bundles are unsigned in v1."}
+def verifier_time() -> str:
+    """The verifier's clock for trust evaluation (``as_of``). Never an evaluator or comparator input."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def replay_report_dict(report: ReplayReport) -> dict:
+def authenticity_dict(path: Path, result: "IntegrityResult | ReplayReport", *, as_of: str | None = None,
+                      trust_store_file: str | None = None, trust_store_sha256: str | None = None) -> dict:
+    """The contract ``AuthenticityReport`` for a bundle file, from the signature check, the
+    operator's trust store and the integrity result. Offline; reads only the archive and the store."""
+    return bundle_authenticity(
+        path, integrity_ok=integrity_dict(result)["status"] == "VERIFIED",
+        as_of=as_of or verifier_time(), trust_store_file=trust_store_file,
+        trust_store_sha256=trust_store_sha256)
+
+
+def replay_report_dict(report: ReplayReport, *, authenticity: dict | None = None) -> dict:
     """The contract ReplayReport body (without contractVersion): integrity,
-    reproducibility and authenticity reported separately (correction 10)."""
+    reproducibility and authenticity reported separately (correction 10).
+    ``authenticity`` comes from ``authenticity_dict``; without it the bundle is reported unsigned."""
     notes = list(report.notes)
     original = report.original_verdict_hash
     if not _SHA256_RE.match(original or ""):
@@ -625,6 +659,6 @@ def replay_report_dict(report: ReplayReport) -> dict:
             "replayedVerdictHash": report.replayed_verdict_hash,
             "envMatch": report.env_match if report.replayed_verdict_hash is not None else None,
         },
-        "authenticity": dict(AUTHENTICITY),
+        "authenticity": authenticity if authenticity is not None else unsigned_authenticity(),
         "notes": notes,
     }

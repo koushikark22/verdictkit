@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.1.0",
+  "contractVersion": "1.2.0",
   "caseId": "case_00000000000000000000000000000001",
   "runId": "run_00000000000000000000000000000001",
   "claimType": "quote.finance.v1",

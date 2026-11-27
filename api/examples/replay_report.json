@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.1.0",
+  "contractVersion": "1.2.0",
   "integrity": {
     "status": "VERIFIED",
     "checks": [
@@ -18,7 +18,12 @@
   },
   "authenticity": {
     "status": "NOT_ESTABLISHED",
-    "note": "Bundles are unsigned."
+    "note": "This bundle is unsigned. Authenticity is not established.",
+    "signatureValidity": "UNSIGNED",
+    "signerTrust": "NOT_EVALUATED",
+    "reasonCodes": ["NO_ENVELOPE"],
+    "signer": null,
+    "trustStore": null
   },
   "notes": []
 }

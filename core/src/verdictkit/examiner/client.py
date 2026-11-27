@@ -29,10 +29,11 @@ class SocketExaminer:
     isolation = IsolationMode.UNENFORCED
 
     def __init__(self, socket_path: str, timeout_s: float = 60.0,
-                 expected_peer_uid: int | None = None) -> None:
+                 expected_peer_uid: int | None = None, namespace: str | None = None) -> None:
         self._socket_path = socket_path
         self._timeout_s = timeout_s
         self._expected_peer_uid = expected_peer_uid
+        self._namespace = namespace  # replay evidence namespace (design DD8-3); None: shared root
         self.isolation = IsolationMode.UNENFORCED
 
         if expected_peer_uid is not None:
@@ -52,7 +53,7 @@ class SocketExaminer:
     def examine(self, task: BlindedTask) -> Examination:
         import socket as _socket
 
-        payload = encode_task(task)
+        payload = encode_task(task, self._namespace)
         framed = frame(payload)
 
         sock = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)

@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const CONTRACT = '1.1.0';
+  const CONTRACT = '1.2.0';
   const $ = (id) => document.getElementById(id);
   const node = (tag, cls, txt) => {const el=document.createElement(tag);if(cls)el.className=cls;if(txt!==undefined&&txt!==null)el.textContent=String(txt);return el;};
   function set(el, ...items){el.replaceChildren(...items);}

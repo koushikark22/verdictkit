@@ -1,4 +1,4 @@
-/** TypeScript view of api/openapi.yaml (contract 1.1.0). Only fields the UIs read. */
+/** TypeScript view of api/openapi.yaml (contract 1.2.0). Only fields the UIs read. */
 
 export type DataMode = "LIVE_EVIDENCE" | "SYNTHETIC_DEMO";
 export type IsolationMode = "ENFORCED" | "UNENFORCED";
@@ -110,18 +110,28 @@ export interface ReproducibilityReport {
   status: string; originalVerdictHash: string; replayedVerdictHash: string | null; envMatch: boolean | null;
 }
 
+/** Signature validity, signer trust and authenticity are separate results (design D5.3). */
+export interface AuthenticityReport {
+  status: "NOT_ESTABLISHED" | "ESTABLISHED"; note: string;
+  signatureValidity: "UNSIGNED" | "VALID" | "INVALID" | "UNSUPPORTED_ALGORITHM";
+  signerTrust: "NOT_EVALUATED" | "TRUSTED" | "UNTRUSTED_SIGNER";
+  reasonCodes: string[];
+  signer: { keyId: string; algorithm: "ed25519" } | null;
+  trustStore: { formatVersion: number; serial: number; sha256: string; evaluatedAt: string } | null;
+}
+
 export interface BundleMetadata {
   contractVersion: string; caseId: string; bundleSha256: string; sizeBytes: number; engineVersion: string;
   envFingerprint: { engineVersion: string; pythonVersion: string; lockfileSha256: string; imageDigest: string };
   isolationMode: IsolationMode; embeddedEvidence: string[];
   refetchOnlyEvidence: { evidenceId: string; uri: string; snapshotHash: string }[];
   integrity: IntegrityReport; reproducibility: ReproducibilityReport;
-  authenticity: { status: "NOT_ESTABLISHED"; note: string }; replayCommand: string;
+  authenticity: AuthenticityReport; replayCommand: string;
 }
 
 export interface ReplayReport {
   contractVersion: string; integrity: IntegrityReport; reproducibility: ReproducibilityReport;
-  authenticity: { status: "NOT_ESTABLISHED"; note: string }; notes: string[];
+  authenticity: AuthenticityReport; notes: string[];
 }
 
 /** Intake body. Outcome values are write-only: the server never echoes them. */

@@ -6,6 +6,7 @@ Every ``get`` recomputes SHA-256 and raises EvidenceIntegrityError on mismatch.
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +16,16 @@ from ..model import EvidenceItem, LicenseClass, SourceClass
 
 class EvidenceIntegrityError(ValueError):
     pass
+
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def check_sha256(sha256: object) -> str:
+    """A content hash is used as a file name. Only 64 lowercase hex characters may become one."""
+    if not isinstance(sha256, str) or _SHA256.fullmatch(sha256) is None:
+        raise EvidenceIntegrityError("invalid evidence hash")
+    return sha256
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +80,7 @@ class EvidenceStore:
         )
 
     def get(self, sha256: str) -> bytes:
-        blob_path = self._blobs / sha256
+        blob_path = self._blobs / check_sha256(sha256)
         data = blob_path.read_bytes()
         actual = hashlib.sha256(data).hexdigest()
         if actual != sha256:
@@ -79,7 +90,7 @@ class EvidenceStore:
         return data
 
     def item(self, sha256: str) -> EvidenceItem:
-        meta_path = self._meta / f"{sha256}.json"
+        meta_path = self._meta / f"{check_sha256(sha256)}.json"
         meta_obj = parse_canonical(meta_path.read_bytes())
         return EvidenceItem(
             source_id=meta_obj["source_id"],
@@ -92,7 +103,7 @@ class EvidenceStore:
         )
 
     def blob_path(self, sha256: str) -> Path:
-        return self._blobs / sha256
+        return self._blobs / check_sha256(sha256)
 
 
 class ReadOnlyEvidence:
@@ -101,7 +112,7 @@ class ReadOnlyEvidence:
 
     def __init__(self, root: Path, allowed: "tuple[str, ...] | list[str]") -> None:
         self._root = Path(root)
-        self._allowed = frozenset(allowed)
+        self._allowed = frozenset(check_sha256(a) for a in allowed)  # names become file paths
 
     def read(self, sha256: str) -> bytes:
         if sha256 not in self._allowed or len(sha256) != 64 or not all(

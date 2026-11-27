@@ -1,4 +1,4 @@
-# VerdictKit API Contract (contract 1.1.0)
+# VerdictKit API Contract (contract 1.2.0)
 
 Normative schema: `api/openapi.yaml` (OpenAPI 3.1, JSON Schema 2020-12). Examples:
 `api/examples/` (placeholders, not results). Enforced by `tests/contract/test_api_schema.py`
@@ -7,9 +7,10 @@ a domain status, it only withholds a confidence class where required and adds
 execution-level framing. Domain and security contracts in `docs/ARCHITECTURE.md` are
 unchanged.
 
-Every JSON response carries `contractVersion: "1.1.0"` (header `X-VerdictKit-Contract`).
+Every JSON response carries `contractVersion: "1.2.0"` (header `X-VerdictKit-Contract`).
 `GET /claim-types` returns `{contractVersion, claimTypes: [...]}` rather than a bare array. Startup accepts only literal `VK_JUDGE_MODE=0` or `VK_JUDGE_MODE=1`; invalid values refuse with exit 2 and `VK_STARTUP_ERROR=CONFIG_INVALID:VK_JUDGE_MODE`. A successful startup check prints `VK_STARTUP_OK isolation=ENFORCED` or `VK_STARTUP_OK isolation=UNENFORCED`. Judge mode without verified isolation refuses with exit 3 and `VK_STARTUP_ERROR=ISOLATION_NOT_ENFORCED`.
 Changing any schema requires bumping it; the frontend refuses unknown versions.
+1.2.0 changes only the `authenticity` object of `BundleMetadata` and `ReplayReport` (section 10); every 1.1.0 field is preserved. Strict 1.1.0 validators fail on the new required fields, which is the effect of the bump.
 
 ## 0. Blinding scope (what is and is not secret)
 
@@ -41,7 +42,7 @@ them at intake. The contract therefore promises only that:
 | Replay | `POST /replays` (zip body) | `ReplayReport`, no network |
 
 Errors use `{"error": {code, message, field}}`. Limits in judge mode: 256 KiB JSON bodies,
-8 MiB bundle uploads, per-IP rate limit, 24 h case TTL.
+8 MiB bundle uploads (an upload slot is taken before the body is read), per-IP rate limit, 24 h case TTL.
 
 ## 2. Execution status vs. epistemic status (corrections 1, 2)
 
@@ -146,11 +147,15 @@ response carries `isolationMode`; judge mode refuses to start unless `ENFORCED`.
 |---|---|---|
 | `integrity` | Is the bundle internally consistent since it was written? (manifest hashes, ledger chain, commitment, spec hash) | `VERIFIED / FAILED` |
 | `reproducibility` | Does re-execution give the same verdict hash? | `REPRODUCED / REPRODUCED_ACROSS_ENV / DIVERGED / UNVERIFIABLE`; `NOT_RUN` in metadata |
-| `authenticity` | Did our deployment produce it? | always `NOT_ESTABLISHED` (bundles are unsigned in v1) |
+| `signatureValidity` | Did the holder of a key sign these exact manifest bytes? | `UNSIGNED / VALID / INVALID / UNSUPPORTED_ALGORITHM` |
+| `signerTrust` | Does this operator's trust store accept that key at the verifier's clock? | `NOT_EVALUATED / TRUSTED / UNTRUSTED_SIGNER` |
+| `authenticity` | Is origin established? | `ESTABLISHED` only for `VALID` + `TRUSTED` + integrity `VERIFIED`, otherwise `NOT_ESTABLISHED` (every unsigned bundle) |
 
-The UI and write-up must never present integrity or reproducibility as proof of origin.
+The `authenticity` object carries `status`, `note`, `signatureValidity`, `signerTrust`, `reasonCodes` (sorted), `signer` (`{keyId, algorithm}` when the signature is `VALID`, else `null`) and `trustStore` (`{formatVersion, serial, sha256, evaluatedAt}` when a store was read for a `VALID` signature, else `null`). The signature is Ed25519 over the exact `manifest.json` bytes (protocol `vk-bundle-sig` 1, design D5). The trust store is operator configuration (`VK_TRUST_STORE_FILE`, optional `VK_TRUST_STORE_SHA256`); no request, bundle member or MCP argument selects it. An embedded public key is never trusted by itself. Verification is offline.
 
-## 11. Implementation notes (server behaviour, 1.1.0)
+A valid signature from a trusted signer does not show that the claim is true, that the signing time is trusted, or that the key was never compromised. The UI and write-up must never present integrity or reproducibility as proof of origin.
+
+## 11. Implementation notes (server behaviour, 1.2.0)
 
 * `POST /cases/{caseId}/runs` executes the run to a terminal state before answering
   `202 RunAccepted` (state `COMPLETED` or `INDETERMINATE`); a repeated call returns the
@@ -166,7 +171,11 @@ The UI and write-up must never present integrity or reproducibility as proof of 
   exposed over HTTP.
 * `POST /replays` never refetches; malformed, oversized (> 64 MiB uncompressed) or
   integrity-failing bundles are reported `UNVERIFIABLE` and are not re-executed. At most
-  two replays run concurrently (`429` otherwise).
+  two uploads are in flight (`429 RATE_LIMITED` with `Retry-After`, decided before the body is
+  read). The body is streamed to a private spool file under a 30 s total deadline (`408`).
+  Embedded evidence is restored into a per-replay namespace (32 hex characters) outside the
+  trusted evidence root and removed afterwards. Replay storage is capped at 64 MiB per replay and
+  128 MiB in total, reserved atomically (`429` when exhausted).
 * In judge mode every case, frozen or not, is purged 24 h after intake.
 * `SYNTHETIC_DEMO` is implemented as specified in §3: `POST /cases` accepts only a bundled
   `fixtureId` (Reel: `fx_reel_supported_hold`, `fx_reel_conditional_sma`,

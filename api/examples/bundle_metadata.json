@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.1.0",
+  "contractVersion": "1.2.0",
   "caseId": "case_00000000000000000000000000000001",
   "bundleSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
   "sizeBytes": 4096,
@@ -44,7 +44,12 @@
   },
   "authenticity": {
     "status": "NOT_ESTABLISHED",
-    "note": "Bundles are unsigned. Integrity checks prove internal consistency, not origin."
+    "note": "This bundle is unsigned. Authenticity is not established.",
+    "signatureValidity": "UNSIGNED",
+    "signerTrust": "NOT_EVALUATED",
+    "reasonCodes": ["NO_ENVELOPE"],
+    "signer": null,
+    "trustStore": null
   },
   "replayCommand": "verdictkit replay case.vkb"
 }

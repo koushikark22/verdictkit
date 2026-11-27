@@ -26,6 +26,14 @@ def main() -> int:
         print("VK_STARTUP_ERROR=ISOLATION_NOT_ENFORCED", file=sys.stderr)
         return 3
 
+    try:
+        # A configured signing key that cannot be used stops the start. No unsigned downgrade.
+        from verdictkit.signing import SigningKeyError, load_signer_from_env
+        load_signer_from_env()
+    except SigningKeyError:
+        print("VK_STARTUP_ERROR=CONFIG_INVALID:VK_SIGNING_KEY_FILE", file=sys.stderr)
+        return 2
+
     if args.check_startup:
         print(f"isolation_mode: {isolation}")
         print(f"judge_mode: {judge_mode}")

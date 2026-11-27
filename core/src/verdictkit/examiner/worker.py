@@ -1,27 +1,43 @@
 """Examiner worker entry point: ``python -I -m verdictkit.examiner.worker``.
 
 Started by the container entrypoint as ``vk-examiner`` with a scrubbed environment
-(allowlist: PATH, LANG, PYTHONHASHSEED=0, VK_EXAMINER_SOCKET, VK_EVIDENCE_DIR,
+(allowlist: PATH, LANG, PYTHONHASHSEED=0, VK_EXAMINER_SOCKET, VK_EVIDENCE_DIR, VK_REPLAY_DIR,
 VK_SOURCES_CONFIG). Applies RLIMIT_CPU and RLIMIT_AS before serving.
-Refuses to start if ``VK_VAULT_KEY`` is present in its environment. Requirement: core 4.
+Refuses to start if a custodian secret (``VK_VAULT_KEY``, ``VK_VAULT_KEY_FILE``,
+``VK_SIGNING_KEY_FILE``) is present in its environment. Requirement: core 4.
+
+Under enforced isolation the worker also authenticates each *client*: kernel peer credentials
+(``SO_PEERCRED``) must show the ``vk-custodian`` uid. Group access to the socket is not enough.
 """
 from __future__ import annotations
 
 import os
 import socket
+import stat
 import struct
 import sys
 
-from .protocol import MAX_FRAME_BYTES, decode_task, encode_result, frame
+from .protocol import MAX_FRAME_BYTES, decode_namespace, decode_task, encode_result, frame
+
+FORBIDDEN_ENV = ("VK_VAULT_KEY", "VK_VAULT_KEY_FILE", "VK_SIGNING_KEY_FILE")
+CLIENT_TIMEOUT_S = 60.0  # a connected client that stalls cannot hold the single worker forever
 
 
 def main() -> int:
-    # Security: refuse to start if vault key is in the environment
-    if "VK_VAULT_KEY" in os.environ:
-        print("ERROR: VK_VAULT_KEY must not be present in examiner environment", file=sys.stderr)
-        return 1
+    # Security: refuse to start if a custodian secret is in the environment
+    for name in FORBIDDEN_ENV:
+        if name in os.environ:
+            print(f"ERROR: {name} must not be present in examiner environment", file=sys.stderr)
+            return 1
 
     socket_path = os.environ.get("VK_EXAMINER_SOCKET", "/tmp/vk-examiner.sock")
+
+    custodian_uid = None
+    if os.environ.get("VK_ISOLATION") == "enforced":
+        custodian_uid = _custodian_uid()
+        if custodian_uid is None:
+            print("ERROR: enforced isolation requires the vk-custodian account", file=sys.stderr)
+            return 1
 
     # Apply resource limits on POSIX
     _apply_rlimits()
@@ -34,7 +50,11 @@ def main() -> int:
         os.unlink(socket_path)
 
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(socket_path)
+    old_umask = os.umask(0o117)  # socket inode is created 0660, never wider
+    try:
+        srv.bind(socket_path)
+    finally:
+        os.umask(old_umask)
     srv.listen(16)
 
     print(f"VerdictKit Examiner listening on {socket_path}", file=sys.stderr)
@@ -42,11 +62,45 @@ def main() -> int:
     while True:
         conn, _ = srv.accept()
         try:
+            conn.settimeout(CLIENT_TIMEOUT_S)
+            if custodian_uid is not None and not _peer_uid_is(conn, custodian_uid):
+                print("examiner: rejected a client that is not the custodian", file=sys.stderr)
+                continue
             _handle(conn, registry)
         except Exception as exc:
-            print(f"examiner error: {exc}", file=sys.stderr)
+            print(f"examiner error: {type(exc).__name__}", file=sys.stderr)
         finally:
             conn.close()
+
+
+def _custodian_uid() -> int | None:
+    try:
+        import pwd
+        return pwd.getpwnam("vk-custodian").pw_uid
+    except (ImportError, KeyError):
+        return None
+
+
+def _peer_uid_is(conn: socket.socket, uid: int) -> bool:
+    try:
+        data = conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+        _pid, peer_uid, _gid = struct.unpack("3i", data)
+    except (AttributeError, OSError, struct.error):
+        return False
+    return peer_uid == uid
+
+
+def _evidence_root(namespace: str | None) -> str | None:
+    """Shared evidence root for live cases; a validated replay namespace for uploaded bundles."""
+    if namespace is None:
+        return os.environ.get("VK_EVIDENCE_DIR")
+    base = os.environ.get("VK_REPLAY_DIR")
+    if not base:
+        raise ValueError("replay namespaces are not configured")
+    path = os.path.join(base, namespace)  # the token is exactly 32 hex characters
+    if not stat.S_ISDIR(os.lstat(path).st_mode):
+        raise ValueError("replay namespace is not a directory")
+    return path
 
 
 def _handle(conn: socket.socket, registry) -> None:
@@ -62,6 +116,7 @@ def _handle(conn: socket.socket, registry) -> None:
         return
 
     task = decode_task(payload)
+    namespace = decode_namespace(payload)
 
     from ..sweep import expand_grid
     from .client import _EmptyEvidenceReader
@@ -69,7 +124,7 @@ def _handle(conn: socket.socket, registry) -> None:
     claim_type = registry.get(task.claim_type)
     grid = expand_grid(task.assumptions)
     reader = _EmptyEvidenceReader()
-    evidence_dir = os.environ.get("VK_EVIDENCE_DIR")
+    evidence_dir = _evidence_root(namespace)
     if evidence_dir and task.evidence_refs:
         from ..evidence.store import ReadOnlyEvidence
         reader = ReadOnlyEvidence(evidence_dir, task.evidence_refs)
@@ -107,6 +162,7 @@ def _load_registry():
     """Load the same configured claim types as the custodian CLI."""
     from verdictkit.cli import _load_registry as load_registry
     return load_registry()
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

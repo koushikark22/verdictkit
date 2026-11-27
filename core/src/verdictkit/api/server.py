@@ -1,4 +1,4 @@
-"""VerdictKit HTTP API (contract 1.1.0): intake -> freeze -> evidence -> run -> outcome
+"""VerdictKit HTTP API (contract 1.2.0): intake -> freeze -> evidence -> run -> outcome
 -> bundle -> replay. See docs/API_CONTRACT.md and api/openapi.yaml.
 
 Asserted outcomes are write-only until the verdict join. Every case-route response is
@@ -7,10 +7,11 @@ contract-versioned; framework errors never leak unversioned bodies or exception 
 from __future__ import annotations
 
 import asyncio
-import base64
+import atexit
 import binascii
 import json
 import os
+import shutil
 import tempfile
 import threading
 import uuid
@@ -25,6 +26,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import ClientDisconnect
 
 from .draft_store import DraftNotFound, DraftStore, FreezeConflict
 from .freeze_boundary import prepare_freeze
@@ -34,13 +36,19 @@ from .run_service import (
     CONTRACT_CLAIM_TYPES, blocked_outcome, evidence_dtos, execute_run, item_from_dict,
     item_to_dict, parameter_ledger, utc_now,
 )
+from verdictkit.contract import CONTRACT_VERSION
+from verdictkit.custody.keyfile import load_vault_key
 from verdictkit.model import DataMode
 from verdictkit.plugin import Registry
+from verdictkit.signing import SigningKeyError, load_signer_from_env
 from .intake_boundary import IntakeRejected, _json_safe, prepare_intake
+from .replay_store import MAX_REPLAY_BYTES, ReplayCapacityError, ReplayRoot
 
-VERSION = "1.1.0"
+VERSION = CONTRACT_VERSION
 MAX_JSON = 256 * 1024
 MAX_BUNDLE = 8 * 1024 * 1024
+UPLOAD_DEADLINE_S = 30.0       # total time one upload may hold its slot (design DD8-4)
+UPLOAD_RETRY_AFTER_S = "5"
 CUSTODY_NOT_CONFIGURED = "CUSTODY_NOT_CONFIGURED"
 _RUN_ID_CHARS = frozenset("0123456789abcdef")
 _MAX_TRACKED_CLIENTS = 10000
@@ -85,7 +93,8 @@ class SafetyMiddleware(BaseHTTPMiddleware):
             return error("RATE_LIMITED", "Request rate limit exceeded", 429)
         hits.append(now)
         if request.method in ("POST", "PATCH", "PUT"):
-            cap = MAX_BUNDLE if request.url.path.endswith("/replays") else MAX_JSON
+            is_upload = request.url.path.endswith("/replays")
+            cap = MAX_BUNDLE if is_upload else MAX_JSON
             content_length = request.headers.get("content-length")
             if content_length:
                 try:
@@ -93,16 +102,19 @@ class SafetyMiddleware(BaseHTTPMiddleware):
                         return error("BODY_TOO_LARGE", "Request body exceeds size limit", 413)
                 except ValueError:
                     return error("SCHEMA_INVALID", "Invalid Content-Length", 400)
-            # Safely enforce cap even with chunked requests.
-            data = bytearray()
-            async for chunk in request.stream():
-                data.extend(chunk)
-                if len(data) > cap:
-                    return error("BODY_TOO_LARGE", "Request body exceeds size limit", 413)
-            # BaseHTTPMiddleware passes a cached Request to downstream routes.
-            # Replacing _receive directly loses the cached body on some Starlette
-            # versions; use the cached body recognized by wrapped_receive.
-            request._body = bytes(data)
+            if not is_upload:
+                # Safely enforce cap even with chunked requests.
+                data = bytearray()
+                async for chunk in request.stream():
+                    data.extend(chunk)
+                    if len(data) > cap:
+                        return error("BODY_TOO_LARGE", "Request body exceeds size limit", 413)
+                # BaseHTTPMiddleware passes a cached Request to downstream routes.
+                # Replacing _receive directly loses the cached body on some Starlette
+                # versions; use the cached body recognized by wrapped_receive.
+                request._body = bytes(data)
+            # Uploads are not buffered here: the route takes an upload slot first and
+            # then streams the body to a private spool file (design DD8-4).
         response = await call_next(request)
         response.headers["X-VerdictKit-Contract"] = VERSION
         response.headers["Cache-Control"] = "no-store"
@@ -111,7 +123,7 @@ class SafetyMiddleware(BaseHTTPMiddleware):
 
 
 def _contract_registry(registry: Any) -> Registry:
-    """Only claim types representable in the 1.1.0 contract are exposed over HTTP."""
+    """Only claim types representable in the 1.2.0 contract are exposed over HTTP."""
     view = Registry()
     for tid in registry.type_ids():
         if tid in CONTRACT_CLAIM_TYPES:
@@ -119,14 +131,16 @@ def _contract_registry(registry: Any) -> Registry:
     return view
 
 
-def _make_examiner(isolation: str, registry: Any, evidence_dir: Any = None) -> Any:
+def _make_examiner(isolation: str, registry: Any, evidence_dir: Any = None,
+                   namespace: str | None = None) -> Any:
     """ENFORCED: authenticated socket worker (peer UID checked on every connection).
-    Otherwise an in-process examiner that is reported UNENFORCED everywhere."""
+    Otherwise an in-process examiner that is reported UNENFORCED everywhere.
+    ``namespace`` selects a replay evidence namespace for the socket worker (design DD8-3)."""
     from verdictkit.examiner.client import InProcessExaminer, SocketExaminer
     if isolation == "ENFORCED":
         from verdictkit.examiner.identity import resolve_examiner_uid
         return SocketExaminer(os.environ["VK_EXAMINER_SOCKET"],
-                              expected_peer_uid=resolve_examiner_uid(""))
+                              expected_peer_uid=resolve_examiner_uid(""), namespace=namespace)
     return InProcessExaminer(registry, evidence_root=None if evidence_dir is None else str(evidence_dir))
 
 
@@ -178,12 +192,13 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
     # custodian. Never invent a process-local encryption key: that would make
     # persisted claims undecryptable following a restart.
     draft_dir = os.environ.get("VK_DRAFT_DIR")
-    vault_key = os.environ.get("VK_VAULT_KEY")
     draft_store = None
-    if draft_dir and vault_key:
+    if draft_dir:
         try:
-            key = base64.b64decode(vault_key, validate=True)
-            draft_store = DraftStore(draft_dir, key, expire_frozen=judge_mode)
+            # Key file (read once, then removed) or VK_VAULT_KEY; never a process argument.
+            key = load_vault_key()
+            if key is not None:
+                draft_store = DraftStore(draft_dir, key, expire_frozen=judge_mode)
         except (binascii.Error, ValueError, OSError) as exc:
             raise RuntimeError("invalid draft custody configuration") from exc
     # Evidence written by the custodian and readable by the examiner. In the container
@@ -191,6 +206,13 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
     evidence_dir = None
     if draft_store is not None:
         evidence_dir = Path(os.environ.get("VK_EVIDENCE_DIR") or Path(draft_dir) / "evidence")
+
+    # Signing is enabled by VK_SIGNING_KEY_FILE. Set but unusable stops the start; it never
+    # degrades to unsigned bundles (design D5.5). The key never leaves the custodian process.
+    try:
+        signer = load_signer_from_env()
+    except SigningKeyError as exc:
+        raise RuntimeError(f"invalid signing key configuration ({exc.code})") from None
 
     purge_state = {"at": 0.0}
     purge_lock = threading.Lock()
@@ -492,7 +514,7 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             examiner = _Unavailable()
         state = execute_run(store=draft_store, registry=registry, examiner=examiner,
                             case_id=case_id, run_id=run_id, judge_mode=judge_mode,
-                            evidence_dir=evidence_dir)
+                            evidence_dir=evidence_dir, signer=signer)
         if state == "FAILED":
             return error("RUN_FAILED", "Run failed; no verdict was produced", 500)
         return JSONResponse(status_code=202, content={
@@ -614,7 +636,7 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
         if found is None:
             return error("NOT_FOUND", "Bundle unavailable", 404)
         path, run = found
-        from verdictkit.bundle import AUTHENTICITY, integrity_dict, verify_bundle_integrity
+        from verdictkit.bundle import authenticity_dict, integrity_dict, verify_bundle_integrity
         import hashlib
         import zipfile
         data = path.read_bytes()
@@ -652,43 +674,101 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             "integrity": integrity_dict(result),
             "reproducibility": {"status": "NOT_RUN", "originalVerdictHash": verdict_hash,
                                 "replayedVerdictHash": None, "envMatch": None},
-            "authenticity": dict(AUTHENTICITY),
+            "authenticity": authenticity_dict(path, result),
             "replayCommand": f"verdictkit replay {case_id}.vkb",
         }
 
-    replay_slots = threading.BoundedSemaphore(2)
+    # Admission (design DD8-4): a slot is taken before the first body byte is read. The body is
+    # streamed to one private spool file (never held in memory), under a total deadline.
+    try:
+        max_uploads = max(1, int(os.environ.get("VK_MAX_CONCURRENT_UPLOADS", "2")))
+    except ValueError:
+        max_uploads = 2
+    upload_slots = threading.BoundedSemaphore(max_uploads)
+
+    # Replay evidence lives in its own root, never in the trusted evidence directory (DD8-3).
+    replay_state: dict[str, ReplayRoot] = {}
+    replay_lock = threading.Lock()
+
+    def replay_root() -> ReplayRoot:
+        with replay_lock:
+            if "root" not in replay_state:
+                if isolation == "ENFORCED":
+                    base = Path(os.environ.get("VK_REPLAY_DIR", "/var/lib/vk/replay"))
+                else:
+                    base = Path(tempfile.mkdtemp(prefix="vk-replays-"))
+                    atexit.register(shutil.rmtree, base, True)
+                replay_state["root"] = ReplayRoot(base)
+            return replay_state["root"]
+
+    def busy() -> JSONResponse:
+        resp = error("RATE_LIMITED", "Replay capacity exhausted; retry later", 429)
+        resp.headers["Retry-After"] = UPLOAD_RETRY_AFTER_S
+        return resp
+
+    async def _spool(request: Request, target: Path) -> JSONResponse | None:
+        """Stream the request body to ``target``. Returns an error response, or None on success."""
+        total = 0
+        try:
+            async with asyncio.timeout(UPLOAD_DEADLINE_S):
+                with open(target, "wb") as out:
+                    async for chunk in request.stream():
+                        total += len(chunk)
+                        if total > MAX_BUNDLE:
+                            return error("BODY_TOO_LARGE", "Request body exceeds size limit", 413)
+                        out.write(chunk)
+        except TimeoutError:
+            return error("UPLOAD_TIMEOUT", "Upload deadline exceeded", 408)
+        except ClientDisconnect:
+            return error("UPLOAD_ABORTED", "Upload was interrupted", 400)
+        if total == 0:
+            return error("SCHEMA_INVALID", "Bundle body required", 422)
+        return None
 
     @app.post('/api/v1/replays')
     async def replay_upload(request: Request) -> Any:
-        body = await request.body()
-        if not body:
-            return error("SCHEMA_INVALID", "Bundle body required", 422)
-        if not replay_slots.acquire(blocking=False):
-            return error("RATE_LIMITED", "Replay capacity exhausted; retry later", 429)
+        if not upload_slots.acquire(blocking=False):
+            return busy()
         try:
-            return await asyncio.to_thread(_replay, body)
+            with tempfile.TemporaryDirectory(prefix="vk-upload-") as tmp:
+                upload = Path(tmp) / "upload.vkb"
+                failure = await _spool(request, upload)
+                if failure is not None:
+                    return failure
+                try:
+                    return await asyncio.to_thread(_replay, upload, Path(tmp) / "work")
+                except ReplayCapacityError:
+                    return busy()
         finally:
-            replay_slots.release()
+            upload_slots.release()  # also on error and on client disconnect
 
-    def _replay(body: bytes) -> dict:
-        from verdictkit.bundle import replay_bundle, replay_report_dict
-        with tempfile.TemporaryDirectory(prefix="vk-replay-") as tmp:
-            bundle = Path(tmp) / "upload.vkb"
-            bundle.write_bytes(body)
-            # Embedded evidence is hash-checked, then restored where the examiner can read
-            # it: the shared evidence store when isolation is enforced (the worker reads
-            # only VK_EVIDENCE_DIR), otherwise a private directory for this replay.
-            replay_evidence = (evidence_dir if isolation == "ENFORCED" and evidence_dir is not None
-                               else Path(tmp) / "work" / "evidence")
+    def _declared_evidence_bytes(upload: Path) -> int:
+        """Bytes the replay may write: the declared size of every embedded evidence blob. A
+        bundle that is not a readable archive writes nothing (it replays as UNVERIFIABLE)."""
+        import zipfile
+        try:
+            with zipfile.ZipFile(upload) as zf:
+                declared = sum(i.file_size for i in zf.infolist() if i.filename.startswith("evidence/blobs/"))
+        except (zipfile.BadZipFile, OSError):
+            return 0
+        return min(declared, MAX_REPLAY_BYTES)
+
+    def _replay(upload: Path, work: Path) -> dict:
+        from verdictkit.bundle import authenticity_dict, replay_bundle, replay_report_dict
+        # Capacity is reserved atomically before anything is written (64 MiB per replay,
+        # 128 MiB in total). Embedded evidence is hash-checked on restore and re-hashed by the
+        # examiner on every read, inside a namespace that is removed when the replay ends.
+        with replay_root().namespace(_declared_evidence_bytes(upload)) as (token, namespace_dir):
             try:
-                examiner = _make_examiner(isolation, full_registry, replay_evidence)
+                examiner = _make_examiner(isolation, full_registry, namespace_dir, token)
             except Exception:
                 examiner = _Unavailable()
             # No network: refetch is never permitted for uploaded bundles.
-            report = replay_bundle(bundle, registry=full_registry, workdir=Path(tmp) / "work",
+            report = replay_bundle(upload, registry=full_registry, workdir=work,
                                    allow_refetch=False, examiner=examiner,
-                                   evidence_root=replay_evidence)
-        return {"contractVersion": VERSION, **replay_report_dict(report)}
+                                   evidence_root=namespace_dir)
+        authenticity = authenticity_dict(upload, report)
+        return {"contractVersion": VERSION, **replay_report_dict(report, authenticity=authenticity)}
 
     return app
 

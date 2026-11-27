@@ -6,6 +6,7 @@ Only two message types exist: ``task`` (Custodian -> Examiner) and ``result``
 """
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 from ..canonical import canonical_bytes, parse_canonical
@@ -55,8 +56,14 @@ def _assumption_from_dict(d: dict) -> Assumption:
     return Assumption(**kwargs)
 
 
-def encode_task(task: BlindedTask) -> bytes:
-    """Canonical JSON bytes of ``{"type": "task", "task": <task>}`` (no length prefix)."""
+_NAMESPACE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def encode_task(task: BlindedTask, namespace: str | None = None) -> bytes:
+    """Canonical JSON bytes of ``{"type": "task", "task": <task>}`` (no length prefix).
+
+    ``namespace`` (32 lowercase hex characters) names a replay evidence namespace the worker
+    may read instead of the shared evidence root (design DD8-3). It carries no outcome data."""
     task_dict = {
         "case_id": task.case_id,
         "claim_type": task.claim_type,
@@ -66,7 +73,24 @@ def encode_task(task: BlindedTask) -> bytes:
         "assumptions": [_assumption_to_dict(a) for a in task.assumptions],
         "evidence_refs": list(task.evidence_refs),
     }
-    return canonical_bytes({"type": "task", "task": task_dict})
+    message: dict = {"type": "task", "task": task_dict}
+    if namespace is not None:
+        if not isinstance(namespace, str) or _NAMESPACE.fullmatch(namespace) is None:
+            raise ValueError("invalid evidence namespace")
+        message["namespace"] = namespace
+    return canonical_bytes(message)
+
+
+def decode_namespace(data: bytes) -> str | None:
+    """The validated replay namespace of a task frame, or ``None``. Raises ``ValueError`` when
+    the field is present but is not exactly 32 lowercase hexadecimal characters."""
+    obj = parse_canonical(data)
+    namespace = obj.get("namespace") if isinstance(obj, dict) else None
+    if namespace is None:
+        return None
+    if not isinstance(namespace, str) or _NAMESPACE.fullmatch(namespace) is None:
+        raise ValueError("invalid evidence namespace")
+    return namespace
 
 
 def decode_task(data: bytes) -> BlindedTask:

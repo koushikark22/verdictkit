@@ -262,7 +262,11 @@ function ReportView({ title, integrity, repro, authenticity }: {
         {" "}({integrity.checks.map((c) => `${c.check} ${c.ok ? "ok" : "FAILED"}`).join(", ")})</p>
       <p>Reproducibility: <b data-testid="repro-status">{repro.status}</b>
         {repro.replayedVerdictHash ? <> · replayed hash <code className="vk-hash">{repro.replayedVerdictHash}</code></> : null}</p>
-      <p>Authenticity: <b>{authenticity.status}</b> — {authenticity.note}</p>
+      <p>Signature: <b data-testid="signature-validity">{authenticity.signatureValidity}</b>
+        {authenticity.signer ? <> · signer <code className="vk-hash">{authenticity.signer.keyId}</code></> : null}</p>
+      <p>Signer trust: <b data-testid="signer-trust">{authenticity.signerTrust}</b></p>
+      <p>Authenticity: <b data-testid="authenticity-status">{authenticity.status}</b> — {authenticity.note}
+        {authenticity.reasonCodes.length ? <> ({authenticity.reasonCodes.join(", ")})</> : null}</p>
     </div>
   );
 }
@@ -293,7 +297,7 @@ export function BundlePanel({ client, caseId }: { client: Client; caseId: string
       </> : null}
       {replay ? <ReportView title="Replay" integrity={replay.integrity} repro={replay.reproducibility} authenticity={replay.authenticity} /> : null}
       {err ? <p className="vk-error">{err}</p> : null}
-      <p className="vk-muted">Integrity and reproducibility are not proof of origin; bundles are unsigned in v1.</p>
+      <p className="vk-muted">Integrity and reproducibility are not proof of origin. Origin is established only by a valid signature from a signer the operator trusts, and never shows that the claim is true.</p>
     </section>
   );
 }
