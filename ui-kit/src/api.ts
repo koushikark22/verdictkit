@@ -4,8 +4,8 @@
  * errors exactly as the server reports them.
  */
 import type {
-  BundleMetadata, ClaimTypeInfo, DraftCase, EvidenceResult, FrozenCase, Health, IntakeRequest,
-  OutcomeResponse, ProgressEvent, ReplayReport, RunAccepted, RunRecord, Blocker,
+  BundleMetadata, ClaimTypeInfo, DemoScenarioId, DemoStatus, DemoVerifyReport, DraftCase, EvidenceResult,
+  FrozenCase, Health, IntakeRequest, OutcomeResponse, ProgressEvent, ReplayReport, RunAccepted, RunRecord, Blocker,
 } from "./types";
 
 export const CONTRACT_VERSION = "1.2.0";
@@ -48,6 +48,11 @@ export function createClient(base = "/api/v1", fetchImpl: Fetch = (...a) => fetc
     } catch {
       throw new ApiError(res.status, "NON_JSON_RESPONSE", "Server returned a non-JSON response");
     }
+    // The local gateway answers 502 {error:{code:"BACKEND_UNAVAILABLE"}} (no contractVersion) when the
+    // API container is down. Say so plainly instead of reporting a contract mismatch.
+    if (body?.error?.code === "BACKEND_UNAVAILABLE") {
+      throw new ApiError(res.status, "BACKEND_UNAVAILABLE", body.error.message ?? "The VerdictKit backend is not reachable");
+    }
     if (!body || body.contractVersion !== CONTRACT_VERSION) throw new ContractMismatchError(body?.contractVersion);
     if (res.status === 422 && body.executionStatus === "BLOCKED") throw new BlockedError(body.caseId, body.blockers);
     if (!res.ok) {
@@ -86,6 +91,13 @@ export function createClient(base = "/api/v1", fetchImpl: Fetch = (...a) => fetc
     },
     replay: (bundle: Blob) =>
       request<ReplayReport>("/replays", { method: "POST", headers: { "Content-Type": "application/zip" }, body: bundle }),
+    /** Opt-in demonstration lab. 404 means the server was not started with the lab enabled. */
+    demoStatus: () => request<DemoStatus>("/demo/status"),
+    demoTrustStoreUrl: () => `${base}/demo/trust-store`,
+    /** The client names a scenario; it never supplies a key or a trust store. */
+    demoVerify: (scenario: DemoScenarioId, bundle: Blob) =>
+      request<DemoVerifyReport>(`/demo/verify?scenario=${encodeURIComponent(scenario)}`,
+        { method: "POST", headers: { "Content-Type": "application/zip" }, body: bundle }),
   };
 }
 

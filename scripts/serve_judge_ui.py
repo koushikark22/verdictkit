@@ -5,9 +5,26 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import http.client
 import json
+import socket
 from urllib.parse import urlsplit
 
 MAX_RESPONSE = 8 * 1024 * 1024
+# BE-2 root cause: a refused loopback connect takes about 2.05 s on Windows (the stack retries the
+# SYN after the reset; 7 of 7 trials on any port) but is instant on Linux. One 10 s timeout covered
+# connect and read alike, so a dead backend was reported after the caller had already given up.
+# The upstream is always loopback, where a live listener accepts in microseconds, so the connect
+# phase gets its own short bound. Reads keep their long one.
+CONNECT_TIMEOUT_S = 1.0
+READ_TIMEOUT_S = 10.0
+
+
+class LoopbackConnection(http.client.HTTPConnection):
+    def connect(self):
+        self.sock = socket.create_connection((self.host, self.port), timeout=CONNECT_TIMEOUT_S)
+        self.sock.settimeout(READ_TIMEOUT_S)
+        self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+
 UI = Path(__file__).resolve().parent.parent / 'ui' / 'judge'
 MIMES = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8'}
 
@@ -36,7 +53,7 @@ class Handler(BaseHTTPRequestHandler):
             if not allowed:
                 return self.send_error(403,'Route not permitted in preview bridge')
             try:
-                conn = http.client.HTTPConnection('127.0.0.1',self.server.api_port,timeout=10)
+                conn = LoopbackConnection('127.0.0.1',self.server.api_port)
                 conn.request('GET',path,headers={'Accept':'application/json, application/octet-stream'})
                 upstream=conn.getresponse()
                 length=upstream.getheader('Content-Length')

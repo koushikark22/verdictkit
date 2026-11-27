@@ -134,6 +134,28 @@ export interface ReplayReport {
   authenticity: AuthenticityReport; notes: string[];
 }
 
+/** Demonstration lab (opt-in server extension, docs/DEMO_LAB.md; not part of contract 1.2.0). */
+export type DemoScenarioId =
+  | "trusted-signer" | "unknown-signer" | "revoked-signer" | "unsigned-historical" | "tampered-bundle";
+export interface DemoScenario {
+  id: DemoScenarioId; label: string; profile: string;
+  transform: "none" | "strip-signature" | "tamper-verdict"; setup: string;
+}
+export interface DemoProfile {
+  id: string; label: string; description: string;
+  trustStore: { serial: number; sha256: string; keys: { keyId: string; status: "ACTIVE" | "ROTATED" | "REVOKED" }[] };
+}
+export interface DemoStatus {
+  contractVersion: string; enabled: boolean; demonstrationNotice: string;
+  signer: { keyId: string; algorithm: "ed25519"; disposable: boolean } | null;
+  verifierProfiles: DemoProfile[]; scenarios: DemoScenario[]; isolationMode: IsolationMode; judgeMode: boolean;
+}
+export interface DemoVerifyReport extends ReplayReport {
+  demo: {
+    scenario: DemoScenario; verifierProfile: DemoProfile; isolationMode: IsolationMode;
+    tested: { sha256: string; sizeBytes: number; transform: DemoScenario["transform"]; description: string };
+  };
+}
 /** Intake body. Outcome values are write-only: the server never echoes them. */
 export interface IntakeRequest {
   claimType: string;

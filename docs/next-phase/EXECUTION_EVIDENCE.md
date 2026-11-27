@@ -592,6 +592,87 @@ All five findings were in the development and build toolchain (`vitest`, `vite`,
 - Not implemented from the queued plan: PH1-02 to PH1-05 and PH1-08 to PH1-10 tooling (recorder, publication scanner, AST guard, BE closure records), PH1-13 and PH1-15 (Isolation_Mode and Security_Profile resolver), PH2-01 and PH2-04 to PH2-09, PH3-01 and PH3-02, and Phases 4 to 7.
 - Kiro credits for this batch: `NOT_AVAILABLE`. No usage record was readable.
 
+## Accelerated Batch 2 (competition-ready product experience)
+
+Scope: a unified portal, upgraded Quote and Reel UIs, a browser-visible signed-bundle verification lab, a one-command start, browser end-to-end tests, the BE-2 root cause and a test-environment credential fix. No new specification was created and no requirement or architecture was expanded.
+
+### PUSH-009 (observation, 14.13)
+
+This row is an observation of a ref update and not an Execution_Record, as for PUSH-001 to PUSH-008. It records the push of the Batch 1 commit, which the PUSH-008 subsection said the first ledger update after it would record. The time is the Unix time of the newest line of the local reflog of `refs/remotes/origin/feature/kiro-next-phase` (`1795742782`, read with `git reflog show refs/remotes/origin/feature/kiro-next-phase --date=unix`), converted to UTC. It is when the local tracking ref was updated, not a server timestamp and not the commit time.
+
+| Record | Ref | Before | After | Updated (UTC) | Owner authorization |
+|---|---|---|---|---|---|
+| PUSH-009 | `refs/heads/feature/kiro-next-phase` | `327c5eb0064e2f9c686fa3765ed8bf85d53716ad` | `f42a6d016202c0864a19dde1ee866a0d71d0f88a` | 2026-11-27 01:26:22 | The owner executed this push (stated in the Batch 2 request). Whether it ran through Kiro or by hand is not recorded in git and stays `UNVERIFIED`. |
+
+Reading. Before equals the After value of PUSH-008 and the parent of the After commit, "feat(security): batch 1 remediation, Ed25519 signed bundles and MCP hardening". The reflog held 9 entries, all `update by push`, which are the 9 rows PUSH-001 to PUSH-009. `git ls-remote origin refs/heads/feature/kiro-next-phase` returned the After value when read, at the start of Batch 2. The frozen refs were unchanged at the start: `master` and tag `v1.0.0-submission` at `84df25c68198e496889b5892a03555ec7d2d860a`, tag `verified-quote-e2e-20261118` at `407478be97a8979a8e3555bba3b3ab302229f91d`. The push of the Batch 2 commit, if the owner's one authorized push succeeds, is recorded by the first ledger update after it.
+
+### Execution records
+
+Hosts. `Windows`: the owner's Windows host, Python 3.12.10, Node 24.14.1, system Chrome driven by `playwright-core` 1.65.1. `Linux container`: Docker Desktop, image `verdictkit:batch2` (`sha256:913397af4ac3cc764be59c4bdeee9821ac7ae8ea33cc62ee9e410c37a93ad0f4`, the final build from the committed tree; rows B2-08 to B2-13 and B2-15 were produced by one consolidated verification pass against it, with the raw logs kept in the private evidence archive described below), run with `--network none`. Neither is the Linux_Docker_Host full-checkout run that DLV-1 to DLV-4 require.
+
+| Id | Host | What ran | Exit | Result | Class |
+|---|---|---|---|---|---|
+| B2-01 | Windows | 30 refused loopback connects to a closed port (BE-2 mechanism) | 0 | min 2.0156 s, median 2.0539 s, max 2.0735 s | SUCCEEDED |
+| B2-02 | Linux container | the same 30 connects | 0 | min 0.0000 s, median 0.0000 s, max 0.0124 s (kernel 6.6.87.2-microsoft-standard-WSL2, same machine) | SUCCEEDED |
+| B2-03 | Windows | `tests/ui/test_judge_preview.py`, before the fix | 1 | the offline-backend test fails with a socket timeout after 2.00 s; 7 others pass | FAILED, BE-2 reproduced |
+| B2-04 | Windows | the same file after the fix: first the 8 original tests, then 9 with one new regression test | 0 | 8 passed and the offline-backend case answered in 1.02 s against the unchanged 2 s client timeout; 9 passed with the regression test | SUCCEEDED |
+| B2-05 | Windows | `HYPOTHESIS_PROFILE=ci pytest -q -m "not isolation"` (whole repository) | 0 | 642 passed, 16 skipped, 4 deselected, 0 failed, 95.3 s in the final pass (73.0 s in an earlier identical run; B1-07 had 607 passed and 1 failed) | SUCCEEDED |
+| B2-06 | Windows | `ruff check .` | 0 | All checks passed | SUCCEEDED |
+| B2-07 | Windows | `npm run typecheck`, `npm test`, `npm run build:portal`, `npm audit` | 0 | typecheck clean in 4 workspaces; 49 tests passed (ui-kit 29, portal 10, quote 6, reel 4); three portal builds; 0 vulnerabilities | SUCCEEDED |
+| B2-08 | Linux container | `gate-startup` | 0 | `VK_STARTUP_OK isolation=ENFORCED` | SUCCEEDED |
+| B2-09 | Linux container | `gate-isolation` | 0 | 4 passed | SUCCEEDED |
+| B2-10 | Linux container | `gate-sign` | 0 | `GATE-SIGN PASSED`, 14 checks (peer refusal and control, signed run under ENFORCED, offline verification as `vk-examiner`, unknown and revoked signer, three tamper cases, unsigned replay, key unreadable, worker refusal) | SUCCEEDED |
+| B2-11 | Linux container | `gate-http` | 0 | `GATE-HTTP PASSED`; live and demo server replays `REPRODUCED`; `/proc` scan 963 polls, canary seen, 0 key hits (815 polls in an earlier run) | SUCCEEDED |
+| B2-12 | Linux container | `gate-case`, then `verdictkit replay` of its bundle | 0 | integrity VERIFIED, `REPRODUCED`, `signature: UNSIGNED`, `authenticity: NOT_ESTABLISHED` | SUCCEEDED |
+| B2-13 | Linux container, user `vk-custodian` | `pytest tests/contract tests/api tests/integration tests/security tests/ui/test_start_scripts.py tests/ui/test_gateway.py -m "not isolation"`, 2 line-ending tests deselected | 0 | 623 passed, 15 skipped, 6 deselected, 50.7 s. Skips: 10 need Node.js (not in the image), 3 Windows access-control checks, 1 NTFS-only, 1 UI sources absent | SUCCEEDED |
+| B2-14 | Windows, real stack | `node tests/ui/e2e_product.cjs` against the Docker backend (ENFORCED, judge mode, signer) behind the gateway; first run | 1 | 93 passed, 2 failed (my assertion used `replay` where the documented exit rule needs `verify`; a 429 from the existing 120-requests-a-minute limit during a test burst, shown by the UI as "Backend offline") | FAILED, both causes fixed |
+| B2-15 | Windows, real stack | the same suite after the fixes, the explanation and diagram checks and the Quote-to-Verify-Lab handoff, on a stack running the final image (`913397af4ac3`) | 0 | 103 checks passed, 0 failed, 0 browser console or page errors. An immediately preceding run of the same code failed 4 checks, all HTTP 429 from the existing request limit after the new handoff check added requests; the test now lets the limiter window drain before the Verify Lab section. Earlier runs on earlier builds: 101 of 101 twice | SUCCEEDED |
+| B2-16 | Windows | `scripts\Start-VerdictKit.ps1 -NoBrowser`, three runs | 0 | the first run completed but held its caller's output pipe open (fixed, see defects); the other two returned in 11 s and 12 s. With port 8000 held by an unrelated process and 8001 by the owner's `verdictkit-demo` container it chose backend 8002 and entry 5170, stopped only its own earlier container and gateway, and left 8000, 8001 and 5174 untouched | SUCCEEDED |
+| B2-17 | Kiro IDE | the four MCP tools through the IDE's MCP client | 0 | see "Kiro capabilities" below | SUCCEEDED, with a finding |
+| B2-18 | Kiro IDE | PostFileSave hook experiment | n/a | see "Kiro capabilities" below | PARTIALLY OBSERVED |
+| B2-19 | Windows | resource cleanup of Kiro-owned PowerShell hosts, after the evidence archive verified (29 files, 0 problems) | 0 | 19 shell hosts before; 14 closed (idle, no children, parent `Kiro.exe`); 5 kept: the shell running the command and its launcher, one Windows Terminal window and two Explorer windows (not the IDE's, so the user's). 5 after. The gateway, the backend container and the IDE-managed MCP servers were not touched. The IDE may keep dead terminal tabs until dismissed | SUCCEEDED |
+
+The browser suite covers: the landing page against `/health` and `/demo/status`; navigation and the current-page marker; Quote Autopsy finance (consistent, padded, doc-fee `CONDITIONAL`), cap-cost-known lease (consistent and padded) and itemised lease, with the financial table, the plain-language explanation and an auto-scrolled verdict; Reel Autopsy demonstrations (`SUPPORTED`, `CONDITIONAL`, `IMPOSSIBLE`), a privacy rejection and a blocked real claim; signed-bundle generation, download of the bundle and the public trust store, all five scenarios side by side (trusted, unknown, revoked, unsigned historical, tampered), re-upload of the downloaded bundle, a hand-tampered upload and a non-bundle upload; the "Open in Verify Lab" handoff from a Quote result to the very bundle it produced; offline replay with `docker run --network none` of the downloaded files (valid, tampered, and `verify` with no trust store, which exits 1 with `NOT_EVALUATED`); an unreachable-backend state; and layout at 390, 768 and 1366 px with no horizontal overflow. Screenshots are in `docs/screenshots/`.
+
+Private evidence archive. Raw logs are not in this repository. A sanitised local archive outside it (a folder named `KIRO_EVIDENCE` beside the repository, readable only by the owner, SYSTEM and Administrators) holds 29 files in 9 categories, with `evidence-index.json` listing each file's SHA-256, size, capture time, category, source (`copied`, `transcribed` or `derived`), the HEAD at capture and the Batch 2 commit. Identical files are stored once. Nothing that was not available is reconstructed: the IDE's own hook and MCP log files for this run are 0 bytes, no per-session usage or credit record exists, and terminal scrollback cannot be read, so the index lists those three as `unavailable` with the reason. The archive holds the session transcript snapshot as the only retrievable record of terminal outputs. A scan of the stored text for credential shapes, e-mail addresses, the user name and environment dumps found 0 problems.
+
+### Defects found and fixed
+
+| Defect | Where | Fix | Evidence |
+|---|---|---|---|
+| BE-2: a refused loopback connect takes about 2.05 s on this Windows host and under 13 ms on a Linux kernel; one 10 s timeout covered connect and read, so the bridge answered after the preview client's 2 s patience | `scripts/serve_judge_ui.py` | the connect phase has its own 1.0 s bound; reads keep 10 s. The test and its 2 s timeout are unchanged. A host-independent regression test asserts the connect bound is below 2 s | B2-01 to B2-04 |
+| A credential-like variable of the owner's environment appeared in a pytest traceback in Batch 1 | `tests/conftest.py`, `tests/envscrub.py` | credential-like names (not `VK_*`) are removed from the test process before any test runs; only a count is reported. A canary test confirmed that two set canary variables never reached the output | `tests/security/test_test_environment.py` (3 tests) |
+| Gateway: a dot-segment path such as `/quote/%2e%2e/%2e%2e/.git/config` and an encoded NUL fell through to the single-page-app index (no file was read) | `scripts/gateway.mjs` | dot-names, NUL and backslash are refused before routing | `tests/ui/test_gateway.py`, found by the first run of that test |
+| The start script did not return when run under a tool that waits for its output pipe: the hidden gateway inherited the pipe | `scripts/Start-VerdictKit.ps1`, `scripts/gateway.mjs` | the gateway writes its own log (`--log`) and is started without redirecting any handle | B2-16, a regression assertion in `tests/ui/test_start_scripts.py` |
+| Hero buttons were unreadable on the dark hero (a specificity bug), the verdict stayed below the form after a click, negative values were drawn as positive bars, tables did not fill their cards, the mobile navigation was clipped, a 429 read "Backend offline" | `ui-kit/src/theme.css`, `components.tsx`, `shell.tsx` | fixed. The first was found by looking at screenshots, not by DOM assertions | B2-14, B2-15 |
+
+### Deviations and limits
+
+1. `api/openapi.yaml` and contract 1.2.0 are unchanged. The `/api/v1/demo/*` routes are an opt-in extension (`VK_DEMO_LAB_DIR`) documented in `docs/DEMO_LAB.md`; unset, they do not exist.
+2. The Python change in the engine package is `core/src/verdictkit/api/server.py` (77 insertions, 3 deletions) and the new `api/demo_lab.py`. No evaluator, custody, examiner, evidence, sweep or app domain module changed.
+3. `deploy/entrypoint.sh` gains a `demo` subcommand and one passthrough variable (`VK_DEMO_LAB_DIR`). The vault key stays a tmpfs file and the signing key a custodian-only file; the examiner's environment is unchanged.
+4. The earlier browser script `tests/ui/e2e_browser.cjs` and `scripts/ui_e2e.sh` were not run: they need the full `playwright` package with bundled Chromium and a native API on port 8000, which is held by an unrelated process. The new suite keeps their selectors and test ids.
+5. The Quote sample worksheets are constructed. The consistent lease states the engine's own computed figures; the padded lease carries 40.00 through by plain arithmetic. `tests/integration/test_quote_constructed_examples.py` runs both through the engine.
+6. The demonstration signing key is valid for seven days from provisioning and is new at every start. It proves nothing about any real signer.
+7. The 120-requests-a-minute per-client limit is unchanged. Behind the gateway every browser tab shares one client address; the UI polls `/health` every 30 s and not while a tab is hidden.
+
+### Kiro capabilities (observed in this session)
+
+- **MCP tools.** `list_claim_types` returned 4 claim types. `verify_claim` on the stub receipt claim returned a bundle path and `CONTRADICTED`; `explain_verdict` and `replay_bundle` on that bundle returned integrity `VERIFIED` and `REPRODUCED` with equal original and replayed hashes `547fba0c67e3bcdfa7da58b914d36dc3301b7503fb1278753bbb0eb23d9aaa79`. **Finding:** the IDE's MCP server processes started at 00:43 on 2026-11-26, about 19 hours before the Batch 1 commit (19:24). Their answers carry pre-hardening wording (`contractVersion: "1.1.0"`, "bundles are unsigned in v1") and `verify_claim` refused a Quote claim with a bare `SchemaError` that the current code runs to `CONTRADICTED` in a fresh process. The server needs a restart in Kiro; `.kiro/settings/mcp.json` was not edited and `permissions.yaml` was not touched.
+- **Hooks.** `PostFileSave` command output is not forwarded to the agent, so pass or fail is `UNVERIFIED`. What was observed: a save of a `.py` file moved `.pytest_cache/v/cache/nodeids` 1.4 s later with no pytest of mine running, and the cache listed 61 node ids, all from `test_llm_fence.py`, which is the `llm-fence` hook's command. A save of a non-`.py` file did not move it. A process poll saw the IDE spawn `cmd /c "uv run pytest tests/contract/test_llm_fence.py -q"` and, after a save by workspace-relative path, also `cmd /c "uv run pytest tests/contract -q -x -m \"not isolation\" --ignore=..."` (the `core-contract-tests` hook) followed by the fence run, 15 s apart. A save by absolute Windows path started only the fence hook; the cause of that difference is not established. `lastfailed` was absent afterwards. Hooks created during a session activate only at the next session start, so probe hooks could not be used and were deleted.
+- **Steering.** Five steering files (`product`, `structure`, `tech`, `verdict-integrity`, `testing`) were in the session as included rules and were applied (no float in comparators or chart arithmetic of findings, "verified at N grid points" wording, no LLM imports, no test weakening, counts only from runs). `money-math` was not among the included rules.
+- **Specifications.** No specification was created or edited. The existing next-phase design (D5, through `docs/SIGNING.md`) was the reference for signing and trust. Its task checkboxes are unchanged (1 of 99), because the Batch 2 work is not among those tasks. A Kiro spec workflow was not exercised in this batch: `UNVERIFIED`.
+- **Shared code.** Both applications and the portal consume one `ui-kit`; both applications and the lab run on one engine package. See the footprint in deviation 2.
+
+### Open items and what is not verified
+
+- DLV-1 to DLV-4 stay `UNVERIFIED`; the container runs are not full-checkout runs on a Linux_Docker_Host. BE-2's host attribution is now supported by per-host connect timings (B2-01, B2-02), but a Linux per-test run of `test_judge_preview.py` from a full checkout does not exist: the image has no UI sources.
+- Public deployment stays blocked (KL-1 and unchanged) and was not attempted.
+- Hook pass or fail inside Kiro, a Kiro spec workflow, and the MCP server restart are `UNVERIFIED` as stated above.
+- On Windows the permission checks are path-based and cannot close a race between check and open (unchanged).
+- Kiro credits for this batch: `NOT_AVAILABLE`. No usage record was readable (the archive index records the search).
+- The IDE's MCP server processes are stale (see "Kiro capabilities") and need a restart in Kiro; this was not done by the agent.
+
 ## Capability register
 
 | Capability | Status |
@@ -603,6 +684,20 @@ All five findings were in the development and build toolchain (`vitest`, `vite`,
 | Public demonstration | UNVERIFIED (none exists) |
 | Signed bundles (Ed25519, signer trust, offline verification) | IMPLEMENTED in Accelerated Batch 1; verified by B1-05, B1-06, B1-10, B1-14 (container) and B1-16/B1-17 (mutations). Contract 1.2.0 covers only the authenticity change. |
 | Plugin SDK, regulatory expansion | not implemented |
+
+### Capability register, Batch 2 update
+
+The table above is the historical record and is not edited. These rows supersede it where they differ.
+
+| Capability | Batch 2 status |
+|---|---|
+| Hook execution inside Kiro | PARTIALLY OBSERVED (B2-18): the IDE spawned the `llm-fence` and `core-contract-tests` commands after agent saves; hook pass or fail is `UNVERIFIED` because `PostFileSave` output is not forwarded |
+| Kiro MCP calls | SUCCEEDED (B2-17) for all four tools, with the stale-server finding recorded above |
+| Browser E2E | SUCCEEDED (B2-14, B2-15): 103 checks against the real Docker stack on the final image |
+| Unified portal, signed-bundle verification in the browser, one-command start | IMPLEMENTED and verified by B2-14 to B2-16; routes and operation in `docs/PRODUCT_TOUR.md` and `docs/DEMO_LAB.md` |
+| BE-2 | root cause measured (B2-01, B2-02) and fixed (B2-03, B2-04); a Linux per-test run from a full checkout is still missing |
+| Public demonstration | UNVERIFIED (none exists, none authorized) |
+
 ## Corrections log (after independent review)
 
 | ID | Item | Original text | Correction | Reason |
@@ -623,3 +718,5 @@ All five findings were in the development and build toolchain (`vitest`, `vite`,
 |---|---|---|---|
 | BE-1 | `tests/contract/test_mcp_server.py::test_verify_replay_and_explain_roundtrip` asserts POSIX mode `0o700` | Windows | Preserve the Linux permission assertion. Design Windows-appropriate security handling (for example an access-control check). Do not remove the assertion. |
 | BE-2 | `tests/ui/test_judge_preview.py::JudgePreviewTests::test_case_outcome_get_to_offline_backend` times out | Windows | Instrument, establish the root cause, fix the cause. A longer timeout alone is not a fix. |
+
+Batch 2 status of the exceptions. BE-1: unchanged (remediated in Batch 1). BE-2: the cause is measured (a refused loopback connect takes 2.02 to 2.07 s on the Windows host and under 13 ms on a Linux kernel, B2-01 and B2-02) and fixed in the bridge by a separate connect bound, without touching the test or its timeout (B2-03, B2-04). The remaining gap is a Linux per-test run from a full checkout.

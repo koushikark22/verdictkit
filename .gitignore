@@ -31,6 +31,9 @@ htmlcov/
 secrets/
 credentials/
 
+# Local run state written by scripts/Start-VerdictKit.ps1 and scripts/start-verdictkit.sh (pids, logs)
+.verdictkit-run/
+test-results/
 # Local tooling
 .vscode/
 .idea/

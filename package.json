@@ -1,12 +1,18 @@
 {
   "name": "verdictkit-web",
   "private": true,
-  "description": "VerdictKit web clients (npm workspaces): shared ui-kit and the two app UIs.",
-  "workspaces": ["ui-kit", "apps/quote-autopsy/web", "apps/reel-autopsy/web"],
+  "description": "VerdictKit web clients (npm workspaces): shared ui-kit, the portal and the two app UIs.",
+  "workspaces": ["ui-kit", "ui/hub", "apps/quote-autopsy/web", "apps/reel-autopsy/web"],
   "scripts": {
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build --workspaces --if-present",
+    "build:portal": "npm run build:portal --workspaces --if-present",
+    "gateway": "node scripts/gateway.mjs",
+    "e2e:product": "node tests/ui/e2e_product.cjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.65.1"
   },
   "engines": { "node": ">=20" }
 }

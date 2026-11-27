@@ -115,3 +115,13 @@ Architecture, interface stubs and the contract tests were drafted with reviewer 
 `docs/B7_TEXAS_SPEC.md` and `docs/KIRO_B7_PROMPT.md`. Implementation commits are by
 the repository owner (including the Kiro B7 session) and by Claude sessions, as shown in
 `git log`.
+
+## Batch 2 (2026-11-27): Kiro capabilities observed in the IDE
+
+The full record, with numbers, is in `docs/next-phase/EXECUTION_EVIDENCE.md` ("Accelerated Batch 2", records B2-17 and B2-18). Nothing below is manufactured: each item says what was seen and what was not.
+
+**How to repeat the MCP demonstration.** With the `verdictkit` MCP server connected, ask Kiro to call, in this order: `list_claim_types` (auto-approved), `verify_claim` with `examples/stub_claimtype/claim.json` as the claim, then `explain_verdict` (auto-approved) and `replay_bundle` with the `bundle_path` that `verify_claim` returned. Expect `CONTRADICTED`, integrity `VERIFIED` and `REPRODUCED` with equal verdict hashes. **Restart the MCP server first** (Kiro: MCP Servers panel). In Batch 2 the IDE's server processes pre-dated the Batch 1 hardening and answered with `contractVersion` 1.1.0 and "unsigned in v1" wording.
+
+**How to repeat the hook demonstration.** `.kiro/hooks/` holds three `PostFileSave` hooks (`llm-fence`, `core-contract-tests`, `app-contract-tests`). Ask Kiro to save any `.py` file, then look for the effect, because hook output is not forwarded to the agent: in PowerShell, `Get-CimInstance Win32_Process -Filter "Name='cmd.exe'" | Where-Object CommandLine -match 'uv run pytest'` while saving, or the modification time of `.pytest_cache/v/cache/nodeids` (only runs that enable the cache write it; pass `-p no:cacheprovider` in your own runs). Batch 2 saw both the `llm-fence` and the `core-contract-tests` commands start after one save of `core/src/verdictkit/api/demo_lab.py`; whether they passed is `UNVERIFIED`. Hooks created in a session start only with the next session.
+
+**Steering.** Five of the six steering files were applied as included rules (`money-math` was not included). **Specifications.** None created or edited; a Kiro spec workflow was not exercised. **Shared code.** One `ui-kit` serves the portal and both applications; one engine serves both applications and the demonstration lab, with a one-file change in the engine package.

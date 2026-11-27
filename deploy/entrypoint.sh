@@ -138,6 +138,7 @@ as_custodian() {
             ${VK_SIGNING_KEY_FILE:+VK_SIGNING_KEY_FILE="$VK_SIGNING_KEY_FILE"} \
             ${VK_TRUST_STORE_FILE:+VK_TRUST_STORE_FILE="$VK_TRUST_STORE_FILE"} \
             ${VK_TRUST_STORE_SHA256:+VK_TRUST_STORE_SHA256="$VK_TRUST_STORE_SHA256"} \
+            ${VK_DEMO_LAB_DIR:+VK_DEMO_LAB_DIR="$VK_DEMO_LAB_DIR"} \
             ${VK_CLAIM_TYPES:+VK_CLAIM_TYPES="$VK_CLAIM_TYPES"} \
         "$@"
 }
@@ -546,6 +547,68 @@ cmd_serve() {
 }
 
 # ---------------------------------------------------------------------------
+# subcommand: demo
+#   Judge demonstration backend (Batch 2): enforced isolation, judge mode and a disposable
+#   demonstration signer, with nothing for the operator to configure. Every secret is created
+#   inside this container from its own randomness and stays there: the vault key reaches the
+#   custodian as a tmpfs file, the signing key is a 0600 file in a 0700 custodian directory the
+#   examiner cannot enter, and only PUBLIC verifier profiles are visible to the API's /demo
+#   routes. Both keys are new at every start. Never a production configuration.
+# ---------------------------------------------------------------------------
+
+cmd_demo() {
+    echo "[demo] Setting up vault..."
+    setup_vault
+    mkdir -p /tmp/vk-custodian /tmp/vk-examiner
+    chown vk-custodian /tmp/vk-custodian
+    chown vk-examiner  /tmp/vk-examiner
+
+    local sign_dir=/var/lib/vk/signing lab_dir=/var/lib/vk/demo-lab
+    install -d -m 700 -o vk-custodian -g vk-custodian "$sign_dir"
+    install -d -m 755 -o vk-custodian -g vk-custodian "$lab_dir"
+    echo "[demo] Provisioning the disposable demonstration signer (private key: custodian-only, mode 0600)..."
+    as_custodian bash -c "cd /app && /app/.venv/bin/python scripts/demo_signer.py provision '$sign_dir' '$lab_dir'"
+    VK_SIGNING_KEY_FILE="$sign_dir/signing.pem"
+    VK_TRUST_STORE_FILE="$lab_dir/trust-trusted.json"
+    VK_TRUST_STORE_SHA256="$(sha256sum "$VK_TRUST_STORE_FILE" | cut -d' ' -f1)"
+    VK_DEMO_LAB_DIR="$lab_dir"
+    VK_JUDGE_MODE=1
+    export VK_SIGNING_KEY_FILE VK_TRUST_STORE_FILE VK_TRUST_STORE_SHA256 VK_DEMO_LAB_DIR VK_JUDGE_MODE
+
+    rm -f "$SOCKET_PATH"
+    prepare_key_dir
+    provision_random_vault_key
+
+    echo "[demo] Starting examiner worker as vk-examiner (its environment has no key of any kind)..."
+    as_examiner bash -c "cd /app && python -I -m verdictkit.examiner.worker" &
+    local examiner_pid=$!
+    local retries=30
+    while [ "$retries" -gt 0 ] && [ ! -S "$SOCKET_PATH" ]; do
+        sleep 0.2
+        retries=$((retries - 1))
+    done
+    [ -S "$SOCKET_PATH" ] || { echo "ERROR: examiner socket timeout" >&2; kill "$examiner_pid" 2>/dev/null || true; exit 1; }
+    chgrp vk-ipc "$SOCKET_PATH"
+    chmod 660 "$SOCKET_PATH"
+
+    local draft_dir="${VK_DRAFT_DIR:-/var/lib/vk/drafts}"
+    install -d -m 700 -o vk-custodian -g vk-custodian "$draft_dir"
+
+    echo "[demo] Starting API server as vk-custodian (judge mode, enforced isolation, signing on)..."
+    as_custodian \
+        env VK_DRAFT_DIR="$draft_dir" \
+        bash -c "cd /app && python -m verdictkit.api --host 0.0.0.0 --port '${PORT:-8000}'" \
+        &
+    local api_pid=$!
+
+    echo "[demo] Running. API PID=${api_pid}, Examiner PID=${examiner_pid}"
+    wait -n "$api_pid" "$examiner_pid" 2>/dev/null || true
+    kill "$api_pid"      2>/dev/null || true
+    kill "$examiner_pid" 2>/dev/null || true
+    wait
+}
+
+# ---------------------------------------------------------------------------
 # dispatch
 # ---------------------------------------------------------------------------
 
@@ -576,6 +639,10 @@ case "$SUBCOMMAND" in
         shift
         cmd_serve "$@"
         ;;
+    demo)
+        shift
+        cmd_demo "$@"
+        ;;
     verdictkit)
         # Pass remaining args straight to the installed CLI binary.
         shift
@@ -583,7 +650,7 @@ case "$SUBCOMMAND" in
         exec /app/.venv/bin/verdictkit "$@"
         ;;
     "")
-        echo "Usage: entrypoint.sh {gate-isolation|gate-case|gate-startup|gate-http|gate-sign|serve|verdictkit ...}" >&2
+        echo "Usage: entrypoint.sh {gate-isolation|gate-case|gate-startup|gate-http|gate-sign|serve|demo|verdictkit ...}" >&2
         exit 1
         ;;
     *)

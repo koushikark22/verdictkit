@@ -16,6 +16,20 @@ settings.register_profile(
 settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "dev"))
 
 
+_SCRUBBED = 0
+
+
+def pytest_configure(config):
+    """Drop unrelated credentials from this process before any test or subprocess exists."""
+    global _SCRUBBED
+    from envscrub import scrub_environment
+    _SCRUBBED += scrub_environment(os.environ)
+
+
+def pytest_report_header(config):
+    return f"verdictkit: {_SCRUBBED} credential-like environment variable(s) removed from the test process"
+
+
 def pytest_collection_modifyitems(config, items):
     """Container-only tests run only where OS-user isolation is actually configured."""
     if os.environ.get("VK_ISOLATION") == "enforced":

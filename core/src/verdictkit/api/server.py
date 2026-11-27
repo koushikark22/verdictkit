@@ -93,7 +93,7 @@ class SafetyMiddleware(BaseHTTPMiddleware):
             return error("RATE_LIMITED", "Request rate limit exceeded", 429)
         hits.append(now)
         if request.method in ("POST", "PATCH", "PUT"):
-            is_upload = request.url.path.endswith("/replays")
+            is_upload = request.url.path.endswith(("/replays", "/demo/verify"))
             cap = MAX_BUNDLE if is_upload else MAX_JSON
             content_length = request.headers.get("content-length")
             if content_length:
@@ -753,7 +753,10 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             return 0
         return min(declared, MAX_REPLAY_BYTES)
 
-    def _replay(upload: Path, work: Path) -> dict:
+    def _replay(upload: Path, work: Path, *, trust_store_file: str | None = None,
+                trust_store_sha256: str | None = None) -> dict:
+        # ``trust_store_*`` are only ever passed by the opt-in demo lab, from the operator's own
+        # verifier profiles. Left unset, the operator's VK_TRUST_STORE_FILE decides (as before).
         from verdictkit.bundle import authenticity_dict, replay_bundle, replay_report_dict
         # Capacity is reserved atomically before anything is written (64 MiB per replay,
         # 128 MiB in total). Embedded evidence is hash-checked on restore and re-hashed by the
@@ -767,8 +770,79 @@ def create_app(registry: Any = None, *, judge_mode: bool = False) -> FastAPI:
             report = replay_bundle(upload, registry=full_registry, workdir=work,
                                    allow_refetch=False, examiner=examiner,
                                    evidence_root=namespace_dir)
-        authenticity = authenticity_dict(upload, report)
+        authenticity = authenticity_dict(upload, report, trust_store_file=trust_store_file,
+                                         trust_store_sha256=trust_store_sha256)
         return {"contractVersion": VERSION, **replay_report_dict(report, authenticity=authenticity)}
+
+    # ------------------------------------------------------------------ demonstration lab
+    # Opt-in (VK_DEMO_LAB_DIR). Not part of contract 1.2.0: see docs/DEMO_LAB.md. Unset, none of
+    # these routes exist. The lab reads public verifier profiles only, never a private key.
+    from . import demo_lab
+    lab = demo_lab.lab_from_env()   # a configured but unusable lab stops the start, like the signing key
+    if lab is not None:
+        import hashlib
+
+        def _lab_status() -> dict:
+            return {
+                "contractVersion": VERSION, "enabled": True, "demonstrationNotice": demo_lab.NOTICE,
+                "signer": (None if signer is None else
+                           {"keyId": signer.key_id, "algorithm": "ed25519", "disposable": True}),
+                "verifierProfiles": [p.public() for p in lab.profiles.values()],
+                "scenarios": [demo_lab.scenario_public(s) for s in demo_lab.SCENARIOS],
+                "isolationMode": isolation, "judgeMode": judge_mode,
+            }
+
+        @app.get('/api/v1/demo/status')
+        def demo_status() -> dict:
+            return _lab_status()
+
+        @app.get('/api/v1/demo/trust-store')
+        def demo_trust_store() -> Any:
+            """The public 'trusted' verifier profile, so a judge can verify offline with the CLI."""
+            return Response(content=Path(lab.profiles["trusted"].path).read_bytes(),
+                            media_type="application/json",
+                            headers={"Content-Disposition": 'attachment; filename="vk-demo-trust-store.json"'})
+
+        @app.post('/api/v1/demo/verify')
+        async def demo_verify(request: Request, scenario: str = "") -> Any:
+            chosen = demo_lab.scenario(scenario)
+            if chosen is None:
+                return error("UNKNOWN_SCENARIO", "Unknown demonstration scenario", 422, "scenario")
+            profile = lab.profiles[chosen.profile]
+
+            def run(upload: Path, work: Path) -> Any:
+                tested = upload
+                try:
+                    if chosen.transform != "none":
+                        tested = upload.with_name("variant.vkb")
+                        description = demo_lab.transform_bundle(chosen.transform, upload, tested)
+                    else:
+                        description = demo_lab.transform_bundle("none", upload, upload)
+                except demo_lab.LabError as exc:
+                    return error(exc.code, exc.message, 422)
+                data = tested.read_bytes()
+                report = _replay(tested, work, trust_store_file=profile.path,
+                                 trust_store_sha256=profile.sha256)
+                return {**report, "demo": {
+                    "scenario": demo_lab.scenario_public(chosen), "verifierProfile": profile.public(),
+                    "tested": {"sha256": hashlib.sha256(data).hexdigest(), "sizeBytes": len(data),
+                               "transform": chosen.transform, "description": description},
+                    "isolationMode": isolation}}
+
+            if not upload_slots.acquire(blocking=False):
+                return busy()
+            try:
+                with tempfile.TemporaryDirectory(prefix="vk-upload-") as tmp:
+                    upload = Path(tmp) / "upload.vkb"
+                    failure = await _spool(request, upload)
+                    if failure is not None:
+                        return failure
+                    try:
+                        return await asyncio.to_thread(run, upload, Path(tmp) / "work")
+                    except ReplayCapacityError:
+                        return busy()
+            finally:
+                upload_slots.release()
 
     return app
 

@@ -33,5 +33,34 @@
         "monthly_payment": "421.52", "total_of_payments": "30349.44", "finance_charge": "5555.81"
       }
     }
+  ],
+  "_leaseNote": "Constructed lease worksheets (Batch 2). Not real dealer quotes. 'lease-consistent' states the figures the engine itself computed for these inputs. 'lease-padded' overstates the rent charge by 40.00 and carries the later lines through by plain arithmetic (base payment 333.33 + 100.00, tax 8.25%, total). tests/integration/test_quote_constructed_examples.py runs both through the engine.",
+  "leaseExamples": [
+    {
+      "id": "lease-consistent",
+      "label": "Constructed lease: consistent worksheet",
+      "expect": "CONSISTENT",
+      "form": {
+        "adjusted_cap_cost": "30000.00", "residual_value": "18000.00", "money_factor": "0.00125",
+        "tax_rate_pct": "8.25", "term_months": "36", "rounding_convention": "COMPONENT"
+      },
+      "stated": {
+        "depreciation_fee": "333.33", "rent_charge": "60.00", "base_payment": "393.33",
+        "monthly_tax": "32.45", "total_monthly_payment": "425.78"
+      }
+    },
+    {
+      "id": "lease-padded",
+      "label": "Constructed lease: 40.00 packed into the rent charge",
+      "expect": "CONTRADICTED",
+      "form": {
+        "adjusted_cap_cost": "30000.00", "residual_value": "18000.00", "money_factor": "0.00125",
+        "tax_rate_pct": "8.25", "term_months": "36", "rounding_convention": "COMPONENT"
+      },
+      "stated": {
+        "depreciation_fee": "333.33", "rent_charge": "100.00", "base_payment": "433.33",
+        "monthly_tax": "35.75", "total_monthly_payment": "469.08"
+      }
+    }
   ]
 }

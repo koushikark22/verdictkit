@@ -35,6 +35,25 @@ def _params(form: dict) -> dict:
     }
 
 
+@pytest.mark.parametrize("example", DATA["leaseExamples"], ids=lambda e: e["id"])
+def test_constructed_lease_example(tmp_path, example):
+    """Batch 2 lease samples: the labelled headline is what the engine computes."""
+    from quote_autopsy.claim_type import LeaseClaimType
+    reg = Registry()
+    reg.register(LeaseClaimType())
+    form = example["form"]
+    params = {**form, "term_months": int(form["term_months"])}
+    case = run_case({"claim_type": "quote.lease.v1", "schema_version": 1, "params": params,
+                     "outcomes": example["stated"], "assumptions": {}}, registry=reg,
+                    examiner=InProcessExaminer(reg), workdir=tmp_path,
+                    clock=lambda: "2026-11-20T00:00:00Z", vault_key=bytes(32), network=False)
+    assert case.verdict.headline.value == example["expect"]
+    statuses = {f.finding_id: f.status for f in case.verdict.findings}
+    if example["id"] == "lease-consistent":
+        assert set(statuses.values()) == {Status.CONSISTENT}
+    else:
+        assert statuses["rent_charge"] is Status.CONTRADICTED
+        assert statuses["depreciation_fee"] is Status.CONSISTENT
 @pytest.mark.parametrize("example", DATA["examples"], ids=lambda e: e["id"])
 def test_constructed_example(tmp_path, example):
     reg = Registry()

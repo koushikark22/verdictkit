@@ -32,6 +32,27 @@ describe("client", () => {
     const c = createClient();
     expect(c.bundleUrl("../x")).toBe("/api/v1/cases/..%2Fx/bundle");
   });
+
+  it("reports an unreachable backend as such, not as a contract mismatch", async () => {
+    const c = createClient("/api/v1", respond(502, { error: { code: "BACKEND_UNAVAILABLE", message: "API backend is unavailable" } }) as any);
+    const err = await c.health().catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.code).toBe("BACKEND_UNAVAILABLE");
+  });
+
+  it("sends only a scenario name and the bundle bytes to the demo lab, never a key or trust store", async () => {
+    let seen: { url: string; init: RequestInit } | null = null;
+    const fetchImpl = (async (url: string, init: RequestInit) => {
+      seen = { url, init };
+      return new Response(JSON.stringify({ contractVersion: "1.2.0" }), { status: 200 });
+    }) as any;
+    const bundle = new Blob([new Uint8Array([80, 75, 3, 4])]);
+    await createClient("/api/v1", fetchImpl).demoVerify("revoked-signer", bundle);
+    expect(seen!.url).toBe("/api/v1/demo/verify?scenario=revoked-signer");
+    expect(seen!.init.method).toBe("POST");
+    expect(seen!.init.body).toBe(bundle);
+    expect(JSON.stringify(seen!.init.headers)).not.toMatch(/key|trust/i);
+  });
 });
 
 describe("parseSseFrame", () => {
