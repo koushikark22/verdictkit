@@ -12,7 +12,7 @@ Don't trust the claim. Verify the evidence. Reproduce the verdict.
 Skeleton Crew (confirm the category on the submission form).
 
 ## Short description
-One reusable examination framework that freezes a claim, hides the claimed answer from the examiner, recomputes it on checked evidence, and returns a signed bundle anyone can verify and replay offline. It powers a car-finance worksheet checker, a trading-claim checker and a signature verification lab, with the same trust code under all three.
+One reusable examination framework that freezes a claim, hides the claimed answer from the examiner, recomputes it on checked evidence, and returns a reproducible bundle anyone can verify and replay offline, signed in the demonstration configuration. It powers a car-finance worksheet checker, a trading-claim checker and a signature verification lab, with the same trust code under all three.
 
 ## What it does
 A claim is easy to state and hard to check without hindsight. VerdictKit takes the claim apart so the check cannot be nudged by the answer.
@@ -45,6 +45,8 @@ Runs of 2026-11-27, with logs kept in a private archive and summarised in the le
 * `npm audit` and `pip-audit`: no known vulnerabilities. An independent security review found no blocker (`docs/SECURITY_REVIEW_BATCH3.md`).
 * The same stub claim gives the same sealed verdict hash on Windows (in-process) and in the enforced Linux container; the isolation mode differs and is recorded, the verdict does not.
 
+Final GitHub Actions run: [46057569703](https://github.com/koushikark22/verdictkit/actions/runs/46057569703), both jobs passed on `68e9cc24`.
+
 ## How Kiro was used
 Facts only; the detail and the limits are in `docs/KIRO_USAGE.md`.
 
@@ -64,7 +66,7 @@ A framework is only reusable if the trust boundary has no domain code in it. Wri
 A licensed market-data source for real Reel claims, more state rule snapshots for Quote, and plugin loading with an allow-list so the engine can be deployed beyond a local judge-mode demonstration.
 
 ## Try it
-Needs Docker and Node.js 20+: `powershell -ExecutionPolicy Bypass -File scripts\Start-VerdictKit.ps1` (Windows) or `scripts/start-verdictkit.sh`, then open the printed URL. Guided links: `/quote/?demo=padded`, `/reel/?demo=fx_reel_impossible_sma`, `/verify?auto=1&sample=lease-consistent&scenario=tampered-bundle`. Repository: https://github.com/koushikark22/verdictkit
+Needs Docker and Node.js 20+: clone the repository, then run `powershell -ExecutionPolicy Bypass -File scripts\Start-VerdictKit.ps1 -Image verdictkit:batch3 -Rebuild` (Windows) or `bash scripts/start-verdictkit.sh --image verdictkit:batch3 --rebuild`, then open the printed URL. Guided links: `/quote/?demo=padded`, `/reel/?demo=fx_reel_impossible_sma`, `/verify?auto=1&sample=lease-consistent&scenario=tampered-bundle`. Repository: https://github.com/koushikark22/verdictkit
 
 ## Disclosures
 Demonstration only, not a public service. The demonstration signing key is disposable and proves nothing about any real signer. Quote worksheets are constructed; Reel data is synthetic; external tax and fee checks cover Texas finance worksheets only, from a hash-pinned snapshot retrieved 2026-11-24. No market data is used. Public deployment is not authorised and has not been done.
