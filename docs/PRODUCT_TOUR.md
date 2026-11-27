@@ -1,4 +1,4 @@
-# VerdictKit product tour (Batch 2)
+# VerdictKit product tour
 
 > Don't trust the claim. Verify the evidence. Reproduce the verdict.
 
@@ -9,12 +9,12 @@ Everything below runs locally. All services listen on `127.0.0.1` only. Samples 
 Windows (PowerShell, from the repository root):
 
 ```
-powershell -ExecutionPolicy Bypass -File scripts\Start-VerdictKit.ps1
+powershell -ExecutionPolicy Bypass -File scripts\Start-VerdictKit.ps1 -Image verdictkit:batch3 -Rebuild
 ```
 
-Linux or macOS: `scripts/start-verdictkit.sh`. Stop with `scripts\Stop-VerdictKit.ps1` or `scripts/stop-verdictkit.sh`.
+Linux or macOS: `bash scripts/start-verdictkit.sh --image verdictkit:batch3 --rebuild`. Stop with `scripts\Stop-VerdictKit.ps1` or `scripts/stop-verdictkit.sh`.
 
-The script starts the Docker backend (enforced OS-user isolation, judge mode, a disposable demonstration signer), checks that `/api/v1/health` reports `ENFORCED`, `judgeMode: true` and contract `1.2.0`, builds the UIs if needed, starts one local gateway and prints **one entry URL** (default `http://127.0.0.1:5170/`). If a port is taken it uses the next free one and says so. It never stops a process or container it did not start itself; on this machine ports 8000, 8001 and 5174 are occupied by other things and are left alone.
+The script starts the Docker backend (enforced OS-user isolation, judge mode, a disposable demonstration signer), checks that `/api/v1/health` reports `ENFORCED`, `judgeMode: true` and contract `1.2.0`, builds the UIs if needed, starts one local gateway and prints **one entry URL** (default `http://127.0.0.1:5170/`). If a port is taken it uses the next free one and says so. It never stops a process or container it did not start itself; occupied ports are left alone.
 
 ## Three minutes
 
@@ -32,7 +32,7 @@ The script starts the Docker backend (enforced OS-user isolation, judge mode, a 
 5. Offline, no network (the exact command with your file name is on the page):
 
 ```
-docker run --rm --network none -v "$(pwd):/data:ro" verdictkit:batch2 verdictkit replay /data/<case>.vkb --trust-store /data/vk-demo-trust-store.json
+docker run --rm --network none -v "$(pwd):/data:ro" verdictkit:batch3 verdictkit replay /data/<case>.vkb --trust-store /data/vk-demo-trust-store.json
 ```
 
 `verdictkit verify` with no `--trust-store` exits 1 with `signer trust: NOT_EVALUATED`: an embedded key is never trusted.
