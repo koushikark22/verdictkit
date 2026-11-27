@@ -114,6 +114,10 @@ Specs (`.kiro/specs/`: core, Reel, Quote, and the next-phase plan), steering (`.
 
 ## For developers
 
+The optional full product browser acceptance suite additionally needs host Python 3.12, `uv`, the locked workspace dependencies installed in `.venv`, and a system Chrome or Edge browser. These are test prerequisites, not requirements for the Docker quickstart. Run `uv sync --frozen --all-packages --all-extras --group dev` before the suite. Set `VK_E2E_BASE` to the launcher URL and `VK_IMAGE` to the image used by the launcher if they differ from the test defaults. The suite includes cooldowns to respect the existing API rate limit.
+
+Public-checkout acceptance on Windows, 2026-11-27: the Docker rebuild and loopback startup succeeded at base commit `64bb6e0`; with the developer dependencies and the three-line test pacing correction included here, all 105 product checks passed, with zero browser errors and exit code 0. This was a separate checkout on an existing Docker workstation, not a virgin-machine test.
+
 ```bash
 uv sync --frozen --all-packages --all-extras --group dev
 HYPOTHESIS_PROFILE=ci uv run --no-sync pytest -q -m "not isolation"

@@ -498,6 +498,9 @@ async function responsive(browser, errors) {
     };
     const keyId = await section("landing and navigation", () => landingAndNavigation(browser, errors));
     await section("quote autopsy", () => quoteFinanceAndLease(browser, errors, downloads));
+    // Drain the shared API rate-limit window before Reel.
+    console.log("pacing: waiting 62 s before Reel Autopsy");
+    await new Promise((resolve) => setTimeout(resolve, 62000));
     await section("reel autopsy", () => reel(browser, errors));
     // The backend allows 120 requests a minute per client address (an existing limit, unchanged), and behind the gateway
     // every page shares one address. The sections are a burst no person produces, so let the window drain first.
