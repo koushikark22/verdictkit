@@ -779,6 +779,68 @@ Result. The added lines hold no match in any class. The 261 tracked files hold 1
 - Public deployment stays blocked (KL-1) and was not attempted.
 - Kiro credits for this batch: `NOT_AVAILABLE`.
 
+## Batch 3 follow-up (the four MCP tools called from inside Kiro, 2026-11-27)
+
+Scope: the open item of Batch 3, a call of all four `verdictkit` MCP tools from inside Kiro on the current code. No application code, test, script, configuration, dependency or lock file changed. No sub-agent was used. The Batch 3 section above is not edited; its corrections are C-013 and C-014. The ids B3F-01 to B3F-06 belong to this follow-up only. Times are UTC. The IDE log writes local time (UTC-06:00), and its times are converted here. Raw files are in the private archive (`KIRO_EVIDENCE/batch3/kiro-mcp/after-reconnect-*`), listed by the addendum index `evidence-index-batch3-mcp-reconnect.json`. The Batch 3 index and the 111 files it lists were re-verified and are untouched (0 problems).
+
+Start state, read before any file was changed: branch `feature/kiro-next-phase`, HEAD `f93a51bb2e6f8907a464dd0b0a4f328915c26d2f`, 0 commits ahead of or behind `origin/feature/kiro-next-phase`, and equal to the value that `git ls-remote origin` returned when it was read, before the first edit. The frozen refs were unchanged at that read: `master` and the peeled commit of `v1.0.0-submission` at `84df25c68198e496889b5892a03555ec7d2d860a`, the tag object at `e9ca8d2bac4a65483f3a7357e00600a1210a6f4f`, and `verified-quote-e2e-20261118` at `407478be97a8979a8e3555bba3b3ab302229f91d`. The two untracked IDE files under `.kiro/specs/verdictkit-next-phase/` are not published.
+
+### PUSH-012 and the CI run on `f93a51b` (observation, 14.13)
+
+This is the record that the CI subsection of Batch 3 left to the first ledger update after `f93a51b`. PUSH-012 is an observation of a ref update and not an Execution_Record. The time is the Unix time of the reflog line (`1795799793`) of `refs/remotes/origin/feature/kiro-next-phase`, converted to UTC. It is when the local tracking ref was updated, not a server timestamp.
+
+| Record | Ref | Before | After | Updated (UTC) | Authorization |
+|---|---|---|---|---|---|
+| PUSH-012 | `refs/heads/feature/kiro-next-phase` | `298ed8cd4e41c5a23600052a22d255c08503a76d` | `f93a51bb2e6f8907a464dd0b0a4f328915c26d2f` | 2026-11-27 17:16:33 | Not recorded in git or in this ledger. `UNVERIFIED`. |
+
+CI on that commit. Run `46040660853` of "Integration gate", event `workflow_dispatch`, branch `feature/kiro-next-phase`, **head SHA `f93a51bb2e6f8907a464dd0b0a4f328915c26d2f`**, created 17:17:34, finished 17:19:09, conclusion `success` for both jobs and for every step (21 steps in `security-and-regression`, 15 in `web-ui`). Key lines of the saved log were read in this update, not only the check mark:
+
+| Step | What the log shows |
+|---|---|
+| lock, lint | `uv lock --check` resolved 56 packages; `ruff`: all checks passed |
+| startup and examiner negative tests | 16 passed |
+| full regression (Linux runner) | 654 passed, 4 skipped, 4 deselected in 29.41 s |
+| Docker isolation, enforced startup | 4 passed; `VK_STARTUP_OK isolation=ENFORCED` |
+| judge-mode HTTP lifecycle, signed bundles | `GATE-HTTP PASSED`; `GATE-SIGN PASSED` |
+| Docker receipt and replay | `reproducibility: REPRODUCED`; the stub claim's verdict hash `547fba0c67e3bcdfa7da58b914d36dc3301b7503fb1278753bbb0eb23d9aaa79` is on 9 lines of the log |
+| complete November gate | 232 passed, 4 deselected |
+| web-ui | `found 0 vulnerabilities` at install; unit tests 32, 11, 6 and 4 passed; build; `UI-E2E PASSED` |
+
+PUSH-013, the push of the commit that holds this section, and the CI run on that commit are not in this section, because a commit cannot contain its own id. They are in the final verification report of this task and are recorded by the first ledger update after it.
+
+### Execution records
+
+Hosts. `Windows`: the owner's Windows host, Python 3.12.10, `uv` 0.13.9. `Kiro IDE`: calls made by the agent through the IDE's MCP client (tool ids `tool::verdictkit::*`), model Claude Sonnet 5.5. The Kiro session identifier is not exposed to the agent here (`NOT_AVAILABLE`).
+
+| Id | Host | What ran | Exit | Result | Class |
+|---|---|---|---|---|---|
+| B3F-01 | Kiro IDE | `list_claim_types`, four attempts, after the owner reported the server connected and its four tools visible | n/a | Each attempt returned `MCP tool call failed: Not connected`. The four tool schemas could be loaded. No process running `verdictkit.mcp_server` existed (process table read twice). The IDE's MCP log holds four `mcp.callTool.error` lines, at 17:30:04, 17:30:11, 17:49:54 and 17:51:29, that match the four attempts in order | FAILED (4 of 4), kept |
+| B3F-02 | Windows | read-only diagnosis: the MCP configuration; `import verdictkit.mcp_server` with the project's Python; `uv run --frozen -v python -c ...` | import 0; `uv` 0 (from its debug log) | The configuration is valid: `uv run python -m verdictkit.mcp_server`, `VK_MCP_READONLY=1`, `disabled` false, `autoApprove` for `list_claim_types` and `explain_verdict`. The import succeeded. The `uv run` test printed its marker in 0.22 s and its debug log says the command exited with code 0 (the wrapper printed no exit code of its own). A first `uv run --frozen python -c "import ..."` piped through `Select-Object` printed nothing and ended with exit -1; its duration and cause were not examined. Twelve Python processes of an unrelated project were running and were not touched. A directory listing of Kiro's logs showed no file modified in four hours, which was stale metadata (C-014). A standalone handshake check was attempted twice (one blocked by the permission layer before it ran, one with no usable output) and is not used | SUCCEEDED (diagnosis): the server code and launcher work, and the client had no live connection |
+| B3F-03 | Windows | reconnect. Step 1: timestamp-only touch of `.kiro/settings/mcp.json` (17:51:26). Step 2: `"disabled": true` written, 6 s wait, original text restored in a `finally` block, 25 s wait | step 1: -1 (the wrapper ended after three of its four output lines); step 2: 0 | Step 1: the next call (17:51:29) failed. Step 2: the IDE log shows `mcp.closeConnection.ok` at 17:53:54.854, then `Connected`, `mcp.connect.ok` and `mcp.listTools.ok` at 17:54:02.925. Three server processes (`uv` launcher, venv Python, base Python) were created at 17:54:01, and the launcher's parent is `Kiro.exe` pid 9612, the id that Batch 3 recorded as Kiro's extension host. The file was restored from the text read before the edit: its git blob id (`51b872f7b9ddd3822ba37b404a1641f24eb7d480`) equals HEAD's and git reports no change. The timing fits the toggle (6 s pause plus watcher delay). The log does not say why the connection closed, so a Reconnect pressed in the panel at the same moment cannot be excluded | SUCCEEDED, cause of the reconnect not separable |
+| B3F-04 | Kiro IDE | `list_claim_types`; `verify_claim` with `examples/stub_claimtype/claim.json` (sha256 `c79357cbd277d1cb52b0cbe6210cb9f6580fca37bab561ba3f767cdc98ec9d2b`) passed as the claim object; `explain_verdict` and `replay_bundle` with the returned `bundle_path` (the last two in one agent turn) | n/a | `list_claim_types`: four types, `example.receipt.v1`, `quote.finance.v1`, `quote.lease.v1`, `reel.mechanical.v1`. `verify_claim`: case `240bb989636342fa903056f2fc578f68`, `isolation_mode` `UNENFORCED`, headline `CONTRADICTED`, one finding `total` (basis `INTERNAL_ARITHMETIC`), verdict hash `547fba0c67e3bcdfa7da58b914d36dc3301b7503fb1278753bbb0eb23d9aaa79`. `explain_verdict`: integrity `VERIFIED` (4 of 4: `MANIFEST_HASHES`, `LEDGER_CHAIN`, `COMMITMENT`, `SPEC_HASH`), "Verified at 1 grid point", authenticity `NOT_ESTABLISHED`, the same hash. `replay_bundle`: **`contractVersion` 1.2.0**, integrity `VERIFIED` (4 of 4), `REPRODUCED`, original and replayed hash both `547fba0c…aaa79`, `envMatch` true, authenticity `NOT_ESTABLISHED` with `signatureValidity` `UNSIGNED`, `signerTrust` `NOT_EVALUATED` and reason code `NO_ENVELOPE`. The IDE log holds four `mcp.callTool.ok` lines (17:54:29.141, 17:54:41.259, 17:54:51.371, 17:54:52.372) | SUCCEEDED |
+| B3F-05 | Windows | nine cross-checks of the four results against the bundle, with the evidence copied into the private archive | first script run: not captured (the display was cut after the checks, and its three outputs exist); correction script: 0 | All nine true: four claim types; `contractVersion` 1.2.0; headline `CONTRADICTED` in two results; integrity `VERIFIED` with 4 of 4 checks in two results; `REPRODUCED` with `envMatch`; one verdict hash in five places (four results and the bundle's manifest); the grid-point sentence present; case id and isolation mode equal to the bundle's; and the updated wording present verbatim, `Authenticity: NOT_ESTABLISHED (signature: UNSIGNED; signer trust: NOT_EVALUATED). This bundle is unsigned. Authenticity is not established.`, with the Batch 3 text `unsigned in v1` absent. The bundle (3,727 bytes, sha256 `65d28f8c74f01b1a85fa27bf45daef85eae02d87ad645f859f10c423067b19ae`) equals the server's temporary copy and was moved into the private archive (`*.vkb` is gitignored and not published). Its manifest: `written_at` 2026-11-27T17:54:40Z, isolation `UNENFORCED`, engine 0.1.0, Python 3.12.10, `image_digest` `unknown`, lockfile sha256 `36357623cd14e1f5b0019b209fda2ee76b9065ecf3ad4708cb9dadb3063006f1`, equal to the sha256 of `uv.lock` now. A scan of the bundle (9 members) and of the four new archived text files (the calls record, the process tree, the IDE log copy and the addendum index), run after the last rewrite, for user-profile paths, the user name, e-mail addresses, token shapes, credential assignments and key headers (and, for the bundle, `AppData` and host-name shapes) found 0 hits | SUCCEEDED |
+| B3F-06 | Windows | the IDE's active MCP log read by content, then the agent logs scanned for the word "hook" | 0 | A PowerShell directory listing showed this file as 0 bytes dated 2026-11-26 06:43:42. Reading it returned 2,177 bytes: 34 lines, 13 `mcp.callTool.ok` and 11 `mcp.callTool.error`; Python's `stat` returned 2,177 bytes and 2026-11-27T17:54:52Z. The probable cause is stale directory-entry metadata for a file the extension host holds open; it was not tested. The content was copied into the archive (sha256 `cc0ce3cc587909d2405757c597cca9e8c0fee069d858ef749e47a4d8ceb1b517`). A content scan of both windows' `Kiro Logs.log` found no hook outcome: window 1 has 6 lines, all hook loading or session timing; window 2 has 3, all text of this session's own terminal commands | SUCCEEDED, correction C-014 |
+
+### Deviations and limits
+
+1. The agent changed `.kiro/settings/mcp.json`, a tracked file, for about 6 seconds (one field, `disabled`, restored in a `finally` block). The repository content did not change (blob id equal to HEAD's, no `git status` entry), but the file is one this task would not otherwise touch.
+2. The four calls ran with `isolation_mode` `UNENFORCED`, because the MCP server runs in-process on the Windows host. They show the tools, the contract version and the wording. They are not evidence of enforced blinding; the enforced runs are the Docker gates (B3-14 and CI run `46040660853`), which return the same verdict hash.
+3. `envMatch` is true because the replay ran in the same environment: the bundle's lockfile hash equals the current `uv.lock`. Reproduction on another machine is shown by the Linux container and CI runner replays, not by this.
+4. `verify_claim` and `replay_bundle` are not in `autoApprove`. Whether the IDE showed an approval prompt is not visible to the agent.
+5. The IDE's MCP log records no tool name, argument or result. The results above are transcribed by the agent from the tool results of the session.
+6. The claim is a constructed receipt. Its contradiction is an internal arithmetic one, not a finding about outside facts.
+7. The cause of the reconnect cannot be separated from a Reconnect pressed in the panel (B3F-03). The panel's Reconnect was not tested.
+8. `docs/KIRO_USAGE.md` on this branch already differs from the frozen blob, because Batches 2 and 3 changed it. This update annotates it and adds a section, as Batch 3 did. The frozen original is intact: blob `69575c6e43dbc40be09149d096e1fcf455211e89` at `master` and at the `v1.0.0-submission` tag. `SUBMISSION_READINESS.md`, `JUDGE_DEMO.md` and `RELEASE_READINESS.md` are identical to the frozen commit. `SUBMISSION_DRAFT.md` was changed in Batch 3 and is not touched here.
+9. Kiro credits for this follow-up: `NOT_AVAILABLE`.
+
+### Open items and what is not verified
+
+- Whether the panel's Reconnect works, and whether a toggle is needed, was not tested.
+- DLV-1 to DLV-4 stay `UNVERIFIED`.
+- The pass or fail of the `core-contract-tests` and `app-contract-tests` hooks inside Kiro stays `UNVERIFIED`.
+- The demo video is not recorded. Public deployment stays blocked (KL-1) and was not attempted.
+- Kiro credits and the Kiro session identifier: `NOT_AVAILABLE`.
+
 ## Capability register
 
 | Capability | Status |
@@ -819,6 +881,17 @@ The two tables above are the historical record and are not edited. These rows su
 | Demonstration video | not recorded; storyboard and checklist in `docs/DEMO_STORYBOARD.md` |
 | Public demonstration | UNVERIFIED (none exists, none authorized) |
 
+### Capability register, Batch 3 follow-up update
+
+The tables above are the historical record and are not edited. These rows supersede them where they differ.
+
+| Capability | Follow-up status |
+|---|---|
+| Kiro MCP calls | SUCCEEDED for all four tools on the current code (B3F-04): `CONTRADICTED`, integrity `VERIFIED`, `REPRODUCED`, equal verdict hashes, `contractVersion` 1.2.0 (only `replay_bundle` returns it) and the updated authenticity wording. The stale-server finding of B3-08 is closed for the stub claim. The calls ran with isolation `UNENFORCED` |
+| Reconnect of the MCP server | OBSERVED once, after a temporary `disabled` toggle (B3F-03). The cause cannot be separated from a panel Reconnect |
+| IDE MCP log | one `mcp.callTool.ok` or `mcp.callTool.error` line per call exists (content read, B3F-06); no tool name, argument or result |
+| CI on `f93a51b` | SUCCEEDED: run `46040660853`, both jobs, every step |
+
 ## Corrections log (after independent review)
 
 | ID | Item | Original text | Correction | Reason |
@@ -835,6 +908,8 @@ The two tables above are the historical record and are not edited. These rows su
 | C-010 | `KIRO_USAGE.md`, Batch 2 section | "with a one-file change in the engine package" | One modified file (`core/src/verdictkit/api/server.py`) and one new module (`api/demo_lab.py`) | `git diff --name-status f42a6d0 78f3f58 -- core` lists exactly those two. The ledger's own deviation 2 of Batch 2 already said so. |
 | C-011 | `KIRO_USAGE.md`, Summary and Open items (statements dated 2026-11-24) | "No Kiro agent-hook run and no Kiro MCP tool call has been observed in any Kiro session" and the two matching open items | Wording kept, each marked "as of 2026-11-24" and superseded, pointing to Batch 2 and Batch 3 | B2-17, B2-18, B3-08, B3-11. The 2026-11-24 statements were true when written; read as present tense they are not. |
 | C-012 | Batch 2 ledger paragraph "Private evidence archive" and the archive's `unavailable` entry for the IDE logs | "the IDE's own hook and MCP log files for this run are 0 bytes" | Window 1's logs are not empty: `Kiro Logs.log` 41,994 bytes (last written 2026-11-26 22:09:32) and `Kiro - MCP Logs.log` 332 bytes (last written 00:43:50). Window 2's are 0 bytes. They record hook loading at session start and the server's connection, and no hook or tool-call outcome | Read in Batch 3; neither file changed after the Batch 2 archive was made, so the earlier statement probably read window 2. The private Batch 2 index is left as it was. |
+| C-013 | Batch 3 ledger (B3-09, deviation 1, open items, capability register Batch 3 update) and `KIRO_USAGE.md` ("MCP, restart") | "the `verdictkit` server is disconnected in the IDE until Reconnect is pressed"; "an agent cannot press it"; "A post-restart call from inside Kiro ... is `UNVERIFIED`" | Original text kept, marked superseded. After a temporary `disabled` toggle in `.kiro/settings/mcp.json`, the IDE closed and reopened the connection, and the four tools were called from inside Kiro on the current code (B3F-03, B3F-04). The text does not support "Reconnect must be pressed" as a necessity. Whether the panel's Reconnect works was not tested. | B3F-03 and B3F-04. |
+| C-014 | C-012 ("Window 2's are 0 bytes") and `KIRO_USAGE.md` Batch 3 ("and nothing per call") | "Window 2's are 0 bytes"; "the IDE's MCP log records that process connecting ... and nothing per call" | The active window's MCP log (window 2) held 2,177 bytes when read: the connect lines and one `mcp.callTool.ok` or `mcp.callTool.error` line per call, with a local time and no tool name, argument or result. Window 1's 332-byte file is a different file, and its description in C-012 stands. The hook statements are not affected: a content scan found no hook outcome in either window's `Kiro Logs.log`. | A directory listing reported 0 bytes and a 2026-11-26 modification time for that file while it was held open. Reading the file returned its content (B3F-06). |
 
 ## Accepted baseline exceptions
 
